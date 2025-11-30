@@ -12,32 +12,18 @@ const STORAGE_TYPE =
     | 'upstash'
     | undefined) || 'localstorage';
 
-// 创建存储实例 - 使用动态导入避免打包不兼容的模块
-async function createStorageAsync(): Promise<IStorage> {
-  switch (STORAGE_TYPE) {
-    case 'redis': {
-      // node-redis 不兼容 Cloudflare Workers，仅在 Node.js 环境使用
-      const { RedisStorage } = await import('./redis.db');
-      return new RedisStorage();
-    }
-    case 'upstash': {
-      const { UpstashRedisStorage } = await import('./upstash.db');
-      return new UpstashRedisStorage();
-    }
-    case 'd1': {
-      const { D1Storage } = await import('./d1.db');
-      return new D1Storage();
-    }
-    case 'localstorage':
-    default:
-      // 默认返回 null，保证本地开发可用
-      return null as unknown as IStorage;
-  }
-}
-
-// 同步版本用于兼容现有代码
+// 创建存储实例
+// 注意：node-redis 不兼容 Cloudflare Workers，在 Cloudflare Pages 环境下只支持 upstash 和 localstorage
 function createStorage(): IStorage {
-  // Cloudflare Pages 环境下默认使用 localstorage 模式
+  // Cloudflare Pages 环境下：仅支持 upstash 或 localstorage
+  // redis 类型在此环境不可用，会降级为 null
+  if (STORAGE_TYPE === 'upstash') {
+    // upstash 使用 HTTP API，兼容 Cloudflare Workers
+    // 懒加载方式，在实际使用时才导入
+    const { UpstashRedisStorage } = require('./upstash.db');
+    return new UpstashRedisStorage();
+  }
+  // localstorage 或其他类型返回 null
   return null as unknown as IStorage;
 }
 
