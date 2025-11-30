@@ -1,8 +1,25 @@
 'use client';
 
-import { X, Globe, Clock, Sparkles, Heart, Shield } from 'lucide-react';
+import { X, Globe, Clock, Sparkles, Heart, Shield, MapPin, Navigation, Cloud, Sun, CloudRain, CloudSnow, CloudLightning, Wind } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
+
+// 位置信息类型
+interface LocationInfo {
+  ip: string;
+  city: string;
+  region: string;
+  country: string;
+  lat: number;
+  lon: number;
+}
+
+// 天气信息类型
+interface WeatherInfo {
+  temp: number;
+  description: string;
+  icon: string;
+}
 
 // 欢迎弹窗组件，首次访问网站时显示免责声明和赞赏码
 export const WelcomeModal: React.FC = () => {
@@ -10,8 +27,12 @@ export const WelcomeModal: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   // 确保组件已在客户端挂载
   const [mounted, setMounted] = useState(false);
-  // 用户IP地址
-  const [userIP, setUserIP] = useState<string>('获取中...');
+  // 位置信息
+  const [location, setLocation] = useState<LocationInfo | null>(null);
+  // 天气信息
+  const [weather, setWeather] = useState<WeatherInfo | null>(null);
+  // 加载状态
+  const [loading, setLoading] = useState(true);
   // 当前时间
   const [currentTime, setCurrentTime] = useState<string>('');
   // 动画状态
@@ -28,17 +49,44 @@ export const WelcomeModal: React.FC = () => {
       setTimeout(() => setIsAnimated(true), 50);
     }
 
-    // 获取用户IP地址
-    const fetchIP = async () => {
+    // 获取IP、位置和天气信息
+    const fetchLocationAndWeather = async () => {
       try {
-        const response = await fetch('https://api.ipify.org?format=json');
-        const data = await response.json();
-        setUserIP(data.ip);
+        // 使用ip-api获取IP和位置信息
+        const ipResponse = await fetch('http://ip-api.com/json/?lang=zh-CN');
+        const ipData = await ipResponse.json();
+
+        if (ipData.status === 'success') {
+          setLocation({
+            ip: ipData.query,
+            city: ipData.city,
+            region: ipData.regionName,
+            country: ipData.country,
+            lat: ipData.lat,
+            lon: ipData.lon
+          });
+
+          // 使用wttr.in获取天气信息
+          try {
+            const weatherResponse = await fetch(`https://wttr.in/${ipData.city}?format=j1`);
+            const weatherData = await weatherResponse.json();
+            const current = weatherData.current_condition[0];
+            setWeather({
+              temp: parseInt(current.temp_C),
+              description: current.lang_zh[0]?.value || current.weatherDesc[0].value,
+              icon: current.weatherCode
+            });
+          } catch {
+            // 天气获取失败不影响其他功能
+          }
+        }
       } catch {
-        setUserIP('无法获取');
+        // 位置获取失败
+      } finally {
+        setLoading(false);
       }
     };
-    fetchIP();
+    fetchLocationAndWeather();
 
     // 设置当前时间
     const updateTime = () => {
@@ -66,6 +114,17 @@ export const WelcomeModal: React.FC = () => {
       setIsOpen(false);
       sessionStorage.setItem('hasShownWelcome', 'true');
     }, 200);
+  };
+
+  // 根据天气代码获取对应图标
+  const getWeatherIcon = (code: string) => {
+    const codeNum = parseInt(code);
+    if (codeNum === 113) return <Sun className='w-5 h-5 text-yellow-500' />;
+    if (codeNum >= 116 && codeNum <= 122) return <Cloud className='w-5 h-5 text-gray-500' />;
+    if (codeNum >= 176 && codeNum <= 314) return <CloudRain className='w-5 h-5 text-blue-500' />;
+    if (codeNum >= 320 && codeNum <= 395) return <CloudSnow className='w-5 h-5 text-cyan-500' />;
+    if (codeNum >= 200 && codeNum <= 232) return <CloudLightning className='w-5 h-5 text-purple-500' />;
+    return <Wind className='w-5 h-5 text-gray-500' />;
   };
 
   // 弹窗内容
@@ -117,30 +176,84 @@ export const WelcomeModal: React.FC = () => {
           </div>
 
           {/* 内容区域 */}
-          <div className='px-6 pb-5 space-y-4'>
-            {/* IP和时间卡片 */}
-            <div className='bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/30 dark:to-indigo-900/30 rounded-xl p-4 border border-blue-100/50 dark:border-blue-800/50'>
-              <div className='grid grid-cols-2 gap-3'>
-                <div className='flex items-center gap-2'>
-                  <div className='w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center'>
-                    <Globe className='w-4 h-4 text-blue-600 dark:text-blue-400' />
+          <div className='px-6 pb-5 space-y-3'>
+            {/* 位置信息卡片 */}
+            <div className='bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 dark:from-blue-900/30 dark:via-indigo-900/30 dark:to-purple-900/30 rounded-xl p-4 border border-blue-100/50 dark:border-blue-800/50'>
+              {loading ? (
+                <div className='flex items-center justify-center py-2'>
+                  <div className='w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin' />
+                  <span className='ml-2 text-sm text-blue-600 dark:text-blue-400'>获取位置信息...</span>
+                </div>
+              ) : location ? (
+                <div className='space-y-3'>
+                  {/* 第一行：IP和位置 */}
+                  <div className='grid grid-cols-2 gap-3'>
+                    <div className='flex items-center gap-2'>
+                      <div className='w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center'>
+                        <Globe className='w-4 h-4 text-blue-600 dark:text-blue-400' />
+                      </div>
+                      <div>
+                        <p className='text-[10px] text-blue-500 dark:text-blue-400 uppercase tracking-wide'>您的IP</p>
+                        <p className='text-xs font-mono font-semibold text-blue-700 dark:text-blue-300'>{location.ip}</p>
+                      </div>
+                    </div>
+                    <div className='flex items-center gap-2'>
+                      <div className='w-8 h-8 rounded-lg bg-purple-500/10 flex items-center justify-center'>
+                        <MapPin className='w-4 h-4 text-purple-600 dark:text-purple-400' />
+                      </div>
+                      <div>
+                        <p className='text-[10px] text-purple-500 dark:text-purple-400 uppercase tracking-wide'>位置</p>
+                        <p className='text-xs font-semibold text-purple-700 dark:text-purple-300'>{location.city}, {location.region}</p>
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <p className='text-[10px] text-blue-500 dark:text-blue-400 uppercase tracking-wide'>您的IP</p>
-                    <p className='text-sm font-mono font-semibold text-blue-700 dark:text-blue-300'>{userIP}</p>
+                  {/* 第二行：经纬度和时间 */}
+                  <div className='grid grid-cols-2 gap-3'>
+                    <div className='flex items-center gap-2'>
+                      <div className='w-8 h-8 rounded-lg bg-teal-500/10 flex items-center justify-center'>
+                        <Navigation className='w-4 h-4 text-teal-600 dark:text-teal-400' />
+                      </div>
+                      <div>
+                        <p className='text-[10px] text-teal-500 dark:text-teal-400 uppercase tracking-wide'>经纬度</p>
+                        <p className='text-xs font-mono font-semibold text-teal-700 dark:text-teal-300'>{location.lat.toFixed(2)}, {location.lon.toFixed(2)}</p>
+                      </div>
+                    </div>
+                    <div className='flex items-center gap-2'>
+                      <div className='w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center'>
+                        <Clock className='w-4 h-4 text-indigo-600 dark:text-indigo-400' />
+                      </div>
+                      <div>
+                        <p className='text-[10px] text-indigo-500 dark:text-indigo-400 uppercase tracking-wide'>时间</p>
+                        <p className='text-xs font-mono font-semibold text-indigo-700 dark:text-indigo-300'>{currentTime}</p>
+                      </div>
+                    </div>
                   </div>
                 </div>
-                <div className='flex items-center gap-2'>
-                  <div className='w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center'>
-                    <Clock className='w-4 h-4 text-indigo-600 dark:text-indigo-400' />
+              ) : (
+                <div className='text-center text-sm text-gray-500'>位置获取失败</div>
+              )}
+            </div>
+
+            {/* 天气卡片 */}
+            {weather && (
+              <div className='bg-gradient-to-r from-cyan-50 to-sky-50 dark:from-cyan-900/30 dark:to-sky-900/30 rounded-xl p-4 border border-cyan-100/50 dark:border-cyan-800/50'>
+                <div className='flex items-center justify-between'>
+                  <div className='flex items-center gap-3'>
+                    <div className='w-12 h-12 rounded-xl bg-gradient-to-br from-cyan-400/20 to-sky-400/20 flex items-center justify-center'>
+                      {getWeatherIcon(weather.icon)}
+                    </div>
+                    <div>
+                      <p className='text-[10px] text-cyan-500 dark:text-cyan-400 uppercase tracking-wide'>当前天气</p>
+                      <p className='text-sm font-semibold text-cyan-700 dark:text-cyan-300'>{weather.description}</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className='text-[10px] text-indigo-500 dark:text-indigo-400 uppercase tracking-wide'>当前时间</p>
-                    <p className='text-sm font-mono font-semibold text-indigo-700 dark:text-indigo-300'>{currentTime}</p>
+                  <div className='text-right'>
+                    <p className='text-3xl font-bold bg-gradient-to-r from-cyan-600 to-sky-600 bg-clip-text text-transparent'>{weather.temp}°C</p>
+                    <p className='text-[10px] text-cyan-500 dark:text-cyan-400'>{location?.city}</p>
                   </div>
                 </div>
               </div>
-            </div>
+            )}
 
             {/* 免责声明 */}
             <div className='bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 rounded-xl p-4 border border-amber-200/50 dark:border-amber-800/50'>
