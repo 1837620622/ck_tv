@@ -97,18 +97,31 @@ export const WelcomeModal: React.FC = () => {
 
         if (ipData) {
           setLocation(ipData);
-          // 获取天气
+          // 使用和风天气API获取天气
           if (ipData.city && ipData.city !== '未知') {
             try {
-              const weatherRes = await fetchWithTimeout(`https://wttr.in/${encodeURIComponent(ipData.city)}?format=j1`, 3000);
-              const weatherData = await weatherRes.json();
-              const current = weatherData.current_condition?.[0];
-              if (current) {
-                setWeather({
-                  temp: parseInt(current.temp_C),
-                  description: current.lang_zh?.[0]?.value || current.weatherDesc?.[0]?.value || '未知',
-                  icon: current.weatherCode
-                });
+              const QWEATHER_KEY = 'e976470c9f4f4a78b8006e69bef01fc4';
+              // 先通过城市名获取LocationID
+              const geoRes = await fetchWithTimeout(
+                `https://geoapi.qweather.com/v2/city/lookup?location=${encodeURIComponent(ipData.city)}&key=${QWEATHER_KEY}`,
+                3000
+              );
+              const geoData = await geoRes.json();
+              if (geoData.code === '200' && geoData.location?.[0]) {
+                const locationId = geoData.location[0].id;
+                // 获取实时天气
+                const weatherRes = await fetchWithTimeout(
+                  `https://devapi.qweather.com/v7/weather/now?location=${locationId}&key=${QWEATHER_KEY}`,
+                  3000
+                );
+                const weatherData = await weatherRes.json();
+                if (weatherData.code === '200' && weatherData.now) {
+                  setWeather({
+                    temp: parseInt(weatherData.now.temp),
+                    description: weatherData.now.text,
+                    icon: weatherData.now.icon
+                  });
+                }
               }
             } catch { /* 天气获取失败 */ }
           }
@@ -146,15 +159,20 @@ export const WelcomeModal: React.FC = () => {
     }, 200);
   };
 
-  // 根据天气代码获取对应图标
+  // 根据和风天气图标代码获取对应图标
   const getWeatherIcon = (code: string) => {
     const codeNum = parseInt(code);
-    if (codeNum === 113) return <Sun className='w-5 h-5 text-yellow-500' />;
-    if (codeNum >= 116 && codeNum <= 122) return <Cloud className='w-5 h-5 text-gray-500' />;
-    if (codeNum >= 176 && codeNum <= 314) return <CloudRain className='w-5 h-5 text-blue-500' />;
-    if (codeNum >= 320 && codeNum <= 395) return <CloudSnow className='w-5 h-5 text-cyan-500' />;
-    if (codeNum >= 200 && codeNum <= 232) return <CloudLightning className='w-5 h-5 text-purple-500' />;
-    return <Wind className='w-5 h-5 text-gray-500' />;
+    // 晴天 100, 150
+    if (codeNum === 100 || codeNum === 150) return <Sun className='w-5 h-5 text-yellow-500' />;
+    // 多云/阴天 101-104, 151-154
+    if ((codeNum >= 101 && codeNum <= 104) || (codeNum >= 151 && codeNum <= 154)) return <Cloud className='w-5 h-5 text-gray-500' />;
+    // 雨 300-399
+    if (codeNum >= 300 && codeNum <= 399) return <CloudRain className='w-5 h-5 text-blue-500' />;
+    // 雪 400-499
+    if (codeNum >= 400 && codeNum <= 499) return <CloudSnow className='w-5 h-5 text-cyan-500' />;
+    // 雾霾沙尘 500-515
+    if (codeNum >= 500 && codeNum <= 515) return <Wind className='w-5 h-5 text-gray-400' />;
+    return <Cloud className='w-5 h-5 text-gray-500' />;
   };
 
   // 弹窗内容
