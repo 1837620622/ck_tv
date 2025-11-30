@@ -49,72 +49,72 @@ export const WelcomeModal: React.FC = () => {
       setTimeout(() => setIsAnimated(true), 50);
     }
 
+    // 带超时的fetch
+    const fetchWithTimeout = (url: string, timeout = 3000): Promise<Response> => {
+      return Promise.race([
+        fetch(url),
+        new Promise<Response>((_, reject) => setTimeout(() => reject(new Error('timeout')), timeout))
+      ]);
+    };
+
     // 获取IP、位置和天气信息
     const fetchLocationAndWeather = async () => {
       try {
-        // 尝试多个API源获取IP和位置信息
         let ipData = null;
 
-        // 首选：ipwho.is（支持https，免费无限制）
-        try {
-          const res1 = await fetch('https://ipwho.is/?lang=zh-CN');
-          const data1 = await res1.json();
-          if (data1.success) {
-            ipData = {
-              ip: data1.ip,
-              city: data1.city,
-              region: data1.region,
-              country: data1.country,
-              lat: data1.latitude,
-              lon: data1.longitude
-            };
+        // 国内API优先（速度快）
+        const apis = [
+          // 太平洋网络IP查询
+          async () => {
+            const res = await fetchWithTimeout('https://whois.pconline.com.cn/ipJson.jsp?json=true', 2000);
+            const text = await res.text();
+            const data = JSON.parse(text);
+            if (data.ip) return { ip: data.ip, city: data.city || '未知', region: data.pro || '未知', country: '中国', lat: 0, lon: 0 };
+            return null;
+          },
+          // ip.useragentinfo
+          async () => {
+            const res = await fetchWithTimeout('https://ip.useragentinfo.com/json', 2000);
+            const data = await res.json();
+            if (data.ip) return { ip: data.ip, city: data.city || '未知', region: data.province || '未知', country: data.country || '未知', lat: 0, lon: 0 };
+            return null;
+          },
+          // 国外备用
+          async () => {
+            const res = await fetchWithTimeout('https://ipwho.is/', 3000);
+            const data = await res.json();
+            if (data.success) return { ip: data.ip, city: data.city, region: data.region, country: data.country, lat: data.latitude, lon: data.longitude };
+            return null;
           }
-        } catch {
-          // 继续尝试备用API
-        }
+        ];
 
-        // 备用：ipapi.co
-        if (!ipData) {
+        for (const api of apis) {
           try {
-            const res2 = await fetch('https://ipapi.co/json/');
-            const data2 = await res2.json();
-            if (!data2.error) {
-              ipData = {
-                ip: data2.ip,
-                city: data2.city,
-                region: data2.region,
-                country: data2.country_name,
-                lat: data2.latitude,
-                lon: data2.longitude
-              };
-            }
-          } catch {
-            // 继续
-          }
+            const result = await api();
+            if (result) { ipData = result; break; }
+          } catch { continue; }
         }
 
         if (ipData) {
           setLocation(ipData);
-
-          // 使用wttr.in获取天气信息
-          try {
-            const weatherResponse = await fetch(`https://wttr.in/${encodeURIComponent(ipData.city)}?format=j1`);
-            const weatherData = await weatherResponse.json();
-            const current = weatherData.current_condition[0];
-            setWeather({
-              temp: parseInt(current.temp_C),
-              description: current.lang_zh?.[0]?.value || current.weatherDesc[0].value,
-              icon: current.weatherCode
-            });
-          } catch {
-            // 天气获取失败不影响其他功能
+          // 获取天气
+          if (ipData.city && ipData.city !== '未知') {
+            try {
+              const weatherRes = await fetchWithTimeout(`https://wttr.in/${encodeURIComponent(ipData.city)}?format=j1`, 3000);
+              const weatherData = await weatherRes.json();
+              const current = weatherData.current_condition?.[0];
+              if (current) {
+                setWeather({
+                  temp: parseInt(current.temp_C),
+                  description: current.lang_zh?.[0]?.value || current.weatherDesc?.[0]?.value || '未知',
+                  icon: current.weatherCode
+                });
+              }
+            } catch { /* 天气获取失败 */ }
           }
         }
-      } catch {
-        // 位置获取失败
-      } finally {
-        setLoading(false);
-      }
+      } catch { /* 全部失败 */ }
+      finally { setLoading(false); }
     };
     fetchLocationAndWeather();
 
