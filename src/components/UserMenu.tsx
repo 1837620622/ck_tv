@@ -42,6 +42,9 @@ export const UserMenu: React.FC = () => {
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
   const [isChecking, setIsChecking] = useState(true);
 
+  // 赞赏码弹窗状态
+  const [isDonateOpen, setIsDonateOpen] = useState(false);
+
   // 确保组件已挂载
   useEffect(() => {
     setMounted(true);
@@ -399,15 +402,16 @@ export const UserMenu: React.FC = () => {
           {/* 分割线 */}
           <div className='my-1 border-t border-gray-200 dark:border-gray-700'></div>
 
-          {/* 版本信息 */}
+          {/* 版本信息 - 点击弹出赞赏码 */}
           <button
-            onClick={() =>
-              window.open('https://github.com/1837620622/MoonTV_ck', '_blank') // CKTV-传康播放器
-            }
+            onClick={() => {
+              setIsOpen(false);
+              setIsDonateOpen(true);
+            }}
             className='w-full px-3 py-2 text-center flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors text-xs'
           >
             <div className='flex items-center gap-1'>
-              <span className='font-mono'>v{CURRENT_VERSION}</span>
+              <span className='font-mono'>{CURRENT_VERSION}</span>
               {!isChecking &&
                 updateStatus &&
                 updateStatus !== UpdateStatus.FETCH_FAILED && (
@@ -715,6 +719,66 @@ export const UserMenu: React.FC = () => {
     </>
   );
 
+  // 赞赏码弹窗
+  const donatePanel = (
+    <>
+      {/* 背景遮罩 */}
+      <div
+        className='fixed inset-0 bg-black/60 backdrop-blur-sm z-[2000]'
+        onClick={() => setIsDonateOpen(false)}
+      />
+      {/* 弹窗主体 */}
+      <div className='fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] max-w-sm bg-white dark:bg-gray-900 rounded-2xl shadow-2xl z-[2001] overflow-hidden'>
+        {/* 顶部标题栏 */}
+        <div className='bg-gradient-to-r from-green-500 to-green-600 px-6 py-4 flex items-center justify-between'>
+          <h2 className='text-lg font-bold text-white'>传康KK万能播放器</h2>
+          <button
+            onClick={() => setIsDonateOpen(false)}
+            className='w-8 h-8 rounded-full flex items-center justify-center text-white/80 hover:text-white hover:bg-white/20 transition-colors'
+          >
+            <X className='w-5 h-5' />
+          </button>
+        </div>
+        {/* 内容区域 */}
+        <div className='p-6 space-y-4'>
+          <div className='text-center'>
+            <p className='text-gray-600 dark:text-gray-400 text-sm mb-2'>
+              感谢使用 <span className='font-semibold text-green-600'>传康KK万能播放器</span>
+            </p>
+            <p className='text-gray-500 dark:text-gray-500 text-xs mb-4'>
+              喜欢的朋友可以赞赏一下，感谢支持！
+            </p>
+          </div>
+          {/* 赞赏码图片 */}
+          <div className='flex justify-center'>
+            <div className='w-48 h-48 rounded-lg overflow-hidden shadow-lg border-2 border-green-100 dark:border-green-800'>
+              <img
+                src='/ck.jpg'
+                alt='传康KK的赞赏码'
+                className='w-full h-full object-cover'
+              />
+            </div>
+          </div>
+          {/* 联系方式 */}
+          <div className='text-center text-xs text-gray-500 dark:text-gray-400 space-y-1'>
+            <p>微信：1837620622</p>
+            <p>邮箱：2040168455@qq.com</p>
+            <p>咸鱼/B站：万能程序员</p>
+          </div>
+        </div>
+        {/* 底部按钮 */}
+        <div className='px-6 pb-6'>
+          <button
+            onClick={() => setIsDonateOpen(false)}
+            className='w-full py-3 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-semibold rounded-lg transition-all duration-200'
+          >
+            关闭
+          </button>
+        </div>
+      </div>
+    </>
+  );
+
   return (
     <>
       <div className='relative'>
@@ -740,6 +804,9 @@ export const UserMenu: React.FC = () => {
       {isChangePasswordOpen &&
         mounted &&
         createPortal(changePasswordPanel, document.body)}
+
+      {/* 使用 Portal 将赞赏码弹窗渲染到 document.body */}
+      {isDonateOpen && mounted && createPortal(donatePanel, document.body)}
     </>
   );
 };

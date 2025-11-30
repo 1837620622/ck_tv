@@ -2,7 +2,7 @@
 
 'use client';
 
-const CURRENT_VERSION = '来自传康kk:最新版！永久免费';
+const CURRENT_VERSION = '传康KK万能播放器';
 
 // 版本检查结果枚举
 export enum UpdateStatus {

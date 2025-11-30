@@ -2,7 +2,7 @@
 
 'use client';
 
-import { AlertCircle, CheckCircle } from 'lucide-react';
+import { AlertCircle, CheckCircle, X } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 
@@ -11,10 +11,11 @@ import { checkForUpdates, CURRENT_VERSION, UpdateStatus } from '@/lib/version';
 import { useSite } from '@/components/SiteProvider';
 import { ThemeToggle } from '@/components/ThemeToggle';
 
-// 版本显示组件
+// 版本显示组件 - 点击弹出赞赏码
 function VersionDisplay() {
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
   const [isChecking, setIsChecking] = useState(true);
+  const [isDonateOpen, setIsDonateOpen] = useState(false);
 
   useEffect(() => {
     const checkUpdate = async () => {
@@ -32,37 +33,71 @@ function VersionDisplay() {
   }, []);
 
   return (
-    <button
-      onClick={() =>
-        window.open('https://github.com/1837620622/MoonTV_ck', '_blank') // CKTV-传康播放器
-      }
-      className='absolute bottom-4 left-1/2 transform -translate-x-1/2 flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 transition-colors cursor-pointer'
-    >
-      <span className='font-mono'>v{CURRENT_VERSION}</span>
-      {!isChecking && updateStatus !== UpdateStatus.FETCH_FAILED && (
-        <div
-          className={`flex items-center gap-1.5 ${updateStatus === UpdateStatus.HAS_UPDATE
-            ? 'text-yellow-600 dark:text-yellow-400'
-            : updateStatus === UpdateStatus.NO_UPDATE
-              ? 'text-green-600 dark:text-green-400'
-              : ''
-            }`}
-        >
-          {updateStatus === UpdateStatus.HAS_UPDATE && (
-            <>
-              <AlertCircle className='w-3.5 h-3.5' />
-              <span className='font-semibold text-xs'>有新版本</span>
-            </>
-          )}
-          {updateStatus === UpdateStatus.NO_UPDATE && (
-            <>
-              <CheckCircle className='w-3.5 h-3.5' />
-              <span className='font-semibold text-xs'>已是最新</span>
-            </>
-          )}
+    <>
+      <button
+        onClick={() => setIsDonateOpen(true)}
+        className='absolute bottom-4 left-1/2 transform -translate-x-1/2 flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 transition-colors cursor-pointer'
+      >
+        <span className='font-mono'>{CURRENT_VERSION}</span>
+        {!isChecking && updateStatus !== UpdateStatus.FETCH_FAILED && (
+          <div
+            className={`flex items-center gap-1.5 ${updateStatus === UpdateStatus.HAS_UPDATE
+              ? 'text-yellow-600 dark:text-yellow-400'
+              : updateStatus === UpdateStatus.NO_UPDATE
+                ? 'text-green-600 dark:text-green-400'
+                : ''
+              }`}
+          >
+            {updateStatus === UpdateStatus.HAS_UPDATE && (
+              <>
+                <AlertCircle className='w-3.5 h-3.5' />
+                <span className='font-semibold text-xs'>有新版本</span>
+              </>
+            )}
+            {updateStatus === UpdateStatus.NO_UPDATE && (
+              <>
+                <CheckCircle className='w-3.5 h-3.5' />
+                <span className='font-semibold text-xs'>已是最新</span>
+              </>
+            )}
+          </div>
+        )}
+      </button>
+
+      {/* 赞赏码弹窗 */}
+      {isDonateOpen && (
+        <div className='fixed inset-0 z-50 flex items-center justify-center'>
+          <div className='fixed inset-0 bg-black/60 backdrop-blur-sm' onClick={() => setIsDonateOpen(false)} />
+          <div className='relative w-[90%] max-w-sm bg-white dark:bg-gray-900 rounded-2xl shadow-2xl overflow-hidden z-10'>
+            <div className='bg-gradient-to-r from-green-500 to-green-600 px-6 py-4 flex items-center justify-between'>
+              <h2 className='text-lg font-bold text-white'>传康KK万能播放器</h2>
+              <button onClick={() => setIsDonateOpen(false)} className='w-8 h-8 rounded-full flex items-center justify-center text-white/80 hover:text-white hover:bg-white/20'>
+                <X className='w-5 h-5' />
+              </button>
+            </div>
+            <div className='p-6 space-y-4'>
+              <div className='text-center'>
+                <p className='text-gray-600 dark:text-gray-400 text-sm mb-2'>感谢使用 <span className='font-semibold text-green-600'>传康KK万能播放器</span></p>
+                <p className='text-gray-500 text-xs mb-4'>喜欢的朋友可以赞赏一下，感谢支持！</p>
+              </div>
+              <div className='flex justify-center'>
+                <div className='w-48 h-48 rounded-lg overflow-hidden shadow-lg border-2 border-green-100 dark:border-green-800'>
+                  <img src='/ck.jpg' alt='传康KK的赞赏码' className='w-full h-full object-cover' />
+                </div>
+              </div>
+              <div className='text-center text-xs text-gray-500 space-y-1'>
+                <p>微信：1837620622</p>
+                <p>邮箱：2040168455@qq.com</p>
+                <p>咸鱼/B站：万能程序员</p>
+              </div>
+            </div>
+            <div className='px-6 pb-6'>
+              <button onClick={() => setIsDonateOpen(false)} className='w-full py-3 bg-gradient-to-r from-green-500 to-green-600 text-white font-semibold rounded-lg'>关闭</button>
+            </div>
+          </div>
         </div>
       )}
-    </button>
+    </>
   );
 }
 
