@@ -10,6 +10,10 @@ export const WelcomeModal: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   // 确保组件已在客户端挂载
   const [mounted, setMounted] = useState(false);
+  // 用户IP地址
+  const [userIP, setUserIP] = useState<string>('获取中...');
+  // 当前时间
+  const [currentTime, setCurrentTime] = useState<string>('');
 
   useEffect(() => {
     setMounted(true);
@@ -19,6 +23,25 @@ export const WelcomeModal: React.FC = () => {
     if (!hasShownWelcome) {
       setIsOpen(true);
     }
+
+    // 获取当前时间
+    const now = new Date();
+    const timeStr = now.toLocaleString('zh-CN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    });
+    setCurrentTime(timeStr);
+
+    // 获取用户IP地址
+    fetch('https://api.ipify.org?format=json')
+      .then(res => res.json())
+      .then(data => setUserIP(data.ip))
+      .catch(() => setUserIP('无法获取'));
   }, []);
 
   // 关闭弹窗并记录状态
@@ -54,6 +77,20 @@ export const WelcomeModal: React.FC = () => {
 
         {/* 弹窗内容区域 */}
         <div className='p-6 space-y-4'>
+          {/* IP和时间提醒 */}
+          <div className='bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3'>
+            <div className='flex items-center justify-between text-sm'>
+              <div className='text-blue-700 dark:text-blue-300'>
+                <span className='font-medium'>您的IP：</span>
+                <span className='font-mono'>{userIP}</span>
+              </div>
+              <div className='text-blue-600 dark:text-blue-400'>
+                <span className='font-medium'>访问时间：</span>
+                <span>{currentTime}</span>
+              </div>
+            </div>
+          </div>
+
           {/* 免责声明 */}
           <div className='bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4'>
             <h3 className='font-semibold text-yellow-800 dark:text-yellow-300 mb-2'>
