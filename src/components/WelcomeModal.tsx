@@ -1,7 +1,6 @@
 'use client';
 
 import { X } from 'lucide-react';
-import Image from 'next/image';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -77,13 +76,11 @@ export const WelcomeModal: React.FC = () => {
 
           {/* 赞赏码图片 */}
           <div className='flex justify-center'>
-            <div className='relative w-48 h-48 rounded-lg overflow-hidden shadow-lg border-2 border-green-100 dark:border-green-800'>
-              <Image
+            <div className='w-48 h-48 rounded-lg overflow-hidden shadow-lg border-2 border-green-100 dark:border-green-800'>
+              <img
                 src='/ck.jpg'
                 alt='传康KK的赞赏码'
-                fill
-                className='object-cover'
-                priority
+                className='w-full h-full object-cover'
               />
             </div>
           </div>
