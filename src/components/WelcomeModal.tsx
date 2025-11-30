@@ -1,6 +1,6 @@
 'use client';
 
-import { X } from 'lucide-react';
+import { X, Globe, Clock } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -24,24 +24,35 @@ export const WelcomeModal: React.FC = () => {
       setIsOpen(true);
     }
 
-    // 获取当前时间
-    const now = new Date();
-    const timeStr = now.toLocaleString('zh-CN', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false
-    });
-    setCurrentTime(timeStr);
-
     // 获取用户IP地址
-    fetch('https://api.ipify.org?format=json')
-      .then(res => res.json())
-      .then(data => setUserIP(data.ip))
-      .catch(() => setUserIP('无法获取'));
+    const fetchIP = async () => {
+      try {
+        const response = await fetch('https://api.ipify.org?format=json');
+        const data = await response.json();
+        setUserIP(data.ip);
+      } catch {
+        setUserIP('无法获取');
+      }
+    };
+    fetchIP();
+
+    // 设置当前时间
+    const updateTime = () => {
+      const now = new Date();
+      setCurrentTime(now.toLocaleString('zh-CN', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      }));
+    };
+    updateTime();
+    const timer = setInterval(updateTime, 1000);
+
+    return () => clearInterval(timer);
   }, []);
 
   // 关闭弹窗并记录状态
@@ -80,13 +91,14 @@ export const WelcomeModal: React.FC = () => {
           {/* IP和时间提醒 */}
           <div className='bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3'>
             <div className='flex items-center justify-between text-sm'>
-              <div className='text-blue-700 dark:text-blue-300'>
-                <span className='font-medium'>您的IP：</span>
-                <span className='font-mono'>{userIP}</span>
+              <div className='flex items-center gap-2 text-blue-700 dark:text-blue-300'>
+                <Globe className='w-4 h-4' />
+                <span>您的IP：</span>
+                <span className='font-mono font-semibold'>{userIP}</span>
               </div>
-              <div className='text-blue-600 dark:text-blue-400'>
-                <span className='font-medium'>访问时间：</span>
-                <span>{currentTime}</span>
+              <div className='flex items-center gap-2 text-blue-700 dark:text-blue-300'>
+                <Clock className='w-4 h-4' />
+                <span className='font-mono'>{currentTime}</span>
               </div>
             </div>
           </div>
