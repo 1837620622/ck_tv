@@ -52,28 +52,58 @@ export const WelcomeModal: React.FC = () => {
     // 获取IP、位置和天气信息
     const fetchLocationAndWeather = async () => {
       try {
-        // 使用ip-api获取IP和位置信息
-        const ipResponse = await fetch('http://ip-api.com/json/?lang=zh-CN');
-        const ipData = await ipResponse.json();
+        // 尝试多个API源获取IP和位置信息
+        let ipData = null;
 
-        if (ipData.status === 'success') {
-          setLocation({
-            ip: ipData.query,
-            city: ipData.city,
-            region: ipData.regionName,
-            country: ipData.country,
-            lat: ipData.lat,
-            lon: ipData.lon
-          });
+        // 首选：ipwho.is（支持https，免费无限制）
+        try {
+          const res1 = await fetch('https://ipwho.is/?lang=zh-CN');
+          const data1 = await res1.json();
+          if (data1.success) {
+            ipData = {
+              ip: data1.ip,
+              city: data1.city,
+              region: data1.region,
+              country: data1.country,
+              lat: data1.latitude,
+              lon: data1.longitude
+            };
+          }
+        } catch {
+          // 继续尝试备用API
+        }
+
+        // 备用：ipapi.co
+        if (!ipData) {
+          try {
+            const res2 = await fetch('https://ipapi.co/json/');
+            const data2 = await res2.json();
+            if (!data2.error) {
+              ipData = {
+                ip: data2.ip,
+                city: data2.city,
+                region: data2.region,
+                country: data2.country_name,
+                lat: data2.latitude,
+                lon: data2.longitude
+              };
+            }
+          } catch {
+            // 继续
+          }
+        }
+
+        if (ipData) {
+          setLocation(ipData);
 
           // 使用wttr.in获取天气信息
           try {
-            const weatherResponse = await fetch(`https://wttr.in/${ipData.city}?format=j1`);
+            const weatherResponse = await fetch(`https://wttr.in/${encodeURIComponent(ipData.city)}?format=j1`);
             const weatherData = await weatherResponse.json();
             const current = weatherData.current_condition[0];
             setWeather({
               temp: parseInt(current.temp_C),
-              description: current.lang_zh[0]?.value || current.weatherDesc[0].value,
+              description: current.lang_zh?.[0]?.value || current.weatherDesc[0].value,
               icon: current.weatherCode
             });
           } catch {
