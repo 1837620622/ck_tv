@@ -53,8 +53,20 @@ async function initConfig() {
     return;
   }
 
-  // Cloudflare Pages 环境：使用编译时生成的配置
-  fileConfig = runtimeConfig as unknown as ConfigFileStruct;
+  if (process.env.DOCKER_ENV === 'true') {
+    // eslint-disable-next-line @typescript-eslint/no-implied-eval
+    const _require = eval('require') as NodeRequire;
+    const fs = _require('fs') as typeof import('fs');
+    const path = _require('path') as typeof import('path');
+
+    const configPath = path.join(process.cwd(), 'config.json');
+    const raw = fs.readFileSync(configPath, 'utf-8');
+    fileConfig = JSON.parse(raw) as ConfigFileStruct;
+    console.log('load dynamic config success');
+  } else {
+    // 默认使用编译时生成的配置
+    fileConfig = runtimeConfig as unknown as ConfigFileStruct;
+  }
   const storageType = process.env.NEXT_PUBLIC_STORAGE_TYPE || 'localstorage';
   if (storageType !== 'localstorage') {
     // 数据库存储，读取并补全管理员配置
@@ -386,8 +398,20 @@ export async function resetConfig() {
     }
   }
 
-  // Cloudflare Pages 环境：使用编译时生成的配置
-  fileConfig = runtimeConfig as unknown as ConfigFileStruct;
+  if (process.env.DOCKER_ENV === 'true') {
+    // eslint-disable-next-line @typescript-eslint/no-implied-eval
+    const _require = eval('require') as NodeRequire;
+    const fs = _require('fs') as typeof import('fs');
+    const path = _require('path') as typeof import('path');
+
+    const configPath = path.join(process.cwd(), 'config.json');
+    const raw = fs.readFileSync(configPath, 'utf-8');
+    fileConfig = JSON.parse(raw) as ConfigFileStruct;
+    console.log('load dynamic config success');
+  } else {
+    // 默认使用编译时生成的配置
+    fileConfig = runtimeConfig as unknown as ConfigFileStruct;
+  }
 
   const apiSiteEntries = Object.entries(fileConfig.api_site);
   const customCategories = fileConfig.custom_category || [];

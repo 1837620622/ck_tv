@@ -1,7 +1,10 @@
 /* eslint-disable no-console, @typescript-eslint/no-explicit-any, @typescript-eslint/no-non-null-assertion */
 
 import { AdminConfig } from './admin.types';
+import { D1Storage } from './d1.db';
+import { RedisStorage } from './redis.db';
 import { Favorite, IStorage, PlayRecord, SkipConfig } from './types';
+import { UpstashRedisStorage } from './upstash.db';
 
 // storage type 常量: 'localstorage' | 'redis' | 'd1' | 'upstash'，默认 'localstorage'
 const STORAGE_TYPE =
@@ -13,18 +16,19 @@ const STORAGE_TYPE =
     | undefined) || 'localstorage';
 
 // 创建存储实例
-// 注意：node-redis 不兼容 Cloudflare Workers，在 Cloudflare Pages 环境下只支持 upstash 和 localstorage
 function createStorage(): IStorage {
-  // Cloudflare Pages 环境下：仅支持 upstash 或 localstorage
-  // redis 类型在此环境不可用，会降级为 null
-  if (STORAGE_TYPE === 'upstash') {
-    // upstash 使用 HTTP API，兼容 Cloudflare Workers
-    // 懒加载方式，在实际使用时才导入
-    const { UpstashRedisStorage } = require('./upstash.db');
-    return new UpstashRedisStorage();
+  switch (STORAGE_TYPE) {
+    case 'redis':
+      return new RedisStorage();
+    case 'upstash':
+      return new UpstashRedisStorage();
+    case 'd1':
+      return new D1Storage();
+    case 'localstorage':
+    default:
+      // 默认返回内存实现，保证本地开发可用
+      return null as unknown as IStorage;
   }
-  // localstorage 或其他类型返回 null
-  return null as unknown as IStorage;
 }
 
 // 单例存储实例
