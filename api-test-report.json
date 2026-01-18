@@ -1,0 +1,799 @@
+{
+  "testTime": "2026-01-18T14:32:38.968Z",
+  "totalApis": 92,
+  "successCount": 23,
+  "noDataCount": 0,
+  "failedCount": 69,
+  "totalTimeMs": 81430,
+  "results": [
+    {
+      "key": "dyttzy",
+      "name": "电影天堂资源",
+      "api": "http://caiji.dyttzyapi.com/api.php/provide/vod",
+      "status": "success",
+      "httpCode": 200,
+      "timeMs": 1206,
+      "dataCount": 20,
+      "hasValidData": true
+    },
+    {
+      "key": "heimuer",
+      "name": "黑木耳",
+      "api": "https://json.heimuer.xyz/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 8001,
+      "error": "超时"
+    },
+    {
+      "key": "ruyi",
+      "name": "如意资源",
+      "api": "http://cj.rycjapi.com/api.php/provide/vod",
+      "status": "success",
+      "httpCode": 200,
+      "timeMs": 970,
+      "dataCount": 20,
+      "hasValidData": true
+    },
+    {
+      "key": "bfzy",
+      "name": "暴风资源",
+      "api": "https://bfzyapi.com/api.php/provide/vod",
+      "status": "success",
+      "httpCode": 200,
+      "timeMs": 2346,
+      "dataCount": 20,
+      "hasValidData": true
+    },
+    {
+      "key": "tyyszy",
+      "name": "天涯资源",
+      "api": "https://tyyszy.com/api.php/provide/vod",
+      "status": "success",
+      "httpCode": 200,
+      "timeMs": 934,
+      "dataCount": 20,
+      "hasValidData": true
+    },
+    {
+      "key": "ffzy",
+      "name": "非凡影视",
+      "api": "http://ffzy5.tv/api.php/provide/vod",
+      "status": "http_error",
+      "httpCode": 403,
+      "timeMs": 2767,
+      "error": "HTTP 403"
+    },
+    {
+      "key": "zy360",
+      "name": "360资源",
+      "api": "https://360zy.com/api.php/provide/vod",
+      "status": "success",
+      "httpCode": 200,
+      "timeMs": 2337,
+      "dataCount": 20,
+      "hasValidData": true
+    },
+    {
+      "key": "maotaizy",
+      "name": "茅台资源",
+      "api": "https://caiji.maotaizy.cc/api.php/provide/vod",
+      "status": "success",
+      "httpCode": 200,
+      "timeMs": 1811,
+      "dataCount": 20,
+      "hasValidData": true
+    },
+    {
+      "key": "wolong",
+      "name": "卧龙资源",
+      "api": "https://wolongzyw.com/api.php/provide/vod",
+      "status": "success",
+      "httpCode": 200,
+      "timeMs": 1812,
+      "dataCount": 20,
+      "hasValidData": true
+    },
+    {
+      "key": "jisu",
+      "name": "极速资源",
+      "api": "https://jszyapi.com/api.php/provide/vod",
+      "status": "success",
+      "httpCode": 200,
+      "timeMs": 2662,
+      "dataCount": 20,
+      "hasValidData": true
+    },
+    {
+      "key": "dbzy",
+      "name": "豆瓣资源",
+      "api": "https://dbzy.tv/api.php/provide/vod",
+      "status": "success",
+      "httpCode": 200,
+      "timeMs": 1734,
+      "dataCount": 20,
+      "hasValidData": true
+    },
+    {
+      "key": "mozhua",
+      "name": "魔爪资源",
+      "api": "https://mozhuazy.com/api.php/provide/vod",
+      "status": "http_error",
+      "httpCode": 521,
+      "timeMs": 1177,
+      "error": "HTTP 521"
+    },
+    {
+      "key": "mdzy",
+      "name": "魔都资源",
+      "api": "https://www.mdzyapi.com/api.php/provide/vod",
+      "status": "success",
+      "httpCode": 200,
+      "timeMs": 2404,
+      "dataCount": 20,
+      "hasValidData": true
+    },
+    {
+      "key": "zuid",
+      "name": "最大资源",
+      "api": "https://api.zuidapi.com/api.php/provide/vod",
+      "status": "success",
+      "httpCode": 200,
+      "timeMs": 663,
+      "dataCount": 20,
+      "hasValidData": true
+    },
+    {
+      "key": "yinghua",
+      "name": "樱花资源",
+      "api": "https://m3u8.apiyhzy.com/api.php/provide/vod",
+      "status": "success",
+      "httpCode": 200,
+      "timeMs": 1390,
+      "dataCount": 20,
+      "hasValidData": true
+    },
+    {
+      "key": "wujin",
+      "name": "无尽资源",
+      "api": "https://api.wujinapi.me/api.php/provide/vod",
+      "status": "success",
+      "httpCode": 200,
+      "timeMs": 1244,
+      "dataCount": 20,
+      "hasValidData": true
+    },
+    {
+      "key": "wwzy",
+      "name": "旺旺短剧",
+      "api": "https://wwzy.tv/api.php/provide/vod",
+      "status": "success",
+      "httpCode": 200,
+      "timeMs": 1458,
+      "dataCount": 20,
+      "hasValidData": true
+    },
+    {
+      "key": "ikun",
+      "name": "iKun资源",
+      "api": "https://ikunzyapi.com/api.php/provide/vod",
+      "status": "success",
+      "httpCode": 200,
+      "timeMs": 926,
+      "dataCount": 20,
+      "hasValidData": true
+    },
+    {
+      "key": "lzi",
+      "name": "量子资源站",
+      "api": "https://cj.lziapi.com/api.php/provide/vod",
+      "status": "success",
+      "httpCode": 200,
+      "timeMs": 1273,
+      "dataCount": 20,
+      "hasValidData": true
+    },
+    {
+      "key": "xiaomaomi",
+      "name": "小猫咪资源",
+      "api": "https://zy.xmm.hk/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 8003,
+      "error": "超时"
+    },
+    {
+      "key": "fantuan",
+      "name": "饭团影视",
+      "api": "https://www.fantuan.tv/api.php/provide/vod/",
+      "status": "error",
+      "timeMs": 7569,
+      "error": "fetch failed"
+    },
+    {
+      "key": "ysgc",
+      "name": "影视工厂",
+      "api": "https://cj.lziapi.com/api.php/provide/vod/",
+      "status": "success",
+      "httpCode": 200,
+      "timeMs": 1148,
+      "dataCount": 20,
+      "hasValidData": true
+    },
+    {
+      "key": "qiqi",
+      "name": "七七资源",
+      "api": "https://www.qiqidys.com/api.php/provide/vod/",
+      "status": "error",
+      "timeMs": 8002,
+      "error": "超时"
+    },
+    {
+      "key": "hongniu",
+      "name": "红牛资源",
+      "api": "https://www.hongniuzy2.com/api.php/provide/vod",
+      "status": "success",
+      "httpCode": 200,
+      "timeMs": 960,
+      "dataCount": 20,
+      "hasValidData": true
+    },
+    {
+      "key": "ukuzy",
+      "name": "U酷资源",
+      "api": "https://api.ukuapi.com/api.php/provide/vod",
+      "status": "success",
+      "httpCode": 200,
+      "timeMs": 5575,
+      "dataCount": 20,
+      "hasValidData": true
+    },
+    {
+      "key": "baidu",
+      "name": "百度云资源",
+      "api": "https://api.apibdzy.com/api.php/provide/vod",
+      "status": "success",
+      "httpCode": 200,
+      "timeMs": 1267,
+      "dataCount": 20,
+      "hasValidData": true
+    },
+    {
+      "key": "qilin",
+      "name": "麒麟资源",
+      "api": "https://www.qilinzyz.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 291,
+      "error": "Unexpected token 'I', \"IP未授权！\" is not valid JSON"
+    },
+    {
+      "key": "kuaikan",
+      "name": "快看资源",
+      "api": "https://kuaikanzy.net/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 1755,
+      "error": "Unexpected token '<', \"<!doctype \"... is not valid JSON"
+    },
+    {
+      "key": "leshi",
+      "name": "乐视资源",
+      "api": "https://leshizyapi.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 7850,
+      "error": "fetch failed"
+    },
+    {
+      "key": "suoni",
+      "name": "索尼资源",
+      "api": "https://suoniapi.com/api.php/provide/vod",
+      "status": "success",
+      "httpCode": 200,
+      "timeMs": 886,
+      "dataCount": 20,
+      "hasValidData": true
+    },
+    {
+      "key": "niuniu",
+      "name": "牛牛资源",
+      "api": "https://niuniuzyapi.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 7390,
+      "error": "fetch failed"
+    },
+    {
+      "key": "okzy",
+      "name": "OK资源",
+      "api": "https://okzyapi.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 2178,
+      "error": "fetch failed"
+    },
+    {
+      "key": "zy49",
+      "name": "49资源",
+      "api": "https://49zyw.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 8001,
+      "error": "超时"
+    },
+    {
+      "key": "qihu",
+      "name": "奇虎资源",
+      "api": "https://qihuzyapi.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 8000,
+      "error": "超时"
+    },
+    {
+      "key": "yaya",
+      "name": "鸭鸭资源",
+      "api": "https://yayaduanzi.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 7547,
+      "error": "fetch failed"
+    },
+    {
+      "key": "zy1080",
+      "name": "优质资源库",
+      "api": "https://1080zyku.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 7366,
+      "error": "fetch failed"
+    },
+    {
+      "key": "fqzy",
+      "name": "番茄资源",
+      "api": "https://api.fqzyapi.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 7404,
+      "error": "fetch failed"
+    },
+    {
+      "key": "feimao",
+      "name": "飞猫资源",
+      "api": "https://www.feimaozy.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 8001,
+      "error": "超时"
+    },
+    {
+      "key": "huya",
+      "name": "虎牙资源",
+      "api": "https://huyaapi.com/api.php/provide/vod",
+      "status": "http_error",
+      "httpCode": 404,
+      "timeMs": 1083,
+      "error": "HTTP 404"
+    },
+    {
+      "key": "xinlang",
+      "name": "新浪资源",
+      "api": "https://api.xinlangapi.com/api.php/provide/vod",
+      "status": "http_error",
+      "httpCode": 403,
+      "timeMs": 1049,
+      "error": "HTTP 403"
+    },
+    {
+      "key": "sugeng",
+      "name": "速更资源",
+      "api": "https://sugengzy.cn/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 5041,
+      "error": "fetch failed"
+    },
+    {
+      "key": "guangsu",
+      "name": "光速资源",
+      "api": "https://guangsuzy.com/api.php/provide/vod",
+      "status": "http_error",
+      "httpCode": 404,
+      "timeMs": 946,
+      "error": "HTTP 404"
+    },
+    {
+      "key": "shandian",
+      "name": "闪电资源",
+      "api": "https://sdzyapi.com/api.php/provide/vod",
+      "status": "success",
+      "httpCode": 200,
+      "timeMs": 2583,
+      "dataCount": 20,
+      "hasValidData": true
+    },
+    {
+      "key": "kuaiche",
+      "name": "快车资源",
+      "api": "https://kuaichezy.com/api.php/provide/vod",
+      "status": "http_error",
+      "httpCode": 403,
+      "timeMs": 1513,
+      "error": "HTTP 403"
+    },
+    {
+      "key": "guanjun",
+      "name": "冠军资源",
+      "api": "https://www.cmpzy.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 8002,
+      "error": "超时"
+    },
+    {
+      "key": "jinying",
+      "name": "金鹰资源",
+      "api": "https://jinyingzy.com/api.php/provide/vod",
+      "status": "success",
+      "httpCode": 200,
+      "timeMs": 1236,
+      "dataCount": 20,
+      "hasValidData": true
+    },
+    {
+      "key": "xiangkan",
+      "name": "想看资源",
+      "api": "https://xiangkanzy.cc/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 7390,
+      "error": "fetch failed"
+    },
+    {
+      "key": "tiankong",
+      "name": "天空资源",
+      "api": "https://tiankongapi.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 8001,
+      "error": "超时"
+    },
+    {
+      "key": "kudian",
+      "name": "酷点资源",
+      "api": "https://www.kudian8.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 7332,
+      "error": "fetch failed"
+    },
+    {
+      "key": "beidou",
+      "name": "北斗星资源",
+      "api": "https://bdxzyapi.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 7325,
+      "error": "fetch failed"
+    },
+    {
+      "key": "feisu",
+      "name": "飞速资源",
+      "api": "https://fszy2.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 8002,
+      "error": "超时"
+    },
+    {
+      "key": "taopian",
+      "name": "淘片资源",
+      "api": "https://taopianapi.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 8002,
+      "error": "超时"
+    },
+    {
+      "key": "shensu",
+      "name": "神速资源",
+      "api": "https://shensuzy.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 8001,
+      "error": "超时"
+    },
+    {
+      "key": "yule",
+      "name": "鱼乐资源",
+      "api": "https://www.ylzy1.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 8002,
+      "error": "超时"
+    },
+    {
+      "key": "songshu",
+      "name": "松鼠资源",
+      "api": "https://songshuzyapi.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 7695,
+      "error": "fetch failed"
+    },
+    {
+      "key": "ckzy",
+      "name": "CK资源",
+      "api": "https://ckzyapi.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 8003,
+      "error": "超时"
+    },
+    {
+      "key": "xiaomao2",
+      "name": "小猫资源2",
+      "api": "https://zy.xiaomaomi.cc/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 8001,
+      "error": "超时"
+    },
+    {
+      "key": "kuyun",
+      "name": "酷云资源",
+      "api": "https://kuyunzyapi.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 8001,
+      "error": "超时"
+    },
+    {
+      "key": "zuixin",
+      "name": "最新资源",
+      "api": "https://www.zuixzy.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 8008,
+      "error": "超时"
+    },
+    {
+      "key": "laoya",
+      "name": "老鸭资源",
+      "api": "https://laoyaapi.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 7339,
+      "error": "fetch failed"
+    },
+    {
+      "key": "mahua",
+      "name": "麻花资源",
+      "api": "https://mahuazyapi.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 7639,
+      "error": "fetch failed"
+    },
+    {
+      "key": "bajie",
+      "name": "八戒资源",
+      "api": "https://bajiezyapi.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 7429,
+      "error": "fetch failed"
+    },
+    {
+      "key": "leku",
+      "name": "乐库资源",
+      "api": "https://lekuzyapi.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 8002,
+      "error": "超时"
+    },
+    {
+      "key": "zy8k",
+      "name": "8K资源",
+      "api": "https://www.8kzy.com/api.php/provide/vod",
+      "status": "http_error",
+      "httpCode": 403,
+      "timeMs": 852,
+      "error": "HTTP 403"
+    },
+    {
+      "key": "subo",
+      "name": "速播资源",
+      "api": "https://suboapi.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 724,
+      "error": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
+    },
+    {
+      "key": "yongjiu",
+      "name": "永久资源",
+      "api": "https://yongjiuzyapi.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 7330,
+      "error": "fetch failed"
+    },
+    {
+      "key": "chaoji",
+      "name": "超级资源",
+      "api": "https://chaojizyapi.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 7685,
+      "error": "fetch failed"
+    },
+    {
+      "key": "sole",
+      "name": "搜乐资源",
+      "api": "https://www.solezy.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 740,
+      "error": "Unexpected token '<', \"<!DOCTYPE \"... is not valid JSON"
+    },
+    {
+      "key": "moka",
+      "name": "魔卡资源",
+      "api": "https://mokazyapi.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 7374,
+      "error": "fetch failed"
+    },
+    {
+      "key": "tiantang",
+      "name": "天堂资源",
+      "api": "https://tiantangapi.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 8002,
+      "error": "超时"
+    },
+    {
+      "key": "lemiao",
+      "name": "乐喵资源",
+      "api": "https://lemiaozyapi.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 7366,
+      "error": "fetch failed"
+    },
+    {
+      "key": "qbzy",
+      "name": "全搜资源",
+      "api": "https://qbzyapi.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 7579,
+      "error": "fetch failed"
+    },
+    {
+      "key": "mingtian",
+      "name": "明日资源",
+      "api": "https://zy.nmbaojie.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 8002,
+      "error": "超时"
+    },
+    {
+      "key": "zy771",
+      "name": "771资源",
+      "api": "https://771zyapi.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 7428,
+      "error": "fetch failed"
+    },
+    {
+      "key": "zy1717",
+      "name": "1717资源",
+      "api": "https://1717zyapi.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 8007,
+      "error": "超时"
+    },
+    {
+      "key": "kukuzy",
+      "name": "酷酷资源",
+      "api": "https://kukuzyapi.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 8001,
+      "error": "超时"
+    },
+    {
+      "key": "zy135",
+      "name": "135资源",
+      "api": "https://135zyapi.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 7440,
+      "error": "fetch failed"
+    },
+    {
+      "key": "feifei",
+      "name": "飞飞资源",
+      "api": "https://feifeicmsapi.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 8002,
+      "error": "超时"
+    },
+    {
+      "key": "chitu",
+      "name": "赤兔资源",
+      "api": "https://chituzyapi.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 7450,
+      "error": "fetch failed"
+    },
+    {
+      "key": "haiyang",
+      "name": "海洋资源",
+      "api": "https://haiyangzyapi.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 8001,
+      "error": "超时"
+    },
+    {
+      "key": "zanpian",
+      "name": "赞片资源",
+      "api": "https://zanpianzyapi.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 7345,
+      "error": "fetch failed"
+    },
+    {
+      "key": "zy131",
+      "name": "131资源",
+      "api": "https://131zyapi.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 7381,
+      "error": "fetch failed"
+    },
+    {
+      "key": "zy605",
+      "name": "605资源",
+      "api": "https://765zyapi.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 7819,
+      "error": "fetch failed"
+    },
+    {
+      "key": "zy398",
+      "name": "398资源",
+      "api": "https://398zyapi.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 8001,
+      "error": "超时"
+    },
+    {
+      "key": "zy88",
+      "name": "88资源",
+      "api": "https://88zywapi.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 8001,
+      "error": "超时"
+    },
+    {
+      "key": "kubo",
+      "name": "酷播资源",
+      "api": "https://kubozyapi.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 7369,
+      "error": "fetch failed"
+    },
+    {
+      "key": "zy265",
+      "name": "超快资源",
+      "api": "https://265zyapi.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 7750,
+      "error": "fetch failed"
+    },
+    {
+      "key": "gaoqing",
+      "name": "高清资源",
+      "api": "https://gaoqingzyapi.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 7419,
+      "error": "fetch failed"
+    },
+    {
+      "key": "haku",
+      "name": "哈酷资源",
+      "api": "https://hakuzyapi.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 7637,
+      "error": "fetch failed"
+    },
+    {
+      "key": "baiwan",
+      "name": "百万资源",
+      "api": "https://baiwanzyapi.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 7402,
+      "error": "fetch failed"
+    },
+    {
+      "key": "zy520",
+      "name": "520资源",
+      "api": "https://520zyzapi.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 7437,
+      "error": "fetch failed"
+    },
+    {
+      "key": "maoyan",
+      "name": "猫眼资源",
+      "api": "https://maoyanzyapi.com/api.php/provide/vod",
+      "status": "error",
+      "timeMs": 7343,
+      "error": "fetch failed"
+    }
+  ]
+}
