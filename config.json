@@ -98,22 +98,6 @@
     "ffzy": {
       "api": "https://www.ffzy.tv/api.php/provide/vod",
       "name": "非凡资源"
-    },
-    "tiankong": {
-      "api": "https://api.tiankongapi.com/api.php/provide/vod",
-      "name": "天空资源"
-    },
-    "feisu": {
-      "api": "https://www.feisuzyapi.com/api.php/provide/vod",
-      "name": "飞速资源"
-    },
-    "taopian": {
-      "api": "https://taopianzy.com/api.php/provide/vod",
-      "name": "淘片资源"
-    },
-    "kubo": {
-      "api": "https://kubozy.net/api.php/provide/vod",
-      "name": "酷播资源"
     }
   }
 }
