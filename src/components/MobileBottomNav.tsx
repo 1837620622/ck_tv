@@ -2,7 +2,7 @@
 
 'use client';
 
-import { Clover, Film, Heart, Home, PlayCircle, Search, Sparkles, Star, Tv } from 'lucide-react';
+import { Clover, Film, Flame, Heart, Home, PlayCircle, Search, Sparkles, Star, Tv, Wine } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -21,14 +21,16 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
   const currentActive = activePath ?? pathname;
 
   const [navItems, setNavItems] = useState([
-    { icon: Home, label: '首页', href: '/' },
-    { icon: Search, label: '搜索', href: '/search' },
-    { icon: Film, label: '电影', href: '/douban?type=movie' },
-    { icon: Tv, label: '剧集', href: '/douban?type=tv' },
-    { icon: Clover, label: '综艺', href: '/douban?type=show' },
-    { icon: PlayCircle, label: '短剧', href: '/douban?type=drama' },
-    { icon: Sparkles, label: '动漫', href: '/douban?type=anime' },
-    { icon: Heart, label: '收藏', href: '/?tab=favorites' },
+    { icon: Home, label: 'Home', href: '/' },
+    { icon: Search, label: 'Search', href: '/search' },
+    { icon: Film, label: 'Movie', href: '/douban?type=movie' },
+    { icon: Tv, label: 'TV', href: '/douban?type=tv' },
+    { icon: Clover, label: 'Show', href: '/douban?type=show' },
+    { icon: PlayCircle, label: 'Drama', href: '/douban?type=drama' },
+    { icon: Sparkles, label: 'Anime', href: '/douban?type=anime' },
+    { icon: Flame, label: 'Adult', href: '/douban?type=adult' },
+    { icon: Wine, label: 'Erotic', href: '/douban?type=erotic' },
+    { icon: Heart, label: 'Favorites', href: '/?tab=favorites' },
   ]);
 
   useEffect(() => {

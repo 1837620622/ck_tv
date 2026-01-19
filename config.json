@@ -1,10 +1,11 @@
 {
   "cache_time": 7200,
   "api_categories": {
-    "general": "🎬 综合影视",
-    "drama": "📺 短剧资源",
-    "anime": "🎭 动漫资源",
-    "adult": "🔞 成人资源"
+    "general": "General",
+    "drama": "Drama",
+    "anime": "Anime",
+    "adult": "Adult",
+    "erotic": "Erotic"
   },
   "api_site": {
     "dyttzy": {
