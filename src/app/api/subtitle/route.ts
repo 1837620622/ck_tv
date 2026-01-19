@@ -95,15 +95,18 @@ async function transcribeWithWhisper(
   }
 
   try {
+    // 将 ArrayBuffer 转换为 Uint8Array 数组格式（官方推荐）
+    const audioArray = Array.from(new Uint8Array(audioData));
+
     const response = await fetch(
       `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/@cf/openai/whisper`,
       {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${apiToken}`,
-          'Content-Type': 'application/octet-stream',
+          'Content-Type': 'application/json',
         },
-        body: audioData,
+        body: JSON.stringify({ audio: audioArray }),
       }
     );
 
