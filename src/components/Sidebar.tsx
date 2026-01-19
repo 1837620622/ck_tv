@@ -129,37 +129,31 @@ const Sidebar = ({ onToggle, activePath = '/' }: SidebarProps) => {
       icon: Film,
       label: '电影',
       href: '/douban?type=movie',
-      emoji: '🎬',
     },
     {
       icon: Tv,
       label: '剧集',
       href: '/douban?type=tv',
-      emoji: '📺',
     },
     {
       icon: Clover,
       label: '综艺',
       href: '/douban?type=show',
-      emoji: '🎭',
     },
     {
       icon: PlayCircle,
       label: '短剧',
       href: '/douban?type=drama',
-      emoji: '🎞️',
     },
     {
       icon: Sparkles,
       label: '动漫',
       href: '/douban?type=anime',
-      emoji: '✨',
     },
     {
       icon: Heart,
       label: '收藏',
       href: '/?tab=favorites',
-      emoji: '❤️',
     },
   ]);
 

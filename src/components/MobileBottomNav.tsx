@@ -21,14 +21,14 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
   const currentActive = activePath ?? pathname;
 
   const [navItems, setNavItems] = useState([
-    { icon: Home, label: '首页', href: '/', emoji: '🏠' },
-    { icon: Search, label: '搜索', href: '/search', emoji: '🔍' },
-    { icon: Film, label: '电影', href: '/douban?type=movie', emoji: '🎬' },
-    { icon: Tv, label: '剧集', href: '/douban?type=tv', emoji: '📺' },
-    { icon: Clover, label: '综艺', href: '/douban?type=show', emoji: '🎭' },
-    { icon: PlayCircle, label: '短剧', href: '/douban?type=drama', emoji: '🎞️' },
-    { icon: Sparkles, label: '动漫', href: '/douban?type=anime', emoji: '✨' },
-    { icon: Heart, label: '收藏', href: '/?tab=favorites', emoji: '❤️' },
+    { icon: Home, label: '首页', href: '/' },
+    { icon: Search, label: '搜索', href: '/search' },
+    { icon: Film, label: '电影', href: '/douban?type=movie' },
+    { icon: Tv, label: '剧集', href: '/douban?type=tv' },
+    { icon: Clover, label: '综艺', href: '/douban?type=show' },
+    { icon: PlayCircle, label: '短剧', href: '/douban?type=drama' },
+    { icon: Sparkles, label: '动漫', href: '/douban?type=anime' },
+    { icon: Heart, label: '收藏', href: '/?tab=favorites' },
   ]);
 
   useEffect(() => {
