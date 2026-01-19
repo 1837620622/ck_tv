@@ -206,6 +206,26 @@
       "api": "https://apilj.com/api.php/provide/vod",
       "name": "辣椒资源",
       "category": "adult"
+    },
+    "wolongcj": {
+      "api": "https://collect.wolongzyw.com/api.php/provide/vod",
+      "name": "卧龙采集"
+    },
+    "zuidame": {
+      "api": "http://zuidazy.me/api.php/provide/vod",
+      "name": "最大资源ME"
+    },
+    "piaoling": {
+      "api": "https://p2100.net/api.php/provide/vod",
+      "name": "飘零资源"
+    },
+    "moducj": {
+      "api": "https://caiji.moduapi.cc/api.php/provide/vod",
+      "name": "魔都采集"
+    },
+    "haohua": {
+      "api": "https://hhzyapi.com/api.php/provide/vod",
+      "name": "豪华资源"
     }
   }
 }
