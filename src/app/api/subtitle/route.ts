@@ -5,13 +5,28 @@
  * 使用 Cloudflare Workers AI 的 Whisper 模型生成字幕
  * 
  * 特点：
- * - 免费额度：每天 10,000 次请求
+ * - 免费额度：每天 10,000 Neurons (约 243 分钟音频)
+ * - 超出免费额度自动停用，不产生费用
  * - 支持中文、英语、日语等多种语言
  * - 返回 VTT 格式字幕，可直接用于 Artplayer
  * =============================================================================
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+
+// -----------------------------------------------------------------------------
+// 免费额度配置
+// -----------------------------------------------------------------------------
+
+/** 每天免费 Neurons 限制 */
+const DAILY_FREE_NEURONS = 10000;
+
+/** Whisper 每分钟消耗的 Neurons */
+const NEURONS_PER_MINUTE = 41.14;
+
+/** 今日已使用 Neurons (简单内存存储，生产环境应使用 KV/D1) */
+let todayUsedNeurons = 0;
+let lastResetDate = new Date().toDateString();
 
 // -----------------------------------------------------------------------------
 // 类型定义
@@ -160,6 +175,28 @@ function formatVTTTime(seconds: number): string {
 // API 路由处理
 // -----------------------------------------------------------------------------
 
+/**
+ * 检查并更新免费额度
+ */
+function checkAndUpdateQuota(audioDurationMinutes: number): { allowed: boolean; remaining: number } {
+  // 每天 UTC 0 点重置
+  const today = new Date().toDateString();
+  if (today !== lastResetDate) {
+    todayUsedNeurons = 0;
+    lastResetDate = today;
+  }
+
+  const neuronsNeeded = audioDurationMinutes * NEURONS_PER_MINUTE;
+  const remaining = DAILY_FREE_NEURONS - todayUsedNeurons;
+
+  if (todayUsedNeurons + neuronsNeeded > DAILY_FREE_NEURONS) {
+    return { allowed: false, remaining };
+  }
+
+  todayUsedNeurons += neuronsNeeded;
+  return { allowed: true, remaining: DAILY_FREE_NEURONS - todayUsedNeurons };
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json() as SubtitleRequest;
@@ -170,6 +207,19 @@ export async function POST(request: NextRequest) {
         { error: '缺少视频 URL' },
         { status: 400 }
       );
+    }
+
+    // 0. 预估音频时长并检查配额 (假设 5MB 约 5 分钟)
+    const estimatedMinutes = 5;
+    const quotaCheck = checkAndUpdateQuota(estimatedMinutes);
+
+    if (!quotaCheck.allowed) {
+      return NextResponse.json({
+        error: '今日免费额度已用完',
+        message: `每天免费额度约 243 分钟，明天 UTC 0 点重置`,
+        remaining: quotaCheck.remaining,
+        resetTime: 'UTC 0:00',
+      }, { status: 429 });
     }
 
     // 1. 提取音频
@@ -201,6 +251,11 @@ export async function POST(request: NextRequest) {
       text: result.text,
       vtt: vtt || '',
       wordCount: result.word_count || 0,
+      quota: {
+        used: todayUsedNeurons,
+        remaining: DAILY_FREE_NEURONS - todayUsedNeurons,
+        limit: DAILY_FREE_NEURONS,
+      },
     });
 
   } catch (err) {
