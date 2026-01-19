@@ -182,6 +182,18 @@
     "zy155": {
       "api": "https://155api.com/api.php/provide/vod",
       "name": "155资源"
+    },
+    "danaizi": {
+      "api": "https://apidanaizi.com/api.php/provide/vod",
+      "name": "大奶子资源"
+    },
+    "fhapi9": {
+      "api": "http://fhapi9.com/api.php/provide/vod",
+      "name": "风行资源"
+    },
+    "apilj": {
+      "api": "https://apilj.com/api.php/provide/vod",
+      "name": "辣椒资源"
     }
   }
 }
