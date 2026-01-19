@@ -2,7 +2,7 @@
 
 'use client';
 
-import { Clover, Film, Flame, Heart, Home, Menu, PlayCircle, Search, Sparkles, Star, Tv, Wine } from 'lucide-react';
+import { Clover, Film, Heart, Home, Menu, Search, Star, Tv } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -139,26 +139,6 @@ const Sidebar = ({ onToggle, activePath = '/' }: SidebarProps) => {
       icon: Clover,
       label: '综艺',
       href: '/douban?type=show',
-    },
-    {
-      icon: PlayCircle,
-      label: '短剧',
-      href: '/douban?type=drama',
-    },
-    {
-      icon: Sparkles,
-      label: '动漫',
-      href: '/douban?type=anime',
-    },
-    {
-      icon: Flame,
-      label: 'Adult',
-      href: '/douban?type=adult',
-    },
-    {
-      icon: Wine,
-      label: 'Erotic',
-      href: '/douban?type=erotic',
     },
     {
       icon: Heart,
