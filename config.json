@@ -1,9 +1,16 @@
 {
   "cache_time": 7200,
+  "api_categories": {
+    "general": "🎬 综合影视",
+    "drama": "📺 短剧资源",
+    "anime": "🎭 动漫资源",
+    "adult": "🔞 成人资源"
+  },
   "api_site": {
     "dyttzy": {
       "api": "http://caiji.dyttzyapi.com/api.php/provide/vod",
       "name": "电影天堂资源",
+      "category": "general",
       "detail": "http://caiji.dyttzyapi.com"
     },
     "ruyi": {
@@ -57,7 +64,8 @@
     },
     "wwzy": {
       "api": "https://wwzy.tv/api.php/provide/vod",
-      "name": "旺旺短剧"
+      "name": "旺旺短剧",
+      "category": "drama"
     },
     "ikun": {
       "api": "https://ikunzyapi.com/api.php/provide/vod",
@@ -177,7 +185,8 @@
     },
     "zy91md": {
       "api": "https://91md.me/api.php/provide/vod",
-      "name": "91MD资源"
+      "name": "91MD资源",
+      "category": "adult"
     },
     "zy155": {
       "api": "https://155api.com/api.php/provide/vod",
@@ -185,7 +194,8 @@
     },
     "danaizi": {
       "api": "https://apidanaizi.com/api.php/provide/vod",
-      "name": "大奶子资源"
+      "name": "大奶子资源",
+      "category": "adult"
     },
     "fhapi9": {
       "api": "http://fhapi9.com/api.php/provide/vod",
@@ -193,7 +203,8 @@
     },
     "apilj": {
       "api": "https://apilj.com/api.php/provide/vod",
-      "name": "辣椒资源"
+      "name": "辣椒资源",
+      "category": "adult"
     }
   }
 }
