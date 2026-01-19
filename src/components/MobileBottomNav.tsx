@@ -46,16 +46,30 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
 
   const isActive = (href: string) => {
     const typeMatch = href.match(/type=([^&]+)/)?.[1];
+    const subMatch = href.match(/sub=([^&]+)/)?.[1];
 
     // 解码URL以进行正确的比较
     const decodedActive = decodeURIComponent(currentActive);
     const decodedItemHref = decodeURIComponent(href);
 
-    return (
-      decodedActive === decodedItemHref ||
-      (decodedActive.startsWith('/douban') &&
-        decodedActive.includes(`type=${typeMatch}`))
-    );
+    // 精确匹配
+    if (decodedActive === decodedItemHref) return true;
+
+    if (decodedActive.startsWith('/douban') && typeMatch) {
+      const activeHasSub = decodedActive.includes('sub=');
+      const itemHasSub = !!subMatch;
+
+      if (itemHasSub) {
+        // 菜单项有sub参数，必须精确匹配
+        return decodedActive.includes(`type=${typeMatch}`) &&
+          decodedActive.includes(`sub=${subMatch}`);
+      } else {
+        // 菜单项没有sub参数，只有当前URL也没有sub时才匹配
+        return decodedActive.includes(`type=${typeMatch}`) && !activeHasSub;
+      }
+    }
+
+    return false;
   };
 
   return (

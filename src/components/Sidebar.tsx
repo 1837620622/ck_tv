@@ -250,15 +250,27 @@ const Sidebar = ({ onToggle, activePath = '/' }: SidebarProps) => {
                 {menuItems.map((item) => {
                   // 检查当前路径是否匹配这个菜单项
                   const typeMatch = item.href.match(/type=([^&]+)/)?.[1];
+                  const subMatch = item.href.match(/sub=([^&]+)/)?.[1];
 
                   // 解码URL以进行正确的比较
                   const decodedActive = decodeURIComponent(active);
                   const decodedItemHref = decodeURIComponent(item.href);
 
-                  const isActive =
-                    decodedActive === decodedItemHref ||
-                    (decodedActive.startsWith('/douban') &&
-                      decodedActive.includes(`type=${typeMatch}`));
+                  // 精确匹配：如果有sub参数，必须同时匹配type和sub
+                  let isActive = decodedActive === decodedItemHref;
+                  if (!isActive && decodedActive.startsWith('/douban') && typeMatch) {
+                    const activeHasSub = decodedActive.includes('sub=');
+                    const itemHasSub = !!subMatch;
+
+                    if (itemHasSub) {
+                      // 菜单项有sub参数，必须精确匹配
+                      isActive = decodedActive.includes(`type=${typeMatch}`) &&
+                        decodedActive.includes(`sub=${subMatch}`);
+                    } else {
+                      // 菜单项没有sub参数，只有当前URL也没有sub时才匹配
+                      isActive = decodedActive.includes(`type=${typeMatch}`) && !activeHasSub;
+                    }
+                  }
                   const Icon = item.icon;
                   return (
                     <Link
