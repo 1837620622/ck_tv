@@ -154,6 +154,14 @@
     "mt3": {
       "api": "https://maotaizy.cc/api.php/provide/vod",
       "name": "茅台资源3"
+    },
+    "wujin2": {
+      "api": "https://api.wujinapi.com/api.php/provide/vod",
+      "name": "无尽资源2"
+    },
+    "bdzy2": {
+      "api": "https://api.apibdzy.com/api.php/provide/vod",
+      "name": "百度资源2"
     }
   }
 }
