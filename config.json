@@ -118,6 +118,10 @@
     "lbzy": {
       "api": "https://lbapi9.com/api.php/provide/vod",
       "name": "乐播资源"
+    },
+    "lzizy": {
+      "api": "https://lzizy.net/api.php/provide/vod",
+      "name": "量子资源2"
     }
   }
 }
