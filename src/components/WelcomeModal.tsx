@@ -37,6 +37,8 @@ export const WelcomeModal: React.FC = () => {
   const [currentTime, setCurrentTime] = useState<string>('');
   // 动画状态
   const [isAnimated, setIsAnimated] = useState(false);
+  // 倒计时状态
+  const [countdown, setCountdown] = useState(5);
 
   useEffect(() => {
     setMounted(true);
@@ -45,6 +47,7 @@ export const WelcomeModal: React.FC = () => {
     const hasShownWelcome = sessionStorage.getItem('hasShownWelcome');
     if (!hasShownWelcome) {
       setIsOpen(true);
+      setCountdown(5);
       // 延迟启动动画
       setTimeout(() => setIsAnimated(true), 50);
     }
@@ -116,6 +119,13 @@ export const WelcomeModal: React.FC = () => {
 
     return () => clearInterval(timer);
   }, []);
+
+  // 倒计时逻辑
+  useEffect(() => {
+    if (!isOpen || countdown <= 0) return;
+    const timer = setTimeout(() => setCountdown((c: number) => c - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [isOpen, countdown]);
 
   // 关闭弹窗并记录状态
   const handleClose = () => {
@@ -274,11 +284,15 @@ export const WelcomeModal: React.FC = () => {
           <div className='px-6 pb-6'>
             <button
               onClick={handleClose}
-              className='w-full py-3.5 bg-gradient-to-r from-green-500 via-emerald-500 to-teal-500 hover:from-green-600 hover:via-emerald-600 hover:to-teal-600 text-white font-semibold rounded-xl transition-all duration-300 shadow-lg shadow-green-500/25 hover:shadow-xl hover:shadow-green-500/30 active:scale-[0.98]'
+              disabled={countdown > 0}
+              className={`w-full py-3.5 font-semibold rounded-xl transition-all duration-300 ${countdown > 0
+                  ? 'bg-gray-400 text-gray-200 cursor-not-allowed dark:bg-gray-600'
+                  : 'bg-gradient-to-r from-green-500 via-emerald-500 to-teal-500 hover:from-green-600 hover:via-emerald-600 hover:to-teal-600 text-white shadow-lg shadow-green-500/25 hover:shadow-xl hover:shadow-green-500/30 active:scale-[0.98]'
+                }`}
             >
               <span className='flex items-center justify-center gap-2'>
                 <Sparkles className='w-4 h-4' />
-                开始使用
+                {countdown > 0 ? `请阅读免责声明 (${countdown}s)` : '开始使用'}
               </span>
             </button>
           </div>
