@@ -127,27 +127,27 @@ const Sidebar = ({ onToggle, activePath = '/' }: SidebarProps) => {
   const [menuItems, setMenuItems] = useState([
     {
       icon: Film,
-      label: 'Movie',
+      label: '电影',
       href: '/douban?type=movie',
     },
     {
       icon: Tv,
-      label: 'TV',
+      label: '剧集',
       href: '/douban?type=tv',
     },
     {
       icon: Clover,
-      label: 'Show',
+      label: '综艺',
       href: '/douban?type=show',
     },
     {
       icon: PlayCircle,
-      label: 'Drama',
+      label: '短剧',
       href: '/douban?type=drama',
     },
     {
       icon: Sparkles,
-      label: 'Anime',
+      label: '动漫',
       href: '/douban?type=anime',
     },
     {
@@ -162,7 +162,7 @@ const Sidebar = ({ onToggle, activePath = '/' }: SidebarProps) => {
     },
     {
       icon: Heart,
-      label: 'Favorites',
+      label: '收藏',
       href: '/?tab=favorites',
     },
   ]);
