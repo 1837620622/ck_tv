@@ -122,6 +122,26 @@
     "lzizy": {
       "api": "https://lzizy.net/api.php/provide/vod",
       "name": "量子资源2"
+    },
+    "mtzy": {
+      "api": "https://mtzy.me/api.php/provide/vod",
+      "name": "茅台资源2"
+    },
+    "yhzy": {
+      "api": "https://yhzy.cc/api.php/provide/vod",
+      "name": "樱花资源2"
+    },
+    "jinyingnet": {
+      "api": "https://jinyingzy.net/api.php/provide/vod",
+      "name": "金鹰资源2"
+    },
+    "ikun2": {
+      "api": "https://ikunzy.com/api.php/provide/vod",
+      "name": "iKun资源2"
+    },
+    "ffzy2": {
+      "api": "https://ffzy.tv/api.php/provide/vod",
+      "name": "非凡资源2"
     }
   }
 }
