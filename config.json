@@ -98,6 +98,26 @@
     "ffzy": {
       "api": "https://www.ffzy.tv/api.php/provide/vod",
       "name": "非凡资源"
+    },
+    "aosika": {
+      "api": "https://aosikazy.com/api.php/provide/vod",
+      "name": "奥斯卡资源"
+    },
+    "guangsu": {
+      "api": "https://api.guangsuapi.com/api.php/provide/vod",
+      "name": "光速资源"
+    },
+    "ckzy": {
+      "api": "https://ckzy.me/api.php/provide/vod",
+      "name": "CK资源"
+    },
+    "huya": {
+      "api": "https://www.huyaapi.com/api.php/provide/vod",
+      "name": "虎牙资源"
+    },
+    "lbzy": {
+      "api": "https://lbapi9.com/api.php/provide/vod",
+      "name": "乐播资源"
     }
   }
 }

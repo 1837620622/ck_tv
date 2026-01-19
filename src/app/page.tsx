@@ -32,6 +32,7 @@ function HomeClient() {
   const { announcement } = useSite();
 
   const [showAnnouncement, setShowAnnouncement] = useState(false);
+  const [countdown, setCountdown] = useState(5);
 
   // 检查公告弹窗状态
   useEffect(() => {
@@ -39,11 +40,19 @@ function HomeClient() {
       const hasSeenAnnouncement = localStorage.getItem('hasSeenAnnouncement');
       if (hasSeenAnnouncement !== announcement) {
         setShowAnnouncement(true);
+        setCountdown(5);
       } else {
         setShowAnnouncement(Boolean(!hasSeenAnnouncement && announcement));
       }
     }
   }, [announcement]);
+
+  // 倒计时逻辑
+  useEffect(() => {
+    if (!showAnnouncement || countdown <= 0) return;
+    const timer = setTimeout(() => setCountdown((c: number) => c - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [showAnnouncement, countdown]);
 
   // 收藏夹数据
   type FavoriteItem = {
@@ -230,34 +239,34 @@ function HomeClient() {
                 <ScrollableRow>
                   {loading
                     ? // 加载状态显示灰色占位数据
-                      Array.from({ length: 8 }).map((_, index) => (
-                        <div
-                          key={index}
-                          className='min-w-[96px] w-24 sm:min-w-[180px] sm:w-44'
-                        >
-                          <div className='relative aspect-[2/3] w-full overflow-hidden rounded-lg bg-gray-200 animate-pulse dark:bg-gray-800'>
-                            <div className='absolute inset-0 bg-gray-300 dark:bg-gray-700'></div>
-                          </div>
-                          <div className='mt-2 h-4 bg-gray-200 rounded animate-pulse dark:bg-gray-800'></div>
+                    Array.from({ length: 8 }).map((_, index) => (
+                      <div
+                        key={index}
+                        className='min-w-[96px] w-24 sm:min-w-[180px] sm:w-44'
+                      >
+                        <div className='relative aspect-[2/3] w-full overflow-hidden rounded-lg bg-gray-200 animate-pulse dark:bg-gray-800'>
+                          <div className='absolute inset-0 bg-gray-300 dark:bg-gray-700'></div>
                         </div>
-                      ))
+                        <div className='mt-2 h-4 bg-gray-200 rounded animate-pulse dark:bg-gray-800'></div>
+                      </div>
+                    ))
                     : // 显示真实数据
-                      hotMovies.map((movie, index) => (
-                        <div
-                          key={index}
-                          className='min-w-[96px] w-24 sm:min-w-[180px] sm:w-44'
-                        >
-                          <VideoCard
-                            from='douban'
-                            title={movie.title}
-                            poster={movie.poster}
-                            douban_id={movie.id}
-                            rate={movie.rate}
-                            year={movie.year}
-                            type='movie'
-                          />
-                        </div>
-                      ))}
+                    hotMovies.map((movie, index) => (
+                      <div
+                        key={index}
+                        className='min-w-[96px] w-24 sm:min-w-[180px] sm:w-44'
+                      >
+                        <VideoCard
+                          from='douban'
+                          title={movie.title}
+                          poster={movie.poster}
+                          douban_id={movie.id}
+                          rate={movie.rate}
+                          year={movie.year}
+                          type='movie'
+                        />
+                      </div>
+                    ))}
                 </ScrollableRow>
               </section>
 
@@ -278,33 +287,33 @@ function HomeClient() {
                 <ScrollableRow>
                   {loading
                     ? // 加载状态显示灰色占位数据
-                      Array.from({ length: 8 }).map((_, index) => (
-                        <div
-                          key={index}
-                          className='min-w-[96px] w-24 sm:min-w-[180px] sm:w-44'
-                        >
-                          <div className='relative aspect-[2/3] w-full overflow-hidden rounded-lg bg-gray-200 animate-pulse dark:bg-gray-800'>
-                            <div className='absolute inset-0 bg-gray-300 dark:bg-gray-700'></div>
-                          </div>
-                          <div className='mt-2 h-4 bg-gray-200 rounded animate-pulse dark:bg-gray-800'></div>
+                    Array.from({ length: 8 }).map((_, index) => (
+                      <div
+                        key={index}
+                        className='min-w-[96px] w-24 sm:min-w-[180px] sm:w-44'
+                      >
+                        <div className='relative aspect-[2/3] w-full overflow-hidden rounded-lg bg-gray-200 animate-pulse dark:bg-gray-800'>
+                          <div className='absolute inset-0 bg-gray-300 dark:bg-gray-700'></div>
                         </div>
-                      ))
+                        <div className='mt-2 h-4 bg-gray-200 rounded animate-pulse dark:bg-gray-800'></div>
+                      </div>
+                    ))
                     : // 显示真实数据
-                      hotTvShows.map((show, index) => (
-                        <div
-                          key={index}
-                          className='min-w-[96px] w-24 sm:min-w-[180px] sm:w-44'
-                        >
-                          <VideoCard
-                            from='douban'
-                            title={show.title}
-                            poster={show.poster}
-                            douban_id={show.id}
-                            rate={show.rate}
-                            year={show.year}
-                          />
-                        </div>
-                      ))}
+                    hotTvShows.map((show, index) => (
+                      <div
+                        key={index}
+                        className='min-w-[96px] w-24 sm:min-w-[180px] sm:w-44'
+                      >
+                        <VideoCard
+                          from='douban'
+                          title={show.title}
+                          poster={show.poster}
+                          douban_id={show.id}
+                          rate={show.rate}
+                          year={show.year}
+                        />
+                      </div>
+                    ))}
                 </ScrollableRow>
               </section>
 
@@ -325,33 +334,33 @@ function HomeClient() {
                 <ScrollableRow>
                   {loading
                     ? // 加载状态显示灰色占位数据
-                      Array.from({ length: 8 }).map((_, index) => (
-                        <div
-                          key={index}
-                          className='min-w-[96px] w-24 sm:min-w-[180px] sm:w-44'
-                        >
-                          <div className='relative aspect-[2/3] w-full overflow-hidden rounded-lg bg-gray-200 animate-pulse dark:bg-gray-800'>
-                            <div className='absolute inset-0 bg-gray-300 dark:bg-gray-700'></div>
-                          </div>
-                          <div className='mt-2 h-4 bg-gray-200 rounded animate-pulse dark:bg-gray-800'></div>
+                    Array.from({ length: 8 }).map((_, index) => (
+                      <div
+                        key={index}
+                        className='min-w-[96px] w-24 sm:min-w-[180px] sm:w-44'
+                      >
+                        <div className='relative aspect-[2/3] w-full overflow-hidden rounded-lg bg-gray-200 animate-pulse dark:bg-gray-800'>
+                          <div className='absolute inset-0 bg-gray-300 dark:bg-gray-700'></div>
                         </div>
-                      ))
+                        <div className='mt-2 h-4 bg-gray-200 rounded animate-pulse dark:bg-gray-800'></div>
+                      </div>
+                    ))
                     : // 显示真实数据
-                      hotVarietyShows.map((show, index) => (
-                        <div
-                          key={index}
-                          className='min-w-[96px] w-24 sm:min-w-[180px] sm:w-44'
-                        >
-                          <VideoCard
-                            from='douban'
-                            title={show.title}
-                            poster={show.poster}
-                            douban_id={show.id}
-                            rate={show.rate}
-                            year={show.year}
-                          />
-                        </div>
-                      ))}
+                    hotVarietyShows.map((show, index) => (
+                      <div
+                        key={index}
+                        className='min-w-[96px] w-24 sm:min-w-[180px] sm:w-44'
+                      >
+                        <VideoCard
+                          from='douban'
+                          title={show.title}
+                          poster={show.poster}
+                          douban_id={show.id}
+                          rate={show.rate}
+                          year={show.year}
+                        />
+                      </div>
+                    ))}
                 </ScrollableRow>
               </section>
             </>
@@ -360,9 +369,8 @@ function HomeClient() {
       </div>
       {announcement && showAnnouncement && (
         <div
-          className={`fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm dark:bg-black/70 p-4 transition-opacity duration-300 ${
-            showAnnouncement ? '' : 'opacity-0 pointer-events-none'
-          }`}
+          className={`fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm dark:bg-black/70 p-4 transition-opacity duration-300 ${showAnnouncement ? '' : 'opacity-0 pointer-events-none'
+            }`}
         >
           <div className='w-full max-w-md rounded-xl bg-white p-6 shadow-xl dark:bg-gray-900 transform transition-all duration-300 hover:shadow-2xl'>
             <div className='flex justify-between items-start mb-4'>
@@ -385,9 +393,13 @@ function HomeClient() {
             </div>
             <button
               onClick={() => handleCloseAnnouncement(announcement)}
-              className='w-full rounded-lg bg-gradient-to-r from-green-600 to-green-700 px-4 py-3 text-white font-medium shadow-md hover:shadow-lg hover:from-green-700 hover:to-green-800 dark:from-green-600 dark:to-green-700 dark:hover:from-green-700 dark:hover:to-green-800 transition-all duration-300 transform hover:-translate-y-0.5'
+              disabled={countdown > 0}
+              className={`w-full rounded-lg px-4 py-3 font-medium shadow-md transition-all duration-300 ${countdown > 0
+                  ? 'bg-gray-400 text-gray-200 cursor-not-allowed dark:bg-gray-600'
+                  : 'bg-gradient-to-r from-green-600 to-green-700 text-white hover:shadow-lg hover:from-green-700 hover:to-green-800 dark:from-green-600 dark:to-green-700 dark:hover:from-green-700 dark:hover:to-green-800 transform hover:-translate-y-0.5'
+                }`}
             >
-              我知道了
+              {countdown > 0 ? `请阅读 (${countdown}s)` : '我知道了'}
             </button>
           </div>
         </div>
