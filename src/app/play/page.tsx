@@ -24,6 +24,7 @@ import {
 import { SearchResult } from '@/lib/types';
 import { getVideoResolutionFromM3u8, processImageUrl } from '@/lib/utils';
 
+import CloudflareAISubtitle from '@/components/CloudflareAISubtitle';
 import EpisodeSelector from '@/components/EpisodeSelector';
 import PageLayout from '@/components/PageLayout';
 
@@ -100,6 +101,21 @@ function PlayPageClient() {
   useEffect(() => {
     subtitleEnabledRef.current = subtitleEnabled;
   }, [subtitleEnabled]);
+
+  // AI 字幕开关（从 localStorage 继承，默认 false）
+  const [aiSubtitleEnabled, setAiSubtitleEnabled] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const v = localStorage.getItem('enable_ai_subtitle');
+      if (v !== null) return v === 'true';
+    }
+    return false;
+  });
+
+  // 当前播放时间（用于 AI 字幕同步）
+  const [currentPlayTime, setCurrentPlayTime] = useState(0);
+
+  // 当前视频 URL（用于 AI 字幕）
+  const [currentVideoUrl, setCurrentVideoUrl] = useState('');
 
   // 视频基本信息
   const [videoTitle, setVideoTitle] = useState(searchParams.get('title') || '');
@@ -1366,6 +1382,27 @@ function PlayPageClient() {
             },
           },
           {
+            name: 'AI字幕',
+            html: 'AI字幕',
+            icon: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="4" width="20" height="16" rx="2" stroke="#ffffff" stroke-width="2"/><text x="12" y="14" font-size="8" font-weight="bold" text-anchor="middle" fill="#ffffff">AI</text></svg>',
+            switch: aiSubtitleEnabled,
+            onSwitch: function (item: any) {
+              const newVal = !item.switch;
+              try {
+                localStorage.setItem('enable_ai_subtitle', String(newVal));
+                setAiSubtitleEnabled(newVal);
+                // 同步更新设置面板的 switch 状态
+                artPlayerRef.current?.setting?.update({
+                  name: 'AI字幕',
+                  switch: newVal,
+                });
+              } catch (_) {
+                // ignore
+              }
+              return newVal;
+            },
+          },
+          {
             html: '去广告',
             icon: '<text x="50%" y="50%" font-size="20" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#ffffff">AD</text>',
             tooltip: blockAdEnabled ? '已开启' : '已关闭',
@@ -1605,7 +1642,14 @@ function PlayPageClient() {
           saveCurrentPlayProgress();
           lastSaveTimeRef.current = now;
         }
+        // 更新当前播放时间（用于 AI 字幕同步）
+        if (artPlayerRef.current) {
+          setCurrentPlayTime(artPlayerRef.current.currentTime || 0);
+        }
       });
+
+      // 设置当前视频 URL（用于 AI 字幕）
+      setCurrentVideoUrl(videoUrl);
 
       artPlayerRef.current.on('pause', () => {
         saveCurrentPlayProgress();
@@ -1860,6 +1904,14 @@ function PlayPageClient() {
                   ref={artRef}
                   className='bg-black w-full h-full rounded-xl overflow-hidden shadow-lg'
                 ></div>
+
+                {/* Cloudflare AI 字幕 */}
+                <CloudflareAISubtitle
+                  enabled={aiSubtitleEnabled}
+                  videoUrl={currentVideoUrl}
+                  currentTime={currentPlayTime}
+                  language="zh"
+                />
 
                 {/* 换源加载蒙层 */}
                 {isVideoLoading && (
