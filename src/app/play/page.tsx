@@ -1357,8 +1357,8 @@ function PlayPageClient() {
         },
         settings: [
           {
-            name: '内嵌字幕',
-            html: '内嵌字幕',
+            name: '显示字幕',
+            html: '显示字幕',
             icon: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="4" width="20" height="16" rx="2" stroke="#ffffff" stroke-width="2"/><path d="M6 15h3M11 15h7M6 11h5M13 11h5" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/></svg>',
             switch: subtitleEnabled,
             onSwitch: function (item: any) {
@@ -1366,13 +1366,13 @@ function PlayPageClient() {
               try {
                 localStorage.setItem('enable_subtitle', String(newVal));
                 setSubtitleEnabled(newVal);
-                // 控制 Artplayer 内置字幕显示
+                // 控制 Artplayer 字幕显示
                 if (artPlayerRef.current && artPlayerRef.current.subtitle) {
                   artPlayerRef.current.subtitle.show = newVal;
                 }
                 // 同步更新设置面板的 switch 状态
                 artPlayerRef.current?.setting?.update({
-                  name: '内嵌字幕',
+                  name: '显示字幕',
                   switch: newVal,
                 });
               } catch (_) {
