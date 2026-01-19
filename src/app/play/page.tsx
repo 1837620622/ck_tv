@@ -24,7 +24,6 @@ import {
 import { SearchResult } from '@/lib/types';
 import { getVideoResolutionFromM3u8, processImageUrl } from '@/lib/utils';
 
-import AISubtitle from '@/components/AISubtitle';
 import EpisodeSelector from '@/components/EpisodeSelector';
 import PageLayout from '@/components/PageLayout';
 
@@ -101,19 +100,6 @@ function PlayPageClient() {
   useEffect(() => {
     subtitleEnabledRef.current = subtitleEnabled;
   }, [subtitleEnabled]);
-
-  // AI 实时字幕开关（从 localStorage 继承，默认 false）
-  const [aiSubtitleEnabled, setAiSubtitleEnabled] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      const v = localStorage.getItem('enable_ai_subtitle');
-      if (v !== null) return v === 'true';
-    }
-    return false;
-  });
-  const aiSubtitleEnabledRef = useRef(aiSubtitleEnabled);
-  useEffect(() => {
-    aiSubtitleEnabledRef.current = aiSubtitleEnabled;
-  }, [aiSubtitleEnabled]);
 
   // 视频基本信息
   const [videoTitle, setVideoTitle] = useState(searchParams.get('title') || '');
@@ -1380,33 +1366,6 @@ function PlayPageClient() {
             },
           },
           {
-            name: 'AI实时字幕',
-            html: 'AI实时字幕',
-            icon: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="3" stroke="#ffffff" stroke-width="2"/><path d="M12 5V3M12 21v-2M5 12H3M21 12h-2M7.05 7.05L5.636 5.636M18.364 18.364l-1.414-1.414M7.05 16.95l-1.414 1.414M18.364 5.636l-1.414 1.414" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/></svg>',
-            switch: aiSubtitleEnabledRef.current,
-            onSwitch: function (item: any) {
-              const newVal = !item.switch;
-              try {
-                localStorage.setItem('enable_ai_subtitle', String(newVal));
-                setAiSubtitleEnabled(newVal);
-                // 同步更新设置面板的 switch 状态
-                artPlayerRef.current?.setting?.update({
-                  name: 'AI实时字幕',
-                  switch: newVal,
-                });
-                // 显示提示
-                if (artPlayerRef.current) {
-                  artPlayerRef.current.notice.show = newVal
-                    ? 'AI字幕已开启，需要麦克风权限'
-                    : 'AI字幕已关闭';
-                }
-              } catch (_) {
-                // ignore
-              }
-              return newVal;
-            },
-          },
-          {
             html: '去广告',
             icon: '<text x="50%" y="50%" font-size="20" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#ffffff">AD</text>',
             tooltip: blockAdEnabled ? '已开启' : '已关闭',
@@ -1941,21 +1900,6 @@ function PlayPageClient() {
                 )}
               </div>
             </div>
-
-            {/* AI 实时字幕组件 */}
-            <AISubtitle
-              visible={aiSubtitleEnabled}
-              onClose={() => {
-                setAiSubtitleEnabled(false);
-                localStorage.setItem('enable_ai_subtitle', 'false');
-                // 同步更新播放器设置面板状态
-                artPlayerRef.current?.setting?.update({
-                  name: 'AI实时字幕',
-                  switch: false,
-                });
-              }}
-              videoElement={artPlayerRef.current?.video}
-            />
 
             {/* 选集和换源 - 在移动端始终显示，在 lg 及以上可折叠 */}
             <div

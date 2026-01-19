@@ -2,38 +2,29 @@
 
 ## 概述
 
-本项目实现了两种 AI 字幕方案：
+本项目实现了两种字幕方案：
 
 | 方案 | 类型 | 费用 | 适用场景 |
 |------|------|------|----------|
-| Web Speech API | 客户端 | 免费 | 麦克风语音识别 |
-| Cloudflare Workers AI | 服务端 | $0.00045/分钟 | 视频音频转字幕 |
+| 内嵌字幕 | 播放器原生 | 免费 | 视频自带字幕 |
+| Cloudflare Workers AI | 服务端 | 免费额度 243分钟/天 | AI 生成字幕 |
 
-## 方案一：Web Speech API (已实现)
+## 方案一：内嵌字幕
 
 ### 特点
 
-- 完全免费
-- 浏览器端运行，无需服务器
-- 实时语音识别
-- 支持中文、英语、日语等
-
-### 限制
-
-- **只能识别麦克风输入**，无法直接识别视频音频
-- 需要 Chrome/Edge 浏览器
-- 需要网络连接（使用 Google 服务）
+- 使用视频源自带的字幕轨道
+- 无需额外配置
+- 支持多语言切换
 
 ### 使用方法
 
-1. 在播放器设置中打开 **AI实时字幕** 开关
-2. 允许麦克风权限
-3. 将设备麦克风靠近扬声器
+1. 在播放器设置中打开 **内嵌字幕** 开关
+2. 如果视频源有字幕，会自动显示
 
 ### 相关文件
 
-- `src/components/AISubtitle.tsx` - AI 字幕组件
-- `src/lib/useWhisperSubtitle.ts` - Whisper Hook (预留)
+- `src/app/play/page.tsx` - 播放器字幕控制逻辑
 
 ## 方案二：Cloudflare Workers AI (服务端)
 
@@ -46,8 +37,9 @@
 
 ### 费用
 
-- $0.00045 / 分钟音频
-- 每天 10,000 次免费请求额度
+- 每天 **10,000 Neurons 免费额度**（约 243 分钟音频）
+- 超出免费额度自动停用，不产生费用
+- 付费价格：$0.0005 / 分钟
 
 ### 配置要求
 
@@ -87,23 +79,9 @@ Content-Type: application/json
 
 ## 播放器字幕设置
 
-### 内嵌字幕
+在播放器设置面板中可以控制：
 
-- 控制视频自带的字幕轨道显示/隐藏
-- 在播放器设置中切换 **内嵌字幕** 开关
-
-### AI实时字幕
-
-- 使用麦克风进行实时语音识别
-- 在播放器设置中切换 **AI实时字幕** 开关
-
-## 推荐方案
-
-| 场景 | 推荐方案 |
-|------|----------|
-| 个人使用，临时需要 | Web Speech API |
-| 正式环境，高质量需求 | Cloudflare Workers AI |
-| 离线使用 | 不支持（需要网络） |
+- **内嵌字幕**：显示/隐藏视频自带的字幕轨道
 
 ## 后续优化方向
 
@@ -113,6 +91,4 @@ Content-Type: application/json
 
 ## 技术参考
 
-- [Whisper.cpp](https://github.com/ggml-org/whisper.cpp) - 开源语音识别
 - [Cloudflare Workers AI](https://developers.cloudflare.com/workers-ai/models/whisper/) - Whisper 模型
-- [Web Speech API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Speech_API) - 浏览器语音识别
