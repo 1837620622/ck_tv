@@ -28,17 +28,20 @@ function DoubanPageClient() {
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const type = searchParams.get('type') || 'movie';
+  const subType = searchParams.get('sub') || '';
 
   // 获取 runtimeConfig 中的自定义分类数据
   const [customCategories, setCustomCategories] = useState<
     Array<{ name: string; type: 'movie' | 'tv'; query: string }>
   >([]);
 
-  // 选择器状态 - 完全独立，不依赖URL参数
+  // 选择器状态 - 支持URL参数预设
   const [primarySelection, setPrimarySelection] = useState<string>(() => {
     return type === 'movie' ? '热门' : '';
   });
   const [secondarySelection, setSecondarySelection] = useState<string>(() => {
+    // 如果URL中有sub参数，使用sub参数作为默认选择
+    if (subType) return subType;
     if (type === 'movie') return '全部';
     if (type === 'tv') return 'tv';
     if (type === 'show') return 'show';
@@ -95,19 +98,19 @@ function DoubanPageClient() {
         }
       }
     } else {
-      // 原有逻辑
+      // 原有逻辑，支持sub参数预设
       if (type === 'movie') {
         setPrimarySelection('热门');
-        setSecondarySelection('全部');
+        setSecondarySelection(subType || '全部');
       } else if (type === 'tv') {
         setPrimarySelection('');
-        setSecondarySelection('tv');
+        setSecondarySelection(subType || 'tv');
       } else if (type === 'show') {
         setPrimarySelection('');
-        setSecondarySelection('show');
+        setSecondarySelection(subType || 'show');
       } else {
         setPrimarySelection('');
-        setSecondarySelection('全部');
+        setSecondarySelection(subType || '全部');
       }
     }
 
@@ -117,7 +120,7 @@ function DoubanPageClient() {
     }, 50);
 
     return () => clearTimeout(timer);
-  }, [type, customCategories]);
+  }, [type, subType, customCategories]);
 
   // 生成骨架屏数据
   const skeletonData = Array.from({ length: 25 }, (_, index) => index);
@@ -359,10 +362,10 @@ function DoubanPageClient() {
     return type === 'movie'
       ? '电影'
       : type === 'tv'
-      ? '电视剧'
-      : type === 'show'
-      ? '综艺'
-      : '自定义';
+        ? '电视剧'
+        : type === 'show'
+          ? '综艺'
+          : '自定义';
   };
 
   const getActivePath = () => {
@@ -419,21 +422,21 @@ function DoubanPageClient() {
           <div className='justify-start grid grid-cols-3 gap-x-2 gap-y-12 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,minmax(160px,1fr))] sm:gap-x-8 sm:gap-y-20'>
             {loading || !selectorsReady
               ? // 显示骨架屏
-                skeletonData.map((index) => <DoubanCardSkeleton key={index} />)
+              skeletonData.map((index) => <DoubanCardSkeleton key={index} />)
               : // 显示实际数据
-                doubanData.map((item, index) => (
-                  <div key={`${item.title}-${index}`} className='w-full'>
-                    <VideoCard
-                      from='douban'
-                      title={item.title}
-                      poster={item.poster}
-                      douban_id={item.id}
-                      rate={item.rate}
-                      year={item.year}
-                      type={type === 'movie' ? 'movie' : ''} // 电影类型严格控制，tv 不控
-                    />
-                  </div>
-                ))}
+              doubanData.map((item, index) => (
+                <div key={`${item.title}-${index}`} className='w-full'>
+                  <VideoCard
+                    from='douban'
+                    title={item.title}
+                    poster={item.poster}
+                    douban_id={item.id}
+                    rate={item.rate}
+                    year={item.year}
+                    type={type === 'movie' ? 'movie' : ''} // 电影类型严格控制，tv 不控
+                  />
+                </div>
+              ))}
           </div>
 
           {/* 加载更多指示器 */}

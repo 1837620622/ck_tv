@@ -2,7 +2,7 @@
 
 'use client';
 
-import { Clover, Film, Heart, Home, Menu, Search, Star, Tv } from 'lucide-react';
+import { Clapperboard, Clover, Film, Heart, Home, Menu, Search, Sparkles, Star, Tv, Video } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -136,9 +136,19 @@ const Sidebar = ({ onToggle, activePath = '/' }: SidebarProps) => {
       href: '/douban?type=tv',
     },
     {
+      icon: Sparkles,
+      label: '动漫',
+      href: '/douban?type=tv&sub=tv_animation',
+    },
+    {
       icon: Clover,
       label: '综艺',
       href: '/douban?type=show',
+    },
+    {
+      icon: Video,
+      label: '纪录片',
+      href: '/douban?type=tv&sub=tv_documentary',
     },
     {
       icon: Heart,
