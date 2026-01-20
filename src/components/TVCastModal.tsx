@@ -90,7 +90,8 @@ export default function TVCastModal({
         if (e.name === 'NotFoundError') setCastStatus('未找到投屏设备，请确保设备在同一网络');
         else if (e.name === 'NotSupportedError') setCastStatus('当前浏览器不支持投屏功能');
         else if (e.name === 'InvalidStateError') setCastStatus('请先播放视频再进行投屏');
-        else if (e.name === 'AbortError') setCastStatus('已取消设备选择');
+        else if (e.name === 'AbortError' || e.message?.includes('dismissed')) setCastStatus('已取消设备选择');
+        else if (e.name === 'NotAllowedError') setCastStatus('已取消设备选择');
         else setCastStatus('投屏失败: ' + e.message);
       }
     } else {
