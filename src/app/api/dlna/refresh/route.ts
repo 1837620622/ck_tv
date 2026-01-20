@@ -38,18 +38,35 @@ async function discoverDevices(): Promise<DLNADevice[]> {
       // 监听设备响应
       client.on('response', (headers: Record<string, string>, statusCode: number, rinfo: { address: string }) => {
         if (statusCode === 200 && headers.LOCATION) {
-          // 过滤 MediaRenderer 设备
+          // 过滤 MediaRenderer 设备（支持投屏的设备）
           const st = headers.ST || '';
-          if (st.includes('MediaRenderer') || st.includes('AVTransport') || st === 'ssdp:all') {
+          const usn = headers.USN || '';
+          // 检查是否为 MediaRenderer 或 AVTransport 设备
+          const isMediaRenderer = st.includes('MediaRenderer') ||
+            st.includes('AVTransport') ||
+            usn.includes('MediaRenderer') ||
+            usn.includes('AVTransport');
+
+          if (isMediaRenderer) {
+            // 从 USN 提取设备名称
+            let deviceName = headers.SERVER || `智能电视 ${rinfo.address}`;
+            // 尝试从 USN 中提取更友好的名称
+            if (usn && usn.includes('::')) {
+              const usnPart = usn.split('::')[0];
+              if (usnPart && usnPart.startsWith('uuid:')) {
+                deviceName = `设备 ${rinfo.address}`;
+              }
+            }
+
             const device: DLNADevice = {
-              name: headers.SERVER || headers.USN || `设备 ${rinfo.address}`,
+              name: deviceName,
               host: rinfo.address,
               location: headers.LOCATION,
               server: headers.SERVER,
             };
 
-            // 避免重复
-            if (!devices.find(d => d.host === device.host)) {
+            // 避免重复（使用 location 去重，因为同一设备可能有多个服务）
+            if (!devices.find(d => d.location === device.location)) {
               devices.push(device);
             }
           }

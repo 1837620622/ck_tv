@@ -31,10 +31,24 @@ async function castToDevice(deviceLocation: string, videoUrl: string, title: str
         });
       }, 10000); // 10 秒超时
 
+      // 根据视频 URL 判断内容类型
+      let contentType = 'video/mp4';
+      if (videoUrl.includes('.m3u8') || videoUrl.includes('m3u8')) {
+        contentType = 'application/x-mpegURL';
+      } else if (videoUrl.includes('.mp4')) {
+        contentType = 'video/mp4';
+      } else if (videoUrl.includes('.mkv')) {
+        contentType = 'video/x-matroska';
+      } else if (videoUrl.includes('.avi')) {
+        contentType = 'video/avi';
+      } else if (videoUrl.includes('.flv')) {
+        contentType = 'video/x-flv';
+      }
+
       // 投屏选项
       const options = {
         autoplay: true,
-        contentType: 'application/x-mpegURL', // HLS 流
+        contentType: contentType,
         metadata: {
           title: title || '视频播放',
           type: 'video',
