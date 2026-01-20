@@ -22,12 +22,6 @@ const getPlatformInfo = () => {
   return { isMac, isIOS, isChrome, isSafari };
 };
 
-// DLNA 设备接口
-interface DLNADevice {
-  name: string;
-  host: string;
-  location: string;
-}
 
 export default function TVCastModal({
   isOpen,
@@ -42,12 +36,6 @@ export default function TVCastModal({
   const [activeTab, setActiveTab] = useState<'cast' | 'qrcode' | 'link'>('cast');
   const [platform] = useState(getPlatformInfo);
 
-  // DLNA 状态
-  const [showDLNAPanel, setShowDLNAPanel] = useState(false);
-  const [dlnaDevices, setDlnaDevices] = useState<DLNADevice[]>([]);
-  const [selectedDevice, setSelectedDevice] = useState<DLNADevice | null>(null);
-  const [isSearchingDLNA, setIsSearchingDLNA] = useState(false);
-  const [isCastingDLNA, setIsCastingDLNA] = useState(false);
 
   const getCurrentPageUrl = useCallback(() => {
     if (typeof window === 'undefined') return '';
@@ -74,69 +62,6 @@ export default function TVCastModal({
       setTimeout(() => { setCopied(false); setCastStatus(''); }, 2000);
     }
   }, []);
-
-  // DLNA 设备发现
-  const refreshDLNADevices = useCallback(async () => {
-    setIsSearchingDLNA(true);
-    setCastStatus('正在搜索局域网设备...');
-    try {
-      const response = await fetch('/api/dlna/refresh', { method: 'POST' });
-      const data = await response.json();
-      if (data.success && data.devices?.length > 0) {
-        setDlnaDevices(data.devices);
-        setCastStatus(`发现 ${data.devices.length} 个设备`);
-      } else {
-        setDlnaDevices([]);
-        setCastStatus('未发现 DLNA 设备，请确保电视已开启 DLNA');
-      }
-    } catch {
-      setCastStatus('搜索设备失败，请重试');
-    } finally {
-      setIsSearchingDLNA(false);
-    }
-  }, []);
-
-  // DLNA 投屏
-  const castToDLNA = useCallback(async () => {
-    if (!selectedDevice) {
-      setCastStatus('请先选择设备');
-      return;
-    }
-    if (!videoUrl) {
-      setCastStatus('请先播放视频');
-      return;
-    }
-    setIsCastingDLNA(true);
-    setCastStatus('正在投屏...');
-    try {
-      const response = await fetch('/api/dlna/cast', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          deviceHost: selectedDevice.location, // 使用完整的 location URL
-          videoUrl: videoUrl,
-          title: videoTitle || '视频播放',
-        }),
-      });
-      const data = await response.json();
-      if (data.success) {
-        setCastStatus(data.message || '投屏成功！');
-        setShowDLNAPanel(false);
-      } else {
-        setCastStatus(data.error || '投屏失败');
-      }
-    } catch {
-      setCastStatus('投屏请求失败，请重试');
-    } finally {
-      setIsCastingDLNA(false);
-    }
-  }, [selectedDevice, videoUrl, videoTitle]);
-
-  // 打开 DLNA 面板
-  const openDLNAPanel = useCallback(() => {
-    setShowDLNAPanel(true);
-    refreshDLNADevices();
-  }, [refreshDLNADevices]);
 
   const handleBrowserCast = useCallback(async () => {
     const video = document.querySelector('video');
@@ -242,7 +167,7 @@ export default function TVCastModal({
                   </svg>
                   <span className="text-sm font-medium">{isConnected ? '已连接' : isConnecting ? '搜索中...' : 'Chromecast'}</span>
                 </button>
-                <button onClick={openDLNAPanel}
+                <button onClick={() => setCastStatus('DLNA 投屏：请在电视上安装乐播投屏或 AirScreen，然后复制视频链接投屏')}
                   className="flex flex-col items-center gap-2 p-4 rounded-xl border bg-gray-800/50 border-gray-700 hover:border-purple-500 hover:bg-purple-500/10 text-gray-300 transition-all">
                   <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
                     <path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z" />
@@ -334,61 +259,6 @@ export default function TVCastModal({
         <div className="px-5 pb-5"><p className="text-center text-xs text-gray-500">确保手机和电视在同一 WiFi 网络</p></div>
       </div>
 
-      {/* DLNA 设备选择面板 */}
-      {showDLNAPanel && (
-        <div className="absolute inset-0 bg-[#1a1a1a] rounded-2xl flex flex-col">
-          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800">
-            <h2 className="text-lg font-bold text-white">DLNA 投屏</h2>
-            <button onClick={() => setShowDLNAPanel(false)} className="w-8 h-8 rounded-full hover:bg-white/10 flex items-center justify-center">
-              <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-          <div className="flex-1 p-5 overflow-y-auto">
-            <div className="flex justify-between items-center mb-3">
-              <span className="text-sm text-gray-300">局域网设备</span>
-              <button onClick={refreshDLNADevices} disabled={isSearchingDLNA}
-                className="text-xs px-3 py-1 bg-blue-600 hover:bg-blue-700 rounded text-white disabled:opacity-50">
-                {isSearchingDLNA ? '搜索中...' : '🔄 刷新'}
-              </button>
-            </div>
-            <div className="bg-gray-800/50 rounded-xl border border-gray-700 max-h-48 overflow-y-auto">
-              {isSearchingDLNA ? (
-                <div className="p-6 text-center text-gray-400 text-sm">
-                  <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-                  正在搜索设备...
-                </div>
-              ) : dlnaDevices.length > 0 ? (
-                dlnaDevices.map((device) => (
-                  <div key={device.host} onClick={() => setSelectedDevice(device)}
-                    className={`p-4 border-b border-gray-700 last:border-b-0 cursor-pointer hover:bg-gray-700/50 flex items-center gap-3 ${selectedDevice?.host === device.host ? 'bg-blue-900/30' : ''
-                      }`}>
-                    <span className="text-2xl">📺</span>
-                    <div className="flex-1">
-                      <div className="text-white text-sm font-medium">{device.name}</div>
-                      <div className="text-gray-500 text-xs">{device.host}</div>
-                    </div>
-                    {selectedDevice?.host === device.host && <span className="text-green-400">✓</span>}
-                  </div>
-                ))
-              ) : (
-                <div className="p-6 text-center text-gray-400 text-sm">
-                  <p>未发现设备</p>
-                  <p className="text-xs mt-1">请确保电视已开启 DLNA</p>
-                </div>
-              )}
-            </div>
-          </div>
-          <div className="p-5 border-t border-gray-800">
-            <button onClick={castToDLNA} disabled={!selectedDevice || isCastingDLNA}
-              className="w-full py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl font-medium disabled:opacity-50 disabled:cursor-not-allowed">
-              {isCastingDLNA ? '投屏中...' : '📺 投屏到选中设备'}
-            </button>
-            <p className="text-center text-xs text-gray-500 mt-3">找不到设备？请确保电视和手机在同一 WiFi</p>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
