@@ -45,7 +45,7 @@ export default function TVCastModal({
   // DLNA 状态
   const [showDLNAPanel, setShowDLNAPanel] = useState(false);
   const [dlnaDevices, setDlnaDevices] = useState<DLNADevice[]>([]);
-  const [selectedDevice, setSelectedDevice] = useState<string | null>(null);
+  const [selectedDevice, setSelectedDevice] = useState<DLNADevice | null>(null);
   const [isSearchingDLNA, setIsSearchingDLNA] = useState(false);
   const [isCastingDLNA, setIsCastingDLNA] = useState(false);
 
@@ -113,7 +113,7 @@ export default function TVCastModal({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          deviceHost: selectedDevice,
+          deviceHost: selectedDevice.location, // 使用完整的 location URL
           videoUrl: videoUrl,
           title: videoTitle || '视频播放',
         }),
@@ -361,15 +361,15 @@ export default function TVCastModal({
                 </div>
               ) : dlnaDevices.length > 0 ? (
                 dlnaDevices.map((device) => (
-                  <div key={device.host} onClick={() => setSelectedDevice(device.host)}
-                    className={`p-4 border-b border-gray-700 last:border-b-0 cursor-pointer hover:bg-gray-700/50 flex items-center gap-3 ${selectedDevice === device.host ? 'bg-blue-900/30' : ''
+                  <div key={device.host} onClick={() => setSelectedDevice(device)}
+                    className={`p-4 border-b border-gray-700 last:border-b-0 cursor-pointer hover:bg-gray-700/50 flex items-center gap-3 ${selectedDevice?.host === device.host ? 'bg-blue-900/30' : ''
                       }`}>
                     <span className="text-2xl">📺</span>
                     <div className="flex-1">
                       <div className="text-white text-sm font-medium">{device.name}</div>
                       <div className="text-gray-500 text-xs">{device.host}</div>
                     </div>
-                    {selectedDevice === device.host && <span className="text-green-400">✓</span>}
+                    {selectedDevice?.host === device.host && <span className="text-green-400">✓</span>}
                   </div>
                 ))
               ) : (
