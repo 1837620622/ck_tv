@@ -11,6 +11,17 @@ interface TVCastModalProps {
   currentTime?: number;
 }
 
+// 检测平台
+const getPlatformInfo = () => {
+  if (typeof window === 'undefined') return { isMac: false, isIOS: false, isChrome: false, isSafari: false };
+  const ua = navigator.userAgent;
+  const isMac = /Macintosh|Mac OS X/.test(ua) && !/iPhone|iPad|iPod/.test(ua);
+  const isIOS = /iPhone|iPad|iPod/.test(ua);
+  const isChrome = /Chrome/.test(ua) && !/Edg/.test(ua);
+  const isSafari = /Safari/.test(ua) && !/Chrome/.test(ua);
+  return { isMac, isIOS, isChrome, isSafari };
+};
+
 export default function TVCastModal({
   isOpen,
   onClose,
@@ -22,6 +33,7 @@ export default function TVCastModal({
   const [isConnecting, setIsConnecting] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [activeTab, setActiveTab] = useState<'cast' | 'qrcode' | 'link'>('cast');
+  const [platform] = useState(getPlatformInfo);
 
   const getCurrentPageUrl = useCallback(() => {
     if (typeof window === 'undefined') return '';
@@ -146,8 +158,8 @@ export default function TVCastModal({
               </p>
               <button onClick={handleBrowserCast} disabled={isConnecting || isConnected}
                 className={`w-full py-4 rounded-xl font-medium transition-all ${isConnected
-                    ? 'bg-green-500 text-white cursor-default'
-                    : 'bg-green-600 hover:bg-green-700 text-white disabled:opacity-50'
+                  ? 'bg-green-500 text-white cursor-default'
+                  : 'bg-green-600 hover:bg-green-700 text-white disabled:opacity-50'
                   }`}>
                 {isConnecting ? (
                   <span className="flex items-center justify-center gap-2">
@@ -170,10 +182,26 @@ export default function TVCastModal({
                   </span>
                 )}
               </button>
-              <div className="bg-gray-800/50 rounded-xl p-4 text-xs text-gray-400 space-y-1">
-                <p><span className="text-green-400">Chromecast:</span> 需要 Chrome 浏览器 + Chromecast 设备</p>
-                <p><span className="text-green-400">AirPlay:</span> 需要 Safari 浏览器 + Apple TV</p>
-                <p><span className="text-green-400">其他设备:</span> 请使用扫码或复制链接方式</p>
+              <div className="bg-gray-800/50 rounded-xl p-4 text-xs text-gray-400 space-y-1.5">
+                {platform.isMac ? (
+                  <>
+                    <p className="text-orange-400 font-medium">Mac 投屏说明：</p>
+                    <p>1. <span className="text-green-400">Chrome + Chromecast:</span> 点击上方按钮搜索 Chromecast 设备</p>
+                    <p>2. <span className="text-green-400">系统级 AirPlay:</span> 点击菜单栏「控制中心」→「屏幕镜像」→ 选择电视</p>
+                    <p>3. <span className="text-green-400">智能电视:</span> 使用扫码或复制链接方式</p>
+                  </>
+                ) : platform.isIOS ? (
+                  <>
+                    <p><span className="text-green-400">AirPlay:</span> 点击上方按钮选择 Apple TV 或智能电视</p>
+                    <p><span className="text-green-400">其他设备:</span> 请使用扫码或复制链接方式</p>
+                  </>
+                ) : (
+                  <>
+                    <p><span className="text-green-400">Chromecast:</span> 需要 Chrome 浏览器 + Chromecast 设备</p>
+                    <p><span className="text-green-400">AirPlay:</span> 需要 Safari 浏览器 + Apple TV</p>
+                    <p><span className="text-green-400">其他设备:</span> 请使用扫码或复制链接方式</p>
+                  </>
+                )}
               </div>
             </div>
           )}
