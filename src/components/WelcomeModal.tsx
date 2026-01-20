@@ -157,11 +157,11 @@ export const WelcomeModal: React.FC = () => {
   // 弹窗内容
   const modalContent = (
     <>
-      {/* 背景遮罩层 - 渐变动画 */}
+      {/* 背景遮罩层 - 渐变动画（倒计时期间不可点击关闭） */}
       <div
         className={`fixed inset-0 z-[2000] transition-all duration-300 ${isAnimated ? 'bg-black/70 backdrop-blur-md' : 'bg-black/0 backdrop-blur-none'
           }`}
-        onClick={handleClose}
+        onClick={countdown <= 0 ? handleClose : undefined}
       />
 
       {/* 弹窗主体 - 玻璃拟态效果 */}
@@ -192,13 +192,16 @@ export const WelcomeModal: React.FC = () => {
                   <p className='text-xs text-gray-500 dark:text-gray-400'>欢迎您的到来</p>
                 </div>
               </div>
-              <button
-                onClick={handleClose}
-                className='w-8 h-8 rounded-full flex items-center justify-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-all duration-200'
-                aria-label='关闭'
-              >
-                <X className='w-4 h-4' />
-              </button>
+              {/* 关闭按钮 - 倒计时结束后才显示 */}
+              {countdown <= 0 && (
+                <button
+                  onClick={handleClose}
+                  className='w-8 h-8 rounded-full flex items-center justify-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-all duration-200'
+                  aria-label='关闭'
+                >
+                  <X className='w-4 h-4' />
+                </button>
+              )}
             </div>
           </div>
 
@@ -286,13 +289,13 @@ export const WelcomeModal: React.FC = () => {
               onClick={handleClose}
               disabled={countdown > 0}
               className={`w-full py-3.5 font-semibold rounded-xl transition-all duration-300 ${countdown > 0
-                  ? 'bg-gray-400 text-gray-200 cursor-not-allowed dark:bg-gray-600'
-                  : 'bg-gradient-to-r from-green-500 via-emerald-500 to-teal-500 hover:from-green-600 hover:via-emerald-600 hover:to-teal-600 text-white shadow-lg shadow-green-500/25 hover:shadow-xl hover:shadow-green-500/30 active:scale-[0.98]'
+                ? 'bg-gray-400 text-gray-200 cursor-not-allowed dark:bg-gray-600'
+                : 'bg-gradient-to-r from-green-500 via-emerald-500 to-teal-500 hover:from-green-600 hover:via-emerald-600 hover:to-teal-600 text-white shadow-lg shadow-green-500/25 hover:shadow-xl hover:shadow-green-500/30 active:scale-[0.98]'
                 }`}
             >
               <span className='flex items-center justify-center gap-2'>
                 <Sparkles className='w-4 h-4' />
-                {countdown > 0 ? `请阅读免责声明 (${countdown}s)` : '开始使用'}
+                {countdown > 0 ? `请阅读免责声明 (${countdown}s)` : '我已阅读并同意，开始使用'}
               </span>
             </button>
           </div>

@@ -27,6 +27,7 @@ import { getVideoResolutionFromM3u8, processImageUrl } from '@/lib/utils';
 import CloudflareAISubtitle from '@/components/CloudflareAISubtitle';
 import EpisodeSelector from '@/components/EpisodeSelector';
 import PageLayout from '@/components/PageLayout';
+import TVCastModal from '@/components/TVCastModal';
 
 // 扩展 HTMLVideoElement 类型以支持 hls 属性
 declare global {
@@ -209,6 +210,9 @@ function PlayPageClient() {
   // 折叠状态（仅在 lg 及以上屏幕有效）
   const [isEpisodeSelectorCollapsed, setIsEpisodeSelectorCollapsed] =
     useState(false);
+
+  // 电视投屏弹窗状态
+  const [isTVCastModalOpen, setIsTVCastModalOpen] = useState(false);
 
   // 换源加载状态
   const [isVideoLoading, setIsVideoLoading] = useState(true);
@@ -1849,13 +1853,26 @@ function PlayPageClient() {
         </div>
         {/* 第二行：播放器和选集 */}
         <div className='space-y-2'>
-          {/* 折叠控制 - 仅在 lg 及以上屏幕显示 */}
-          <div className='hidden lg:flex justify-end'>
+          {/* 控制栏：投屏按钮 + 折叠控制 */}
+          <div className='flex items-center justify-between'>
+            {/* 投屏按钮 */}
+            <button
+              onClick={() => setIsTVCastModalOpen(true)}
+              className='flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-500/10 hover:bg-green-500/20 text-green-600 dark:text-green-400 border border-green-500/30 transition-all duration-200'
+              title='电视投屏'
+            >
+              <svg className='w-4 h-4' viewBox='0 0 24 24' fill='currentColor'>
+                <path d='M1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11zm20-7H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z' />
+              </svg>
+              <span className='text-xs font-medium'>投屏</span>
+            </button>
+
+            {/* 折叠控制 - 仅在 lg 及以上屏幕显示 */}
             <button
               onClick={() =>
                 setIsEpisodeSelectorCollapsed(!isEpisodeSelectorCollapsed)
               }
-              className='group relative flex items-center space-x-1.5 px-3 py-1.5 rounded-full bg-white/80 hover:bg-white dark:bg-gray-800/80 dark:hover:bg-gray-800 backdrop-blur-sm border border-gray-200/50 dark:border-gray-700/50 shadow-sm hover:shadow-md transition-all duration-200'
+              className='hidden lg:flex group relative items-center space-x-1.5 px-3 py-1.5 rounded-full bg-white/80 hover:bg-white dark:bg-gray-800/80 dark:hover:bg-gray-800 backdrop-blur-sm border border-gray-200/50 dark:border-gray-700/50 shadow-sm hover:shadow-md transition-all duration-200'
               title={
                 isEpisodeSelectorCollapsed ? '显示选集面板' : '隐藏选集面板'
               }
@@ -2045,6 +2062,15 @@ function PlayPageClient() {
           </div>
         </div>
       </div>
+
+      {/* 电视投屏弹窗 */}
+      <TVCastModal
+        isOpen={isTVCastModalOpen}
+        onClose={() => setIsTVCastModalOpen(false)}
+        videoUrl={videoUrl}
+        videoTitle={videoTitle}
+        currentTime={artPlayerRef.current?.currentTime || 0}
+      />
     </PageLayout>
   );
 }
