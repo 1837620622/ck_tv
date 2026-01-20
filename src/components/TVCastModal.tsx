@@ -291,7 +291,7 @@ export default function TVCastModal({
                   <>
                     <p className="text-blue-400 font-medium">📺 投屏说明：</p>
                     <p>• <span className="text-green-400">Chromecast:</span> Chrome 浏览器 + Chromecast 设备</p>
-                    <p>• <span className="text-green-400">DLNA:</span> 需要安装投屏 App（乐播投屏等）</p>
+                    <p>• <span className="text-green-400">DLNA:</span> 点击按钮搜索局域网智能电视</p>
                     <p>• <span className="text-green-400">智能电视:</span> 使用扫码或复制链接</p>
                   </>
                 )}
