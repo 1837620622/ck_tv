@@ -160,7 +160,7 @@ export default function TVCastModal({
                 <button onClick={handleBrowserCast} disabled={isConnecting || isConnected}
                   className={`flex flex-col items-center gap-2 p-4 rounded-xl border transition-all ${isConnected
                     ? 'bg-green-500/20 border-green-500 text-green-400'
-                    : 'bg-gray-800/50 border-gray-700 hover:border-blue-500 hover:bg-blue-500/10 text-gray-300'
+                    : 'bg-gray-800/50 border-gray-700 sm:hover:border-blue-500 sm:hover:bg-blue-500/10 active:border-blue-500 active:bg-blue-500/10 text-gray-300'
                     }`}>
                   <svg className="w-8 h-8" viewBox="0 0 24 24" fill="currentColor">
                     <path d="M1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11zm20-7H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z" />
@@ -168,7 +168,7 @@ export default function TVCastModal({
                   <span className="text-sm font-medium">{isConnected ? '已连接' : isConnecting ? '搜索中...' : 'Chromecast'}</span>
                 </button>
                 <button onClick={() => setCastStatus('DLNA 投屏：请在电视上安装乐播投屏或 AirScreen，然后复制视频链接投屏')}
-                  className="flex flex-col items-center gap-2 p-4 rounded-xl border bg-gray-800/50 border-gray-700 hover:border-purple-500 hover:bg-purple-500/10 text-gray-300 transition-all">
+                  className="flex flex-col items-center gap-2 p-4 rounded-xl border bg-gray-800/50 border-gray-700 sm:hover:border-purple-500 sm:hover:bg-purple-500/10 active:border-purple-500 active:bg-purple-500/10 text-gray-300 transition-all">
                   <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
                     <path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z" />
                   </svg>
@@ -183,14 +183,14 @@ export default function TVCastModal({
                     setCastStatus('AirPlay 仅支持苹果设备（iPhone/iPad/Mac）');
                   }
                 }}
-                  className="flex flex-col items-center gap-2 p-4 rounded-xl border bg-gray-800/50 border-gray-700 hover:border-gray-500 hover:bg-gray-500/10 text-gray-300 transition-all">
+                  className="flex flex-col items-center gap-2 p-4 rounded-xl border bg-gray-800/50 border-gray-700 sm:hover:border-gray-500 sm:hover:bg-gray-500/10 active:border-gray-500 active:bg-gray-500/10 text-gray-300 transition-all">
                   <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
                     <path d="M6 3.5l6 8.5 6-8.5v1.5l-6 8.5-6-8.5zM6 11l6 8.5 6-8.5v1.5l-6 8.5-6-8.5z" />
                   </svg>
                   <span className="text-sm font-medium">AirPlay</span>
                 </button>
                 <button onClick={() => handleCopyLink(videoUrl)}
-                  className="flex flex-col items-center gap-2 p-4 rounded-xl border bg-gray-800/50 border-gray-700 hover:border-green-500 hover:bg-green-500/10 text-gray-300 transition-all">
+                  className="flex flex-col items-center gap-2 p-4 rounded-xl border bg-gray-800/50 border-gray-700 sm:hover:border-green-500 sm:hover:bg-green-500/10 active:border-green-500 active:bg-green-500/10 text-gray-300 transition-all">
                   <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
                   </svg>
