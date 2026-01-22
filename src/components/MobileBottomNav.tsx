@@ -4,7 +4,7 @@
 
 import { Clover, Film, Home, Search, Sparkles, Star, Tv, Video } from 'lucide-react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 interface MobileBottomNavProps {
@@ -16,9 +16,15 @@ interface MobileBottomNavProps {
 
 const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
 
-  // 当前激活路径：优先使用传入的 activePath，否则回退到浏览器地址
-  const currentActive = activePath ?? pathname;
+  // 构建完整的当前 URL（包含查询参数）
+  const currentUrl = searchParams.toString()
+    ? `${pathname}?${searchParams.toString()}`
+    : pathname;
+
+  // 当前激活路径：优先使用传入的 activePath，否则使用完整 URL
+  const currentActive = activePath ?? currentUrl;
 
   const [navItems, setNavItems] = useState([
     { icon: Home, label: '首页', href: '/' },
