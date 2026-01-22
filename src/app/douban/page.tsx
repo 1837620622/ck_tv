@@ -371,6 +371,8 @@ function DoubanPageClient() {
   const getActivePath = () => {
     const params = new URLSearchParams();
     if (type) params.set('type', type);
+    // 包含 sub 参数以正确高亮动漫/纪录片
+    if (subType) params.set('sub', subType);
 
     const queryString = params.toString();
     const activePath = `/douban${queryString ? `?${queryString}` : ''}`;
