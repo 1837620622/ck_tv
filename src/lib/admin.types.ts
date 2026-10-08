@@ -21,6 +21,7 @@ export interface AdminConfig {
     name: string;
     api: string;
     detail?: string;
+    category?: string;
     from: 'config' | 'custom';
     disabled?: boolean;
   }[];

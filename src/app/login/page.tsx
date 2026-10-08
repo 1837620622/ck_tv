@@ -41,12 +41,13 @@ function VersionDisplay() {
         <span className='font-mono'>{CURRENT_VERSION}</span>
         {!isChecking && updateStatus !== UpdateStatus.FETCH_FAILED && (
           <div
-            className={`flex items-center gap-1.5 ${updateStatus === UpdateStatus.HAS_UPDATE
-              ? 'text-yellow-600 dark:text-yellow-400'
-              : updateStatus === UpdateStatus.NO_UPDATE
+            className={`flex items-center gap-1.5 ${
+              updateStatus === UpdateStatus.HAS_UPDATE
+                ? 'text-yellow-600 dark:text-yellow-400'
+                : updateStatus === UpdateStatus.NO_UPDATE
                 ? 'text-green-600 dark:text-green-400'
                 : ''
-              }`}
+            }`}
           >
             {updateStatus === UpdateStatus.HAS_UPDATE && (
               <>
@@ -67,22 +68,40 @@ function VersionDisplay() {
       {/* 赞赏码弹窗 */}
       {isDonateOpen && (
         <div className='fixed inset-0 z-50 flex items-center justify-center'>
-          <div className='fixed inset-0 bg-black/60 backdrop-blur-sm' onClick={() => setIsDonateOpen(false)} />
+          <div
+            className='fixed inset-0 bg-black/60 backdrop-blur-sm'
+            onClick={() => setIsDonateOpen(false)}
+          />
           <div className='relative w-[90%] max-w-sm bg-white dark:bg-gray-900 rounded-2xl shadow-2xl overflow-hidden z-10'>
             <div className='bg-gradient-to-r from-green-500 to-green-600 px-6 py-4 flex items-center justify-between'>
               <h2 className='text-lg font-bold text-white'>传康KK万能播放器</h2>
-              <button onClick={() => setIsDonateOpen(false)} className='w-8 h-8 rounded-full flex items-center justify-center text-white/80 hover:text-white hover:bg-white/20'>
+              <button
+                onClick={() => setIsDonateOpen(false)}
+                className='w-8 h-8 rounded-full flex items-center justify-center text-white/80 hover:text-white hover:bg-white/20'
+              >
                 <X className='w-5 h-5' />
               </button>
             </div>
             <div className='p-6 space-y-4'>
               <div className='text-center'>
-                <p className='text-gray-600 dark:text-gray-400 text-sm mb-2'>感谢使用 <span className='font-semibold text-green-600'>传康KK万能播放器</span></p>
-                <p className='text-gray-500 text-xs mb-4'>喜欢的朋友可以赞赏一下，感谢支持！</p>
+                <p className='text-gray-600 dark:text-gray-400 text-sm mb-2'>
+                  感谢使用{' '}
+                  <span className='font-semibold text-green-600'>
+                    传康KK万能播放器
+                  </span>
+                </p>
+                <p className='text-gray-500 text-xs mb-4'>
+                  喜欢的朋友可以赞赏一下，感谢支持！
+                </p>
               </div>
               <div className='flex justify-center'>
                 <div className='w-48 h-48 rounded-lg overflow-hidden shadow-lg border-2 border-green-100 dark:border-green-800'>
-                  <img src='/ck.jpg' alt='传康KK的赞赏码' className='w-full h-full object-cover' />
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src='/ck.jpg'
+                    alt='传康KK的赞赏码'
+                    className='w-full h-full object-cover'
+                  />
                 </div>
               </div>
               <div className='text-center text-xs text-gray-500 space-y-1'>
@@ -92,7 +111,12 @@ function VersionDisplay() {
               </div>
             </div>
             <div className='px-6 pb-6'>
-              <button onClick={() => setIsDonateOpen(false)} className='w-full py-3 bg-gradient-to-r from-green-500 to-green-600 text-white font-semibold rounded-lg'>关闭</button>
+              <button
+                onClick={() => setIsDonateOpen(false)}
+                className='w-full py-3 bg-gradient-to-r from-green-500 to-green-600 text-white font-semibold rounded-lg'
+              >
+                关闭
+              </button>
             </div>
           </div>
         </div>

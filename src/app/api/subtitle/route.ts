@@ -1,9 +1,10 @@
+/* eslint-disable no-console */
 /**
  * =============================================================================
  * 字幕生成 API
  * =============================================================================
  * 使用 Cloudflare Workers AI 的 Whisper 模型生成字幕
- * 
+ *
  * 特点：
  * - 免费额度：每天 10,000 Neurons (约 243 分钟音频)
  * - 超出免费额度自动停用，不产生费用
@@ -61,12 +62,14 @@ interface SubtitleRequest {
  * 从视频 URL 提取音频
  * 注意：这需要服务端有 ffmpeg 支持，或使用第三方服务
  */
-async function extractAudioFromVideo(videoUrl: string): Promise<ArrayBuffer | null> {
+async function extractAudioFromVideo(
+  videoUrl: string
+): Promise<ArrayBuffer | null> {
   try {
     // 方案1: 直接下载视频的前几秒（用于测试）
     const response = await fetch(videoUrl, {
       headers: {
-        'Range': 'bytes=0-5242880', // 只下载前 5MB
+        Range: 'bytes=0-5242880', // 只下载前 5MB
       },
     });
 
@@ -87,7 +90,7 @@ async function extractAudioFromVideo(videoUrl: string): Promise<ArrayBuffer | nu
  */
 async function transcribeWithWhisper(
   audioData: ArrayBuffer,
-  language?: string
+  _language?: string
 ): Promise<WhisperResponse | null> {
   const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
   const apiToken = process.env.CLOUDFLARE_API_TOKEN;
@@ -106,7 +109,7 @@ async function transcribeWithWhisper(
       {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${apiToken}`,
+          Authorization: `Bearer ${apiToken}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ audio: audioArray }),
@@ -130,7 +133,9 @@ async function transcribeWithWhisper(
 /**
  * 生成 VTT 字幕格式
  */
-function generateVTT(words: Array<{ word: string; start: number; end: number }>): string {
+function generateVTT(
+  words: Array<{ word: string; start: number; end: number }>
+): string {
   if (!words || words.length === 0) return '';
 
   let vtt = 'WEBVTT\n\n';
@@ -151,7 +156,7 @@ function generateVTT(words: Array<{ word: string; start: number; end: number }>)
     // 换行条件：文本太长、时间太长、或是最后一个词
     const shouldBreak =
       lineText.length >= maxLineLength ||
-      (lineEnd - lineStart) >= maxLineDuration ||
+      lineEnd - lineStart >= maxLineDuration ||
       index === words.length - 1;
 
     if (shouldBreak && lineText.trim()) {
@@ -174,7 +179,11 @@ function formatVTTTime(seconds: number): string {
   const secs = Math.floor(seconds % 60);
   const ms = Math.floor((seconds % 1) * 1000);
 
-  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}.${ms.toString().padStart(3, '0')}`;
+  return `${hours.toString().padStart(2, '0')}:${minutes
+    .toString()
+    .padStart(2, '0')}:${secs.toString().padStart(2, '0')}.${ms
+    .toString()
+    .padStart(3, '0')}`;
 }
 
 // -----------------------------------------------------------------------------
@@ -184,7 +193,10 @@ function formatVTTTime(seconds: number): string {
 /**
  * 检查并更新免费额度
  */
-function checkAndUpdateQuota(audioDurationMinutes: number): { allowed: boolean; remaining: number } {
+function checkAndUpdateQuota(audioDurationMinutes: number): {
+  allowed: boolean;
+  remaining: number;
+} {
   // 每天 UTC 0 点重置
   const today = new Date().toDateString();
   if (today !== lastResetDate) {
@@ -205,14 +217,11 @@ function checkAndUpdateQuota(audioDurationMinutes: number): { allowed: boolean; 
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json() as SubtitleRequest;
+    const body = (await request.json()) as SubtitleRequest;
     const { url, language } = body;
 
     if (!url) {
-      return NextResponse.json(
-        { error: '缺少视频 URL' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: '缺少视频 URL' }, { status: 400 });
     }
 
     // 0. 预估音频时长并检查配额 (假设 5MB 约 5 分钟)
@@ -220,30 +229,27 @@ export async function POST(request: NextRequest) {
     const quotaCheck = checkAndUpdateQuota(estimatedMinutes);
 
     if (!quotaCheck.allowed) {
-      return NextResponse.json({
-        error: '今日免费额度已用完',
-        message: `每天免费额度约 243 分钟，明天 UTC 0 点重置`,
-        remaining: quotaCheck.remaining,
-        resetTime: 'UTC 0:00',
-      }, { status: 429 });
+      return NextResponse.json(
+        {
+          error: '今日免费额度已用完',
+          message: `每天免费额度约 243 分钟，明天 UTC 0 点重置`,
+          remaining: quotaCheck.remaining,
+          resetTime: 'UTC 0:00',
+        },
+        { status: 429 }
+      );
     }
 
     // 1. 提取音频
     const audioData = await extractAudioFromVideo(url);
     if (!audioData) {
-      return NextResponse.json(
-        { error: '无法提取音频' },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: '无法提取音频' }, { status: 500 });
     }
 
     // 2. 调用 Whisper 转录
     const result = await transcribeWithWhisper(audioData, language);
     if (!result) {
-      return NextResponse.json(
-        { error: '转录失败' },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: '转录失败' }, { status: 500 });
     }
 
     // 3. 生成 VTT 字幕
@@ -263,13 +269,9 @@ export async function POST(request: NextRequest) {
         limit: DAILY_FREE_NEURONS,
       },
     });
-
   } catch (err) {
     console.error('字幕生成失败:', err);
-    return NextResponse.json(
-      { error: '字幕生成失败' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: '字幕生成失败' }, { status: 500 });
   }
 }
 

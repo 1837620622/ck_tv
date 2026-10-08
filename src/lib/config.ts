@@ -9,12 +9,16 @@ export interface ApiSite {
   key: string;
   api: string;
   name: string;
+  category?: string;
   detail?: string;
 }
 
 interface ConfigFileStruct {
   cache_time?: number;
   api_site: {
+    [key: string]: ApiSite;
+  };
+  adult_api_site?: {
     [key: string]: ApiSite;
   };
   custom_category?: {
@@ -295,7 +299,8 @@ export async function getConfig(): Promise<AdminConfig> {
     }
 
     // 合并一些环境变量配置
-    adminConfig.SiteConfig.SiteName = process.env.SITE_NAME || 'CKTV-传康播放器';
+    adminConfig.SiteConfig.SiteName =
+      process.env.SITE_NAME || 'CKTV-传康播放器';
     adminConfig.SiteConfig.Announcement =
       process.env.ANNOUNCEMENT ||
       '本网站仅提供影视信息搜索服务，所有内容均来自第三方网站。本站不存储任何视频资源，不对任何内容的准确性、合法性、完整性负责。';
@@ -456,12 +461,12 @@ export async function resetConfig() {
     CustomCategories:
       storageType === 'redis'
         ? customCategories?.map((category) => ({
-          name: category.name,
-          type: category.type,
-          query: category.query,
-          from: 'config',
-          disabled: false,
-        })) || []
+            name: category.name,
+            type: category.type,
+            query: category.query,
+            from: 'config',
+            disabled: false,
+          })) || []
         : [],
   } as AdminConfig;
 
@@ -490,5 +495,15 @@ export async function getAvailableApiSites(): Promise<ApiSite[]> {
     name: s.name,
     api: s.api,
     detail: s.detail,
+  }));
+}
+
+export async function getAdultApiSites(): Promise<ApiSite[]> {
+  await initConfig();
+  const adultSites =
+    fileConfig?.adult_api_site || (runtimeConfig as any)?.adult_api_site || {};
+  return Object.keys(adultSites).map((key) => ({
+    key,
+    ...adultSites[key],
   }));
 }

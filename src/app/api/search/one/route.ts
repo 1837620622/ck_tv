@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 
 import { getCacheTime, getConfig } from '@/lib/config';
 import { searchFromApi } from '@/lib/downstream';
-import { yellowWords } from '@/lib/yellow';
+import { isAdultContent } from '@/lib/yellow';
 
 export const runtime = 'edge';
 
@@ -11,6 +11,7 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const query = searchParams.get('q');
   const resourceId = searchParams.get('resourceId');
+  const includeAdult = searchParams.get('includeAdult') === 'true';
 
   if (!query || !resourceId) {
     const cacheTime = await getCacheTime();
@@ -42,13 +43,25 @@ export async function GET(request: Request) {
       );
     }
 
+    if (
+      !includeAdult &&
+      (targetSite.category === 'adult' || targetSite.category === 'erotic')
+    ) {
+      return NextResponse.json(
+        {
+          error: '成人内容已从搜索中移除',
+          result: null,
+        },
+        { status: 404 }
+      );
+    }
+
     const results = await searchFromApi(targetSite, query);
     let result = results.filter((r) => r.title === query);
-    if (!config.SiteConfig.DisableYellowFilter) {
-      result = result.filter((result) => {
-        const typeName = result.type_name || '';
-        return !yellowWords.some((word: string) => typeName.includes(word));
-      });
+    if (!includeAdult) {
+      result = result.filter((r) => !isAdultContent(r));
+    } else if (!config.SiteConfig.DisableYellowFilter) {
+      result = result.filter((r) => !isAdultContent(r));
     }
     const cacheTime = await getCacheTime();
 

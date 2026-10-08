@@ -15,7 +15,7 @@ const getThemeByTime = (): 'light' | 'dark' => {
 
 export function ThemeToggle() {
   const [mounted, setMounted] = useState(false);
-  const { setTheme, resolvedTheme, theme } = useTheme();
+  const { setTheme, resolvedTheme } = useTheme();
 
   const setThemeColor = (themeValue?: string) => {
     const meta = document.querySelector('meta[name="theme-color"]');
@@ -25,7 +25,10 @@ export function ThemeToggle() {
       newMeta.content = themeValue === 'dark' ? '#0c111c' : '#f9fbfe';
       document.head.appendChild(newMeta);
     } else {
-      meta.setAttribute('content', themeValue === 'dark' ? '#0c111c' : '#f9fbfe');
+      meta.setAttribute(
+        'content',
+        themeValue === 'dark' ? '#0c111c' : '#f9fbfe'
+      );
     }
   };
 
@@ -93,6 +96,7 @@ export function ThemeToggle() {
   return (
     <button
       onClick={toggleTheme}
+      onDoubleClick={resetToAuto}
       className='w-10 h-10 p-2 rounded-full flex items-center justify-center text-gray-600 hover:bg-gray-200/50 dark:text-gray-300 dark:hover:bg-gray-700/50 transition-colors'
       aria-label='Toggle theme'
     >

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* eslint-disable */
 /**
  * ============================================================
  * CKTV 资源站 API 接口批量测试脚本
@@ -15,10 +16,10 @@ const path = require('path');
 // 配置参数
 // ------------------------------------------------------------
 const CONFIG = {
-  timeout: 8000,           // 请求超时时间（毫秒）
-  concurrency: 10,         // 并发请求数
-  retryCount: 1,           // 失败重试次数
-  testQuery: '?ac=list',   // 测试查询参数
+  timeout: 8000, // 请求超时时间（毫秒）
+  concurrency: 10, // 并发请求数
+  retryCount: 1, // 失败重试次数
+  testQuery: '?ac=list', // 测试查询参数
 };
 
 // ------------------------------------------------------------
@@ -45,8 +46,9 @@ async function testApi(key, apiUrl, retries = CONFIG.retryCount) {
     const response = await fetch(apiUrl + CONFIG.testQuery, {
       signal: controller.signal,
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'application/json',
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        Accept: 'application/json',
       },
     });
 
@@ -153,9 +155,10 @@ async function main() {
       const result = await testApi(key, site.api);
 
       // 实时输出结果
-      const status = result.status === 'success' && result.hasValidData
-        ? colors.green('✓ 可用')
-        : result.status === 'success'
+      const status =
+        result.status === 'success' && result.hasValidData
+          ? colors.green('✓ 可用')
+          : result.status === 'success'
           ? colors.yellow('⚠ 无数据')
           : colors.red('✗ 失败');
 
@@ -175,8 +178,12 @@ async function main() {
   // ------------------------------------------------------------
   // 统计结果
   // ------------------------------------------------------------
-  const successful = results.filter((r) => r.status === 'success' && r.hasValidData);
-  const noData = results.filter((r) => r.status === 'success' && !r.hasValidData);
+  const successful = results.filter(
+    (r) => r.status === 'success' && r.hasValidData
+  );
+  const noData = results.filter(
+    (r) => r.status === 'success' && !r.hasValidData
+  );
   const failed = results.filter((r) => r.status !== 'success');
 
   console.log('\n' + '='.repeat(60));
@@ -187,7 +194,9 @@ async function main() {
   console.log(`  ${colors.yellow('⚠ 无数据接口:')}   ${noData.length}`);
   console.log(`  ${colors.red('✗ 失败接口:')}     ${failed.length}`);
   console.log(`  ${colors.cyan('总计:')}           ${results.length}`);
-  console.log(`  ${colors.gray('耗时:')}           ${(totalTime / 1000).toFixed(2)}s`);
+  console.log(
+    `  ${colors.gray('耗时:')}           ${(totalTime / 1000).toFixed(2)}s`
+  );
 
   // 输出失败详情
   if (failed.length > 0) {
@@ -210,7 +219,11 @@ async function main() {
     successful
       .sort((a, b) => a.time - b.time)
       .forEach((r, i) => {
-        console.log(`  ${i + 1}. ${r.name} (${r.key}) - ${r.time}ms - ${r.dataCount}条数据`);
+        console.log(
+          `  ${i + 1}. ${r.name} (${r.key}) - ${r.time}ms - ${
+            r.dataCount
+          }条数据`
+        );
       });
   }
 

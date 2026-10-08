@@ -145,7 +145,9 @@ export async function getDoubanCategories(
     const { kind, category, type, pageLimit = 20, pageStart = 0 } = params;
     // 对中文参数进行URL编码，避免请求失败
     const response = await fetch(
-      `/api/douban/categories?kind=${kind}&category=${encodeURIComponent(category)}&type=${encodeURIComponent(type)}&limit=${pageLimit}&start=${pageStart}`
+      `/api/douban/categories?kind=${kind}&category=${encodeURIComponent(
+        category
+      )}&type=${encodeURIComponent(type)}&limit=${pageLimit}&start=${pageStart}`
     );
 
     if (!response.ok) {
@@ -181,7 +183,9 @@ export async function getDoubanList(
   } else {
     // 对中文参数进行URL编码，避免请求失败
     const response = await fetch(
-      `/api/douban?tag=${encodeURIComponent(tag)}&type=${encodeURIComponent(type)}&pageSize=${pageLimit}&pageStart=${pageStart}`
+      `/api/douban?tag=${encodeURIComponent(tag)}&type=${encodeURIComponent(
+        type
+      )}&pageSize=${pageLimit}&pageStart=${pageStart}`
     );
 
     if (!response.ok) {

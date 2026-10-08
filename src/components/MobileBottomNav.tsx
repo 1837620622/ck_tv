@@ -2,7 +2,17 @@
 
 'use client';
 
-import { Clover, Film, Home, Search, Sparkles, Star, Tv, Video } from 'lucide-react';
+import {
+  Clover,
+  Film,
+  Flame,
+  Home,
+  Search,
+  Sparkles,
+  Star,
+  Tv,
+  Video,
+} from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -33,7 +43,12 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
     { icon: Tv, label: '剧集', href: '/douban?type=tv' },
     { icon: Sparkles, label: '动漫', href: '/douban?type=tv&sub=tv_animation' },
     { icon: Clover, label: '综艺', href: '/douban?type=show' },
-    { icon: Video, label: '纪录片', href: '/douban?type=tv&sub=tv_documentary' },
+    {
+      icon: Video,
+      label: '纪录片',
+      href: '/douban?type=tv&sub=tv_documentary',
+    },
+    { icon: Flame, label: '18+专区', href: '/adult' },
   ]);
 
   useEffect(() => {
@@ -60,6 +75,7 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
 
     // 精确匹配
     if (decodedActive === decodedItemHref) return true;
+    if (href === '/adult' && decodedActive.startsWith('/adult')) return true;
 
     if (decodedActive.startsWith('/douban') && typeMatch) {
       const activeHasSub = decodedActive.includes('sub=');
@@ -67,8 +83,10 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
 
       if (itemHasSub) {
         // 菜单项有sub参数，必须精确匹配
-        return decodedActive.includes(`type=${typeMatch}`) &&
-          decodedActive.includes(`sub=${subMatch}`);
+        return (
+          decodedActive.includes(`type=${typeMatch}`) &&
+          decodedActive.includes(`sub=${subMatch}`)
+        );
       } else {
         // 菜单项没有sub参数，只有当前URL也没有sub时才匹配
         return decodedActive.includes(`type=${typeMatch}`) && !activeHasSub;
@@ -102,10 +120,11 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
                 className='flex flex-col items-center justify-center w-full h-14 gap-1 text-xs'
               >
                 <item.icon
-                  className={`h-6 w-6 ${active
-                    ? 'text-green-600 dark:text-green-400'
-                    : 'text-gray-500 dark:text-gray-400'
-                    }`}
+                  className={`h-6 w-6 ${
+                    active
+                      ? 'text-green-600 dark:text-green-400'
+                      : 'text-gray-500 dark:text-gray-400'
+                  }`}
                 />
                 <span
                   className={

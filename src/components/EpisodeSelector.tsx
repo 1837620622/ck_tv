@@ -203,7 +203,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
 
       if (pendingSources.length === 0) return;
 
-      const batchSize = Math.ceil(pendingSources.length / 2);
+      const batchSize = 3;
 
       for (let start = 0; start < pendingSources.length; start += batchSize) {
         const batch = pendingSources.slice(start, start + batchSize);

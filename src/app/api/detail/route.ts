@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 
-import { getAvailableApiSites, getCacheTime } from '@/lib/config';
+import {
+  getAdultApiSites,
+  getAvailableApiSites,
+  getCacheTime,
+} from '@/lib/config';
 import { getDetailFromApi } from '@/lib/downstream';
 
 export const runtime = 'edge';
@@ -20,7 +24,12 @@ export async function GET(request: Request) {
 
   try {
     const apiSites = await getAvailableApiSites();
-    const apiSite = apiSites.find((site) => site.key === sourceCode);
+    let apiSite = apiSites.find((site) => site.key === sourceCode);
+
+    if (!apiSite) {
+      const adultSites = await getAdultApiSites();
+      apiSite = adultSites.find((site) => site.key === sourceCode);
+    }
 
     if (!apiSite) {
       return NextResponse.json({ error: '无效的API来源' }, { status: 400 });

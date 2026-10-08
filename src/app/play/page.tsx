@@ -237,8 +237,8 @@ function PlayPageClient() {
   ): Promise<SearchResult> => {
     if (sources.length === 1) return sources[0];
 
-    // 将播放源均分为两批，并发测速各批，避免一次性过多请求
-    const batchSize = Math.ceil(sources.length / 2);
+    // 采用受控小批次并发（并发数3），避免占满带宽导致测速失真或超时
+    const batchSize = 3;
     const allResults: Array<{
       source: SearchResult;
       testResult: { quality: string; loadSpeed: string; pingTime: number };
@@ -349,8 +349,10 @@ function PlayPageClient() {
     console.log('播放源评分排序结果:');
     resultsWithScore.forEach((result, index) => {
       console.log(
-        `${index + 1}. ${result.source.source_name
-        } - 评分: ${result.score.toFixed(2)} (${result.testResult.quality}, ${result.testResult.loadSpeed
+        `${index + 1}. ${
+          result.source.source_name
+        } - 评分: ${result.score.toFixed(2)} (${result.testResult.quality}, ${
+          result.testResult.loadSpeed
         }, ${result.testResult.pingTime}ms)`
       );
     });
@@ -358,28 +360,28 @@ function PlayPageClient() {
     return resultsWithScore[0].source;
   };
 
-  // 计算播放源综合评分
+  // 计算播放源综合评分（兼容国内与国外线路）
   const calculateSourceScore = (
     testResult: {
       quality: string;
       loadSpeed: string;
       pingTime: number;
     },
-    maxSpeed: number,
-    minPing: number,
-    maxPing: number
+    _maxSpeed: number,
+    _minPing: number,
+    _maxPing: number
   ): number => {
     let score = 0;
 
-    // 分辨率评分 (40% 权重)
+    // 1. 分辨率评分 (35% 权重)
     const qualityScore = (() => {
       switch (testResult.quality) {
         case '4K':
           return 100;
         case '2K':
-          return 85;
+          return 90;
         case '1080p':
-          return 75;
+          return 80;
         case '720p':
           return 60;
         case '480p':
@@ -387,45 +389,45 @@ function PlayPageClient() {
         case 'SD':
           return 20;
         default:
-          return 0;
+          return 40;
       }
     })();
-    score += qualityScore * 0.4;
+    score += qualityScore * 0.35;
 
-    // 下载速度评分 (40% 权重) - 基于最大速度线性映射
+    // 2. 下载速度评分 (50% 权重) - 播放流畅度核心指标
     const speedScore = (() => {
       const speedStr = testResult.loadSpeed;
-      if (speedStr === '未知' || speedStr === '测量中...') return 30;
+      if (speedStr === '未知' || speedStr === '测量中...') return 40;
 
-      // 解析速度值
       const match = speedStr.match(/^([\d.]+)\s*(KB\/s|MB\/s)$/);
-      if (!match) return 30;
+      if (!match) return 40;
 
       const value = parseFloat(match[1]);
       const unit = match[2];
       const speedKBps = unit === 'MB/s' ? value * 1024 : value;
 
-      // 基于最大速度线性映射，最高100分
-      const speedRatio = speedKBps / maxSpeed;
-      return Math.min(100, Math.max(0, speedRatio * 100));
+      if (speedKBps >= 3072) return 100;
+      if (speedKBps >= 2048) return 92;
+      if (speedKBps >= 1024) return 82;
+      if (speedKBps >= 512) return 65;
+      if (speedKBps >= 256) return 45;
+      return 25;
     })();
-    score += speedScore * 0.4;
+    score += speedScore * 0.5;
 
-    // 网络延迟评分 (20% 权重) - 基于延迟范围线性映射
+    // 3. 网络延迟评分 (15% 权重) - 宽容海外CDN线路的正常网络距离
     const pingScore = (() => {
       const ping = testResult.pingTime;
-      if (ping <= 0) return 0; // 无效延迟给默认分
-
-      // 如果所有延迟都相同，给满分
-      if (maxPing === minPing) return 100;
-
-      // 线性映射：最低延迟=100分，最高延迟=0分
-      const pingRatio = (maxPing - ping) / (maxPing - minPing);
-      return Math.min(100, Math.max(0, pingRatio * 100));
+      if (ping <= 0) return 50;
+      if (ping <= 80) return 100;
+      if (ping <= 180) return 85;
+      if (ping <= 350) return 70;
+      if (ping <= 600) return 45;
+      return 20;
     })();
-    score += pingScore * 0.2;
+    score += pingScore * 0.15;
 
-    return Math.round(score * 100) / 100; // 保留两位小数
+    return Math.round(score * 100) / 100;
   };
 
   // 更新视频地址
@@ -662,13 +664,13 @@ function PlayPageClient() {
         const results = data.results.filter(
           (result: SearchResult) =>
             result.title.replaceAll(' ', '').toLowerCase() ===
-            videoTitleRef.current.replaceAll(' ', '').toLowerCase() &&
+              videoTitleRef.current.replaceAll(' ', '').toLowerCase() &&
             (videoYearRef.current
               ? result.year.toLowerCase() === videoYearRef.current.toLowerCase()
               : true) &&
             (searchType
               ? (searchType === 'tv' && result.episodes.length > 1) ||
-              (searchType === 'movie' && result.episodes.length === 1)
+                (searchType === 'movie' && result.episodes.length === 1)
               : true)
         );
         setAvailableSources(results);
@@ -1228,8 +1230,9 @@ function PlayPageClient() {
     // 非WebKit浏览器且播放器已存在，使用switch方法切换
     if (!isWebkit && artPlayerRef.current) {
       artPlayerRef.current.switch = videoUrl;
-      artPlayerRef.current.title = `${videoTitle} - 第${currentEpisodeIndex + 1
-        }集`;
+      artPlayerRef.current.title = `${videoTitle} - 第${
+        currentEpisodeIndex + 1
+      }集`;
       artPlayerRef.current.poster = videoCover;
       if (artPlayerRef.current?.video) {
         ensureVideoSource(
@@ -1313,14 +1316,30 @@ function PlayPageClient() {
               video.hls.destroy();
             }
             const hls = new Hls({
-              debug: false, // 关闭日志
-              enableWorker: true, // WebWorker 解码，降低主线程压力
-              lowLatencyMode: true, // 开启低延迟 LL-HLS
+              debug: false,
+              enableWorker: true,
+              lowLatencyMode: false, // 点播视频禁用 LL-HLS，彻底消除持续卡顿与频繁缓冲
 
-              /* 缓冲/内存相关 */
-              maxBufferLength: 30, // 前向缓冲最大 30s，过大容易导致高延迟
-              backBufferLength: 30, // 仅保留 30s 已播放内容，避免内存占用
-              maxBufferSize: 60 * 1000 * 1000, // 约 60MB，超出后触发清理
+              /* 深度调优缓冲区，稳定承载国内外各节点波动 */
+              maxBufferLength: 60, // 前向缓冲提升至 60s
+              maxMaxBufferLength: 120, // 最大缓冲 120s
+              backBufferLength: 30, // 保留 30s 已播内容
+              maxBufferSize: 100 * 1000 * 1000, // 100MB 缓冲区
+              startFragPrefetch: true, // 预拉取下一个分片
+
+              /* 容错与切片时间戳间隙平滑跳跃 */
+              maxBufferHole: 0.8, // 允许跨越 0.8s 内部切片间隙
+              highBufferWatchdogPeriod: 2, // 快速监控并解卡
+              nudgeOffset: 0.1,
+              nudgeMaxRetry: 5,
+
+              /* 超时与网络重试（容纳海外及弱网线路充足握手时间） */
+              manifestLoadingTimeOut: 15000,
+              manifestLoadingMaxRetry: 4,
+              levelLoadingTimeOut: 15000,
+              levelLoadingMaxRetry: 4,
+              fragLoadingTimeOut: 20000,
+              fragLoadingMaxRetry: 6,
 
               /* 自定义loader */
               loader: blockAdEnabledRef.current
@@ -1333,6 +1352,21 @@ function PlayPageClient() {
             video.hls = hls;
 
             ensureVideoSource(video, url);
+
+            // 当视频因细微时间戳间隙进入卡顿等待时，自动轻微微移恢复播放
+            video.addEventListener('waiting', () => {
+              if (video.buffered && video.buffered.length > 0) {
+                const cur = video.currentTime;
+                for (let i = 0; i < video.buffered.length; i++) {
+                  const s = video.buffered.start(i);
+                  const e = video.buffered.end(i);
+                  if (s <= cur + 0.3 && e - cur > 0.5) {
+                    video.currentTime = cur + 0.1;
+                    break;
+                  }
+                }
+              }
+            });
 
             hls.on(Hls.Events.ERROR, function (event: any, data: any) {
               console.error('HLS Error:', event, data);
@@ -1599,7 +1633,7 @@ function PlayPageClient() {
           skipConfigRef.current.outro_time < 0 &&
           duration > 0 &&
           currentTime >
-          artPlayerRef.current.duration + skipConfigRef.current.outro_time
+            artPlayerRef.current.duration + skipConfigRef.current.outro_time
         ) {
           if (
             currentEpisodeIndexRef.current <
@@ -1716,27 +1750,30 @@ function PlayPageClient() {
             <div className='mb-6 w-80 mx-auto'>
               <div className='flex justify-center space-x-2 mb-4'>
                 <div
-                  className={`w-3 h-3 rounded-full transition-all duration-500 ${loadingStage === 'searching' || loadingStage === 'fetching'
-                    ? 'bg-green-500 scale-125'
-                    : loadingStage === 'preferring' ||
-                      loadingStage === 'ready'
+                  className={`w-3 h-3 rounded-full transition-all duration-500 ${
+                    loadingStage === 'searching' || loadingStage === 'fetching'
+                      ? 'bg-green-500 scale-125'
+                      : loadingStage === 'preferring' ||
+                        loadingStage === 'ready'
                       ? 'bg-green-500'
                       : 'bg-gray-300'
-                    }`}
+                  }`}
                 ></div>
                 <div
-                  className={`w-3 h-3 rounded-full transition-all duration-500 ${loadingStage === 'preferring'
-                    ? 'bg-green-500 scale-125'
-                    : loadingStage === 'ready'
+                  className={`w-3 h-3 rounded-full transition-all duration-500 ${
+                    loadingStage === 'preferring'
+                      ? 'bg-green-500 scale-125'
+                      : loadingStage === 'ready'
                       ? 'bg-green-500'
                       : 'bg-gray-300'
-                    }`}
+                  }`}
                 ></div>
                 <div
-                  className={`w-3 h-3 rounded-full transition-all duration-500 ${loadingStage === 'ready'
-                    ? 'bg-green-500 scale-125'
-                    : 'bg-gray-300'
-                    }`}
+                  className={`w-3 h-3 rounded-full transition-all duration-500 ${
+                    loadingStage === 'ready'
+                      ? 'bg-green-500 scale-125'
+                      : 'bg-gray-300'
+                  }`}
                 ></div>
               </div>
 
@@ -1747,11 +1784,11 @@ function PlayPageClient() {
                   style={{
                     width:
                       loadingStage === 'searching' ||
-                        loadingStage === 'fetching'
+                      loadingStage === 'fetching'
                         ? '33%'
                         : loadingStage === 'preferring'
-                          ? '66%'
-                          : '100%',
+                        ? '66%'
+                        : '100%',
                   }}
                 ></div>
               </div>
@@ -1878,8 +1915,9 @@ function PlayPageClient() {
               }
             >
               <svg
-                className={`w-3.5 h-3.5 text-gray-500 dark:text-gray-400 transition-transform duration-200 ${isEpisodeSelectorCollapsed ? 'rotate-180' : 'rotate-0'
-                  }`}
+                className={`w-3.5 h-3.5 text-gray-500 dark:text-gray-400 transition-transform duration-200 ${
+                  isEpisodeSelectorCollapsed ? 'rotate-180' : 'rotate-0'
+                }`}
                 fill='none'
                 stroke='currentColor'
                 viewBox='0 0 24 24'
@@ -1897,24 +1935,27 @@ function PlayPageClient() {
 
               {/* 精致的状态指示点 */}
               <div
-                className={`absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full transition-all duration-200 ${isEpisodeSelectorCollapsed
-                  ? 'bg-orange-400 animate-pulse'
-                  : 'bg-green-400'
-                  }`}
+                className={`absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full transition-all duration-200 ${
+                  isEpisodeSelectorCollapsed
+                    ? 'bg-orange-400 animate-pulse'
+                    : 'bg-green-400'
+                }`}
               ></div>
             </button>
           </div>
 
           <div
-            className={`grid gap-4 lg:h-[500px] xl:h-[650px] 2xl:h-[750px] transition-all duration-300 ease-in-out ${isEpisodeSelectorCollapsed
-              ? 'grid-cols-1'
-              : 'grid-cols-1 md:grid-cols-4'
-              }`}
+            className={`grid gap-4 lg:h-[500px] xl:h-[650px] 2xl:h-[750px] transition-all duration-300 ease-in-out ${
+              isEpisodeSelectorCollapsed
+                ? 'grid-cols-1'
+                : 'grid-cols-1 md:grid-cols-4'
+            }`}
           >
             {/* 播放器 */}
             <div
-              className={`h-full transition-all duration-300 ease-in-out rounded-xl border border-white/0 dark:border-white/30 ${isEpisodeSelectorCollapsed ? 'col-span-1' : 'md:col-span-3'
-                }`}
+              className={`h-full transition-all duration-300 ease-in-out rounded-xl border border-white/0 dark:border-white/30 ${
+                isEpisodeSelectorCollapsed ? 'col-span-1' : 'md:col-span-3'
+              }`}
             >
               <div className='relative w-full h-[300px] lg:h-full'>
                 <div
@@ -1927,7 +1968,7 @@ function PlayPageClient() {
                   enabled={aiSubtitleEnabled}
                   videoUrl={currentVideoUrl}
                   currentTime={currentPlayTime}
-                  language="zh"
+                  language='zh'
                 />
 
                 {/* 换源加载蒙层 */}
@@ -1972,10 +2013,11 @@ function PlayPageClient() {
 
             {/* 选集和换源 - 在移动端始终显示，在 lg 及以上可折叠 */}
             <div
-              className={`h-[300px] lg:h-full md:overflow-hidden transition-all duration-300 ease-in-out ${isEpisodeSelectorCollapsed
-                ? 'md:col-span-1 lg:hidden lg:opacity-0 lg:scale-95'
-                : 'md:col-span-1 lg:opacity-100 lg:scale-100'
-                }`}
+              className={`h-[300px] lg:h-full md:overflow-hidden transition-all duration-300 ease-in-out ${
+                isEpisodeSelectorCollapsed
+                  ? 'md:col-span-1 lg:hidden lg:opacity-0 lg:scale-95'
+                  : 'md:col-span-1 lg:opacity-100 lg:scale-100'
+              }`}
             >
               <EpisodeSelector
                 totalEpisodes={totalEpisodes}

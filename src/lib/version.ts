@@ -2,7 +2,7 @@
 
 'use client';
 
-const CURRENT_VERSION = '传康KK万能播放器';
+const CURRENT_VERSION = '20261008205226';
 
 // 版本检查结果枚举
 export enum UpdateStatus {
@@ -16,7 +16,6 @@ const VERSION_CHECK_URLS = [
   'https://ghfast.top/raw.githubusercontent.com/1837620622/MoonTV_ck/main/VERSION',
   'https://raw.githubusercontent.com/1837620622/MoonTV_ck/main/VERSION',
 ];
-
 
 /**
  * 检查是否有新版本可用
