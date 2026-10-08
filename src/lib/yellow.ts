@@ -16,6 +16,8 @@ export const adultSourceKeys = [
   'lbby',
   'shayu',
   'heitao',
+  'yutu',
+  'huangguo',
 ];
 
 // 成人采集站域名。后台旧配置即使换了 key，也不能再进全站搜索。
@@ -38,7 +40,17 @@ export const adultApiHosts = [
   'shayuapi.com',
   'zy.heitaodj.com',
   'heitaodj.com',
+  'apiyutu.com',
+  'yutuzy10.com',
+  'huangguoai.com',
 ];
+
+// 分类名或标题里出现这些词时，不进 18+ 列表。
+const underageLabel = /萝莉|幼女|未成年|小学生|幼幼|正太|幼童|童颜|loli/i;
+
+export function isUnderageLabel(text?: string): boolean {
+  return !!text && underageLabel.test(text);
+}
 
 export function apiHost(api?: string): string {
   if (!api) return '';

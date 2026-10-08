@@ -54,6 +54,19 @@ const DoubanSelector: React.FC<DoubanSelectorProps> = ({
     { label: '欧美', value: '欧美' },
     { label: '韩国', value: '韩国' },
     { label: '日本', value: '日本' },
+    { label: '喜剧', value: '喜剧' },
+    { label: '动作', value: '动作' },
+    { label: '科幻', value: '科幻' },
+    { label: '动画', value: '动画' },
+    { label: '悬疑', value: '悬疑' },
+    { label: '爱情', value: '爱情' },
+    { label: '纪录片', value: '纪录片' },
+    { label: '剧情', value: '剧情' },
+    { label: '犯罪', value: '犯罪' },
+    { label: '惊悚', value: '惊悚' },
+    { label: '奇幻', value: '奇幻' },
+    { label: '战争', value: '战争' },
+    { label: '历史', value: '历史' },
   ];
 
   // 电视剧选择器选项
@@ -92,14 +105,14 @@ const DoubanSelector: React.FC<DoubanSelectorProps> = ({
         const button = buttonRefs.current[activeIndex];
         const container = containerRef.current;
         if (button && container) {
-          const buttonRect = button.getBoundingClientRect();
-          const containerRect = container.getBoundingClientRect();
-
-          if (buttonRect.width > 0) {
-            setIndicatorStyle({
-              left: buttonRect.left - containerRect.left,
-              width: buttonRect.width,
-            });
+          const left = button.offsetLeft;
+          const width = button.offsetWidth;
+          if (width > 0) {
+            setIndicatorStyle({ left, width });
+            const viewRight = container.scrollLeft + container.clientWidth;
+            if (left < container.scrollLeft || left + width > viewRight) {
+              container.scrollTo({ left: Math.max(0, left - 12) });
+            }
           }
         }
       }, 0);
@@ -217,7 +230,7 @@ const DoubanSelector: React.FC<DoubanSelectorProps> = ({
     return (
       <div
         ref={containerRef}
-        className='relative inline-flex bg-gray-200/60 rounded-full p-0.5 sm:p-1 dark:bg-gray-700/60 backdrop-blur-sm'
+        className='relative flex max-w-full overflow-x-auto bg-gray-200/60 rounded-full p-0.5 sm:p-1 dark:bg-gray-700/60 backdrop-blur-sm'
       >
         {/* 滑动的白色背景指示器 */}
         {indicatorStyle.width > 0 && (
@@ -276,7 +289,7 @@ const DoubanSelector: React.FC<DoubanSelectorProps> = ({
           {/* 二级选择器 */}
           <div className='flex flex-col sm:flex-row sm:items-center gap-2'>
             <span className='text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400 min-w-[48px]'>
-              地区
+              筛选
             </span>
             <div className='overflow-x-auto'>
               {renderCapsuleSelector(

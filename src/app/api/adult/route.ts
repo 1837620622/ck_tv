@@ -3,7 +3,7 @@ import { getOptionalRequestContext } from '@cloudflare/next-on-pages';
 import { NextResponse } from 'next/server';
 
 import { getAdultApiSites, getConfig } from '@/lib/config';
-import { searchFromApi } from '@/lib/downstream';
+import { extractPlayUrls, searchFromApi } from '@/lib/downstream';
 import {
   edgeFetchInit,
   jsonCacheHeaders,
@@ -13,7 +13,26 @@ import {
 import { settleWithin } from '@/lib/settle';
 import { SearchResult } from '@/lib/types';
 import { cleanHtmlTags } from '@/lib/utils';
-import { adultSourceKeys } from '@/lib/yellow';
+import { adultSourceKeys, isUnderageLabel } from '@/lib/yellow';
+
+function asPage(value: unknown, fallback = 1): number {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : fallback;
+}
+
+function allowedCategory(item: { type_name?: string }) {
+  return !isUnderageLabel(item?.type_name);
+}
+
+function cleanPoster(raw: unknown): string {
+  const text = String(raw || '')
+    .replace(/[\r\n\t]/g, '')
+    .trim();
+  if (!text) return '';
+  const first = text.split('#')[0].trim();
+  if (first.startsWith('//')) return `https:${first}`;
+  return first;
+}
 
 export const runtime = 'edge';
 
@@ -39,7 +58,7 @@ export async function GET(request: Request) {
   const action = searchParams.get('action') || 'list';
   const query = searchParams.get('q');
   const source = searchParams.get('source') || 'zy91md';
-  const page = parseInt(searchParams.get('page') || '1', 10);
+  const page = asPage(searchParams.get('page'), 1);
   const typeId = searchParams.get('t') || '';
 
   let adultSites = await getAdultApiSites();
@@ -73,7 +92,7 @@ export async function GET(request: Request) {
     }
     const cacheUrl = `https://cktv-cache.local/adult-search?q=${encodeURIComponent(
       q
-    )}&v=5`;
+    )}&page=${page}&v=6`;
     try {
       const hit = await readJsonCache(cacheUrl);
       if (hit) {
@@ -83,23 +102,62 @@ export async function GET(request: Request) {
       }
       const settled = await settleWithin(
         adultSites.map((site) =>
-          searchFromApi(site, q, { keepAdult: true, timeoutMs: 1800 })
+          searchFromApi(site, q, {
+            keepAdult: true,
+            timeoutMs: 2200,
+            page,
+          })
         ),
-        800,
+        1400,
         [] as SearchResult[]
       );
-      const flattened = settled.values.flat();
+      const flattened = settled.values
+        .flat()
+        .filter(
+          (item) =>
+            !isUnderageLabel(item.title) &&
+            !isUnderageLabel(item.type_name) &&
+            !isUnderageLabel(item.class)
+        )
+        .map((item) => ({ ...item, poster: cleanPoster(item.poster) }));
+      const pagecount = Math.max(
+        1,
+        ...settled.values.map(
+          (list) => Number((list as { pageCount?: number }).pageCount) || 1
+        )
+      );
       const body = JSON.stringify({
         list: flattened,
         total: flattened.length,
+        page,
+        pagecount,
       });
       const store = () => {
-        const full = settled.values.flat();
+        const full = settled.values
+          .flat()
+          .filter(
+            (item) =>
+              !isUnderageLabel(item.title) &&
+              !isUnderageLabel(item.type_name) &&
+              !isUnderageLabel(item.class)
+          )
+          .map((item) => ({ ...item, poster: cleanPoster(item.poster) }));
         if (full.length === 0) return;
+        const fullCount = Math.max(
+          1,
+          ...settled.values.map(
+            (list) => Number((list as { pageCount?: number }).pageCount) || 1
+          )
+        );
         writeJsonCache(
           ctx,
           cacheUrl,
-          JSON.stringify({ list: full, total: full.length }),
+          JSON.stringify({
+            list: full,
+            total: full.length,
+            page,
+            pagecount: fullCount,
+          }),
           ADULT_EDGE_SECONDS,
           ADULT_BROWSER_SECONDS
         );
@@ -139,7 +197,7 @@ export async function GET(request: Request) {
       if (!res.ok) return NextResponse.json({ categories: [] });
       const data = await res.json();
       return NextResponse.json({
-        categories: data?.class || [],
+        categories: (data?.class || []).filter(allowedCategory),
       });
     } catch {
       return NextResponse.json({ categories: [] });
@@ -149,7 +207,7 @@ export async function GET(request: Request) {
   // 3. 列表分页动作
   const listCacheUrl = `https://cktv-cache.local/adult-list?source=${encodeURIComponent(
     currentSite.key
-  )}&page=${page}&t=${encodeURIComponent(typeId)}&v=5`;
+  )}&page=${page}&t=${encodeURIComponent(typeId)}&v=6`;
   const listHit = await readJsonCache(listCacheUrl);
   if (listHit) {
     return new NextResponse(await listHit.text(), {
@@ -161,7 +219,7 @@ export async function GET(request: Request) {
     const tParam = typeId ? `&t=${encodeURIComponent(typeId)}` : '';
     const apiUrl = `${currentSite.api}?ac=videolist&pg=${page}${tParam}`;
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
     const res = await fetch(
       apiUrl,
       edgeFetchInit(
@@ -187,38 +245,35 @@ export async function GET(request: Request) {
 
     const data = await res.json();
     const rawList = data?.list || [];
-    const categories = data?.class || [];
+    const categories = (data?.class || []).filter(allowedCategory);
 
-    // 格式化为与 SearchResult 兼容的对象
-    const M3U8_PATTERN = /(https?:\/\/[^"'\s]+?\.m3u8)/g;
-    const formattedList = rawList.map((item: any) => {
-      let episodes: string[] = [];
-      if (item.vod_play_url) {
-        const matches = item.vod_play_url.match(M3U8_PATTERN) || [];
-        episodes = Array.from(new Set(matches)).map((link: any) => {
-          const parenIndex = link.indexOf('(');
-          return parenIndex > 0 ? link.substring(0, parenIndex) : link;
-        });
-      }
-      return {
-        id: item.vod_id?.toString() || '',
-        title: (item.vod_name || '').trim(),
-        poster: item.vod_pic || '',
-        episodes,
-        source: currentSite.key,
-        source_name: currentSite.name,
-        class: item.vod_class || '',
-        year: item.vod_year?.toString() || 'unknown',
-        desc: cleanHtmlTags(item.vod_content || ''),
-        type_name: item.type_name || '',
-        douban_id: 0,
-      };
-    });
+    const formattedList = rawList
+      .map((item: any) => {
+        return {
+          id: item.vod_id?.toString() || '',
+          title: (item.vod_name || '').trim(),
+          poster: cleanPoster(item.vod_pic),
+          episodes: item.vod_play_url ? extractPlayUrls(item.vod_play_url) : [],
+          source: currentSite.key,
+          source_name: currentSite.name,
+          class: item.vod_class || '',
+          year: item.vod_year?.toString() || 'unknown',
+          desc: cleanHtmlTags(item.vod_content || ''),
+          type_name: item.type_name || '',
+          douban_id: 0,
+        };
+      })
+      .filter(
+        (item: SearchResult) =>
+          !isUnderageLabel(item.title) &&
+          !isUnderageLabel(item.type_name) &&
+          !isUnderageLabel(item.class)
+      );
 
     const payload = {
       list: formattedList,
-      page: data.page || page,
-      pagecount: data.pagecount || 1,
+      page: asPage(data.page, page),
+      pagecount: asPage(data.pagecount, 1),
       total: data.total || 0,
       categories,
       sources: adultSites.map((s) => ({ key: s.key, name: s.name })),

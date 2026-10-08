@@ -33,6 +33,8 @@ const homeEntries = [
   { label: '动漫', href: '/douban?type=tv&sub=tv_animation' },
   { label: '综艺', href: '/douban?type=show' },
   { label: '纪录片', href: '/douban?type=tv&sub=tv_documentary' },
+  { label: '番组', href: '/douban?src=bangumi' },
+  { label: '哔哩', href: '/douban?src=bilibili' },
 ];
 
 function SectionTitle({ title, href }: { title: string; href?: string }) {
@@ -154,10 +156,28 @@ async function loadDoubanRow(params: {
   type: string;
 }): Promise<DoubanItem[]> {
   try {
-    const data = await getDoubanCategories(params);
-    return data.code === 200 ? data.list : [];
+    const data = await getDoubanCategories(params, { silent: true });
+    return data.code === 200 && Array.isArray(data.list) ? data.list : [];
   } catch (error) {
     console.error('获取豆瓣数据失败:', error);
+    return [];
+  }
+}
+
+async function loadCatalogRow(
+  engine: string,
+  kind: string
+): Promise<DoubanItem[]> {
+  try {
+    const response = await fetch(
+      `/api/catalog?engine=${engine}&kind=${encodeURIComponent(kind)}&page=1`,
+      { cache: 'no-store' }
+    );
+    if (!response.ok) return [];
+    const data = await response.json();
+    return Array.isArray(data?.list) ? data.list.slice(0, 16) : [];
+  } catch (error) {
+    console.error('获取片库数据失败:', error);
     return [];
   }
 }
@@ -173,7 +193,10 @@ function HomeClient() {
   const [hotAnime, setHotAnime] = useState<DoubanItem[]>([]);
   const [hotVarietyShows, setHotVarietyShows] = useState<DoubanItem[]>([]);
   const [hotDocumentaries, setHotDocumentaries] = useState<DoubanItem[]>([]);
+  const [bangumiRow, setBangumiRow] = useState<DoubanItem[]>([]);
+  const [bilibiliRow, setBilibiliRow] = useState<DoubanItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [catalogLoading, setCatalogLoading] = useState(true);
 
   // 收藏夹数据
   type FavoriteItem = {
@@ -224,6 +247,24 @@ function HomeClient() {
     };
 
     fetchDoubanData();
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadCatalog = async () => {
+      const [bangumi, bilibili] = await Promise.all([
+        loadCatalogRow('bangumi', 'anime'),
+        loadCatalogRow('bilibili', 'bangumi'),
+      ]);
+      if (cancelled) return;
+      setBangumiRow(bangumi);
+      setBilibiliRow(bilibili);
+      setCatalogLoading(false);
+    };
+    loadCatalog();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // 处理收藏数据更新的函数
@@ -356,6 +397,12 @@ function HomeClient() {
                 >
                   18+
                 </Link>
+                <Link
+                  href='/huangguo'
+                  className='shrink-0 px-3 py-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
+                >
+                  AI黄果
+                </Link>
               </nav>
 
               <ContinueWatching />
@@ -470,6 +517,18 @@ function HomeClient() {
                 href='/douban?type=tv&sub=tv_documentary'
                 loading={loading}
                 items={hotDocumentaries}
+              />
+              <HomeRow
+                title='番组高分'
+                href='/douban?src=bangumi'
+                loading={catalogLoading}
+                items={bangumiRow}
+              />
+              <HomeRow
+                title='哔哩番剧'
+                href='/douban?src=bilibili'
+                loading={catalogLoading}
+                items={bilibiliRow}
               />
             </>
           )}

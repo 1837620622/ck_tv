@@ -20,12 +20,17 @@ interface ApiSearchItem {
 export async function searchFromApi(
   apiSite: ApiSite,
   query: string,
-  options?: { keepAdult?: boolean; timeoutMs?: number }
+  options?: { keepAdult?: boolean; timeoutMs?: number; page?: number }
 ): Promise<SearchResult[]> {
   try {
     const apiBaseUrl = apiSite.api;
+    const pageNo = Math.max(1, Math.floor(options?.page || 1));
+    const pageSuffix = pageNo > 1 ? `&pg=${pageNo}` : '';
     const apiUrl =
-      apiBaseUrl + API_CONFIG.search.path + encodeURIComponent(query);
+      apiBaseUrl +
+      API_CONFIG.search.path +
+      encodeURIComponent(query) +
+      pageSuffix;
     const apiName = apiSite.name;
 
     // 国内首批查询用更短的超时，避免慢源占住连接。
@@ -164,10 +169,12 @@ export async function searchFromApi(
       });
     }
 
+    const tagged = results as SearchResult[] & { pageCount?: number };
+    tagged.pageCount = Number(data.pagecount) || 1;
     if (options?.keepAdult) {
-      return results;
+      return tagged;
     }
-    return results.filter((item: SearchResult) => !isAdultContent(item));
+    return tagged.filter((item: SearchResult) => !isAdultContent(item));
   } catch (error) {
     return [];
   }

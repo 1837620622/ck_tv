@@ -1,20 +1,16 @@
-/* eslint-disable no-console, react-hooks/exhaustive-deps, @typescript-eslint/no-explicit-any */
+/* eslint-disable no-console */
 
 'use client';
 
-import {
-  ChevronLeft,
-  ChevronRight,
-  Flame,
-  RefreshCw,
-  Search,
-  X,
-} from 'lucide-react';
-import { Suspense, useCallback, useEffect, useState } from 'react';
+import { Flame, Search, X } from 'lucide-react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 
 import { SearchResult } from '@/lib/types';
+import { isUnderageLabel } from '@/lib/yellow';
 
+import AgeGate, { AgeNotice, readAgeGate } from '@/components/AgeGate';
 import PageLayout from '@/components/PageLayout';
+import PagePager from '@/components/PagePager';
 import VideoCard from '@/components/VideoCard';
 
 interface SourceOption {
@@ -27,301 +23,354 @@ interface CategoryOption {
   type_name: string;
 }
 
-function AdultPageClient() {
-  const [sources, setSources] = useState<SourceOption[]>([]);
-  const [activeSource, setActiveSource] = useState<string>('zy91md');
-  const [categories, setCategories] = useState<CategoryOption[]>([]);
-  const [activeCategory, setActiveCategory] = useState<string>('');
-  const [videos, setVideos] = useState<SearchResult[]>([]);
-  const [page, setPage] = useState<number>(1);
-  const [pageCount, setPageCount] = useState<number>(1);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [isSearching, setIsSearching] = useState<boolean>(false);
+function asPage(value: unknown, fallback: number): number {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : fallback;
+}
 
-  // 加载数据
-  const loadData = useCallback(
-    async (sourceKey: string, categoryId: string, pageNum: number) => {
-      setLoading(true);
-      setIsSearching(false);
+function scrollPageTop() {
+  document.body.scrollTop = 0;
+  document.documentElement.scrollTop = 0;
+}
+
+function keepAdultItem(item: SearchResult): boolean {
+  return (
+    !isUnderageLabel(item.title) &&
+    !isUnderageLabel(item.type_name) &&
+    !isUnderageLabel(item.class)
+  );
+}
+
+function AdultPageClient() {
+  const [ready, setReady] = useState(false);
+  const [unlocked, setUnlocked] = useState(false);
+  const [sources, setSources] = useState<SourceOption[]>([]);
+  const [activeSource, setActiveSource] = useState('zy91md');
+  const [categories, setCategories] = useState<CategoryOption[]>([]);
+  const [activeCategory, setActiveCategory] = useState('');
+  const [videos, setVideos] = useState<SearchResult[]>([]);
+  const [page, setPage] = useState(1);
+  const [pageCount, setPageCount] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [draftQuery, setDraftQuery] = useState('');
+  const [committedQuery, setCommittedQuery] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
+  const requestId = useRef(0);
+  const categoryCache = useRef<Record<string, CategoryOption[]>>({});
+
+  useEffect(() => {
+    setUnlocked(readAgeGate());
+    setReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!unlocked) return;
+    scrollPageTop();
+  }, [unlocked, page, activeSource, activeCategory, committedQuery]);
+
+  useEffect(() => {
+    if (!unlocked) return;
+    const req = ++requestId.current;
+    const controller = new AbortController();
+    const pageNum = asPage(page, 1);
+    const sourceKey = activeSource;
+    setLoading(true);
+
+    const applyCategories = (list: CategoryOption[]) => {
+      const next = list.filter((item) => !isUnderageLabel(item.type_name));
+      categoryCache.current[sourceKey] = next;
+      if (req === requestId.current) setCategories(next);
+    };
+
+    const run = async () => {
+      const url = isSearching
+        ? `/api/adult?action=search&q=${encodeURIComponent(
+            committedQuery
+          )}&page=${pageNum}`
+        : `/api/adult?action=list&source=${encodeURIComponent(
+            sourceKey
+          )}&page=${pageNum}${
+            activeCategory ? `&t=${encodeURIComponent(activeCategory)}` : ''
+          }`;
       try {
-        const tParam = categoryId ? `&t=${encodeURIComponent(categoryId)}` : '';
-        const res = await fetch(
-          `/api/adult?action=list&source=${sourceKey}&page=${pageNum}${tParam}`
-        );
+        const res = await fetch(url, {
+          cache: 'no-store',
+          signal: controller.signal,
+        });
         if (!res.ok) throw new Error('加载失败');
         const data = await res.json();
-        setVideos(data.list || []);
-        setPage(data.page || pageNum);
-        setPageCount(data.pagecount || 1);
-
-        if (data.sources && data.sources.length > 0) {
+        if (req !== requestId.current) return;
+        const list = ((data.list || []) as SearchResult[]).filter(
+          keepAdultItem
+        );
+        setVideos(list);
+        const incoming = Number(data.pagecount);
+        const hasCount = Number.isFinite(incoming) && incoming >= 1;
+        if (list.length > 0 && hasCount) {
+          setPageCount(Math.floor(incoming));
+        } else if (hasCount && incoming > 1) {
+          setPageCount(Math.floor(incoming));
+        } else if (pageNum === 1 && list.length === 0) {
+          setPageCount(1);
+        }
+        if (Array.isArray(data.sources) && data.sources.length > 0) {
           setSources(data.sources);
         }
-
-        // 加载分类
-        if (data.categories && data.categories.length > 0) {
-          setCategories(data.categories);
-        } else {
-          // 异步获取该源分类
-          fetch(`/api/adult?action=types&source=${sourceKey}`)
-            .then((r) => r.json())
-            .then((typesData) => {
-              if (typesData.categories) {
-                setCategories(typesData.categories);
-              }
-            })
-            .catch((_err) => {
-              // ignore
-            });
+        if (!isSearching) {
+          const cached = categoryCache.current[sourceKey];
+          if (cached) {
+            setCategories(cached);
+          } else if (
+            Array.isArray(data.categories) &&
+            data.categories.length > 0
+          ) {
+            applyCategories(data.categories);
+          } else {
+            const typesRes = await fetch(
+              `/api/adult?action=types&source=${encodeURIComponent(sourceKey)}`,
+              { cache: 'no-store', signal: controller.signal }
+            );
+            const typesData = await typesRes.json();
+            if (req !== requestId.current) return;
+            applyCategories(typesData.categories || []);
+          }
         }
       } catch (err) {
-        console.error('获取成人内容列表失败:', err);
-        setVideos([]);
+        if (controller.signal.aborted || req !== requestId.current) return;
+        console.error('获取成人内容失败:', err);
+        if (pageNum === 1) setVideos([]);
       } finally {
-        setLoading(false);
+        if (req === requestId.current) setLoading(false);
       }
-    },
-    []
-  );
+    };
 
-  // 初始化加载
-  useEffect(() => {
-    loadData(activeSource, activeCategory, page);
-  }, [activeSource, activeCategory, page, loadData]);
+    run();
+    return () => controller.abort();
+  }, [
+    unlocked,
+    activeSource,
+    activeCategory,
+    page,
+    isSearching,
+    committedQuery,
+  ]);
 
-  // 搜索处理
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const query = searchQuery.trim();
+  const goPage = (next: number) => {
+    const target = Math.min(
+      Math.max(1, asPage(next, 1)),
+      Math.max(1, pageCount)
+    );
+    setPage(target);
+  };
+
+  const handleSearch = (event: React.FormEvent) => {
+    event.preventDefault();
+    const query = draftQuery.trim();
     if (!query) {
-      loadData(activeSource, activeCategory, 1);
+      setIsSearching(false);
+      setCommittedQuery('');
+      setPage(1);
       return;
     }
-
-    setLoading(true);
+    setCommittedQuery(query);
     setIsSearching(true);
-    try {
-      const res = await fetch(
-        `/api/adult?action=search&q=${encodeURIComponent(query)}`
-      );
-      if (!res.ok) throw new Error('搜索失败');
-      const data = await res.json();
-      setVideos(data.list || []);
-    } catch (err) {
-      console.error('成人内容搜索失败:', err);
-      setVideos([]);
-    } finally {
-      setLoading(false);
-    }
+    setPage(1);
   };
 
   const handleClearSearch = () => {
-    setSearchQuery('');
+    setDraftQuery('');
+    setCommittedQuery('');
     setIsSearching(false);
-    loadData(activeSource, activeCategory, 1);
+    setPage(1);
   };
 
   const handleSourceChange = (key: string) => {
     setActiveSource(key);
     setActiveCategory('');
-    setPage(1);
-    setSearchQuery('');
+    setCategories(categoryCache.current[key] || []);
+    setDraftQuery('');
+    setCommittedQuery('');
     setIsSearching(false);
+    setPage(1);
   };
 
   const handleCategoryChange = (typeId: string) => {
     setActiveCategory(typeId);
-    setPage(1);
-    setSearchQuery('');
+    setDraftQuery('');
+    setCommittedQuery('');
     setIsSearching(false);
+    setPage(1);
   };
 
   return (
     <PageLayout activePath='/adult'>
-      <div className='px-4 sm:px-10 py-4 sm:py-8 min-h-screen'>
-        {/* 顶部标题与提示 */}
-        <div className='mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-gray-200/60 dark:border-gray-800 pb-4'>
-          <div className='flex items-center gap-3'>
-            <div className='flex items-center justify-center w-10 h-10 rounded-xl bg-rose-500/10 text-rose-500 dark:bg-rose-500/20'>
-              <Flame className='w-6 h-6' />
+      {!ready ? <div className='min-h-screen' /> : null}
+      {ready && !unlocked ? (
+        <AgeGate title='18+ 专区' onUnlock={() => setUnlocked(true)} />
+      ) : null}
+      {ready && unlocked ? (
+        <div className='min-h-screen max-w-full overflow-x-hidden px-3 py-4 pb-36 sm:px-10 sm:py-8'>
+          <div className='mb-5 flex flex-col gap-4 border-b border-gray-200 pb-4 dark:border-gray-800 sm:flex-row sm:items-center sm:justify-between'>
+            <div className='flex items-center gap-3'>
+              <Flame className='h-5 w-5 text-green-600' />
+              <div>
+                <h1 className='text-xl font-semibold text-gray-900 dark:text-gray-100'>
+                  18+ 专区
+                </h1>
+                <p className='mt-0.5 text-xs text-gray-500 dark:text-gray-400'>
+                  只在本栏目浏览和搜索，不会出现在全站搜索里
+                </p>
+                <AgeNotice />
+              </div>
             </div>
-            <div>
-              <h1 className='text-2xl font-bold tracking-tight text-gray-900 dark:text-gray-100 flex items-center gap-2'>
-                18+ 专区
-                <span className='text-xs font-medium px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300'>
-                  独立栏目
-                </span>
-              </h1>
-              <p className='text-xs text-gray-500 dark:text-gray-400 mt-0.5'>
-                色情与成人内容已完全从全站搜索分离，仅在本栏目内浏览与搜索
-              </p>
-            </div>
+            <form onSubmit={handleSearch} className='w-full sm:w-80'>
+              <div className='relative'>
+                <Search className='absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400' />
+                <input
+                  type='text'
+                  value={draftQuery}
+                  onChange={(event) => setDraftQuery(event.target.value)}
+                  placeholder='搜片名、演员'
+                  className='h-10 w-full border border-gray-200 bg-gray-50 py-2 pl-9 pr-9 text-sm text-gray-800 outline-none focus:border-green-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100'
+                />
+                {draftQuery ? (
+                  <button
+                    type='button'
+                    onClick={handleClearSearch}
+                    aria-label='清空搜索'
+                    className='absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400'
+                  >
+                    <X className='h-4 w-4' />
+                  </button>
+                ) : null}
+              </div>
+            </form>
           </div>
 
-          {/* 专属搜索框 */}
-          <form onSubmit={handleSearch} className='w-full sm:w-80'>
-            <div className='relative'>
-              <Search className='absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-gray-500' />
-              <input
-                type='text'
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder='在此栏目内搜索片名、演员...'
-                className='w-full h-10 rounded-xl bg-gray-50/90 py-2 pl-9 pr-9 text-xs text-gray-700 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-rose-400 focus:bg-white border border-gray-200/60 shadow-sm dark:bg-gray-800/80 dark:text-gray-200 dark:placeholder-gray-500 dark:focus:bg-gray-700 dark:border-gray-700'
-              />
-              {searchQuery && (
-                <button
-                  type='button'
-                  onClick={handleClearSearch}
-                  className='absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200'
-                >
-                  <X className='w-4 h-4' />
-                </button>
-              )}
+          {sources.length > 0 && !isSearching ? (
+            <div className='mb-3 flex items-center gap-2 overflow-x-auto pb-1'>
+              <span className='shrink-0 text-xs text-gray-400'>源站</span>
+              {sources.map((src) => {
+                const active = activeSource === src.key;
+                return (
+                  <button
+                    key={src.key}
+                    type='button'
+                    onClick={() => handleSourceChange(src.key)}
+                    className={`shrink-0 px-3 py-1.5 text-xs ${
+                      active
+                        ? 'bg-green-600 text-white'
+                        : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200'
+                    }`}
+                  >
+                    {src.name}
+                  </button>
+                );
+              })}
             </div>
-          </form>
-        </div>
+          ) : null}
 
-        {/* 资源源切换 */}
-        {sources.length > 0 && !isSearching && (
-          <div className='mb-4 flex items-center gap-2 overflow-x-auto pb-1 scrollbar-hide'>
-            <span className='text-xs font-semibold text-gray-400 uppercase tracking-wider shrink-0 mr-1'>
-              源站:
-            </span>
-            {sources.map((src) => {
-              const active = activeSource === src.key;
-              return (
-                <button
-                  key={src.key}
-                  onClick={() => handleSourceChange(src.key)}
-                  className={`text-xs px-3.5 py-1.5 rounded-lg font-medium transition-all duration-200 shrink-0 ${
-                    active
-                      ? 'bg-rose-500 text-white shadow-sm shadow-rose-500/20'
-                      : 'bg-gray-100/80 text-gray-600 hover:bg-gray-200/80 dark:bg-gray-800/80 dark:text-gray-300 dark:hover:bg-gray-700'
-                  }`}
-                >
-                  {src.name}
-                </button>
-              );
-            })}
-          </div>
-        )}
+          {categories.length > 0 && !isSearching ? (
+            <div className='mb-5 flex max-h-24 flex-wrap gap-1.5 overflow-y-auto'>
+              <button
+                type='button'
+                onClick={() => handleCategoryChange('')}
+                className={`px-3 py-1 text-xs ${
+                  activeCategory === ''
+                    ? 'bg-green-600 text-white'
+                    : 'text-gray-600 dark:text-gray-300'
+                }`}
+              >
+                全部
+              </button>
+              {categories.map((cat) => {
+                const catId = cat.type_id.toString();
+                const active = activeCategory === catId;
+                return (
+                  <button
+                    key={catId}
+                    type='button'
+                    onClick={() => handleCategoryChange(catId)}
+                    className={`px-3 py-1 text-xs ${
+                      active
+                        ? 'bg-green-600 text-white'
+                        : 'text-gray-600 dark:text-gray-300'
+                    }`}
+                  >
+                    {cat.type_name}
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
 
-        {/* 分类切换 */}
-        {categories.length > 0 && !isSearching && (
-          <div className='mb-6 flex items-center gap-1.5 flex-wrap max-h-28 overflow-y-auto pr-1'>
-            <button
-              onClick={() => handleCategoryChange('')}
-              className={`text-xs px-3 py-1 rounded-full transition-all duration-150 ${
-                activeCategory === ''
-                  ? 'bg-rose-500/10 text-rose-600 font-semibold dark:bg-rose-500/20 dark:text-rose-300'
-                  : 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'
+          {isSearching ? (
+            <div className='mb-4 flex items-center justify-between text-xs text-gray-500'>
+              <span>
+                搜索「{committedQuery}」
+                {loading ? '，加载中' : `，本页 ${videos.length} 条`}
+              </span>
+              <button
+                type='button'
+                onClick={handleClearSearch}
+                className='text-green-600'
+              >
+                返回浏览
+              </button>
+            </div>
+          ) : null}
+
+          {loading && videos.length === 0 ? (
+            <div className='flex h-64 items-center justify-center'>
+              <div className='h-8 w-8 animate-spin rounded-full border-b-2 border-green-600' />
+            </div>
+          ) : null}
+
+          {videos.length > 0 ? (
+            <div
+              className={`grid grid-cols-2 gap-x-3 gap-y-5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 ${
+                loading ? 'opacity-60' : ''
               }`}
             >
-              全部
-            </button>
-            {categories.map((cat) => {
-              const catIdStr = cat.type_id.toString();
-              const active = activeCategory === catIdStr;
-              return (
-                <button
-                  key={catIdStr}
-                  onClick={() => handleCategoryChange(catIdStr)}
-                  className={`text-xs px-3 py-1 rounded-full transition-all duration-150 ${
-                    active
-                      ? 'bg-rose-500/10 text-rose-600 font-semibold dark:bg-rose-500/20 dark:text-rose-300'
-                      : 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'
-                  }`}
-                >
-                  {cat.type_name}
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {/* 状态展示 */}
-        {isSearching && (
-          <div className='mb-4 flex items-center justify-between text-xs text-gray-500 dark:text-gray-400'>
-            <span>
-              搜索结果:{' '}
-              <span className='font-semibold text-rose-500'>
-                &quot;{searchQuery}&quot;
-              </span>{' '}
-              (共 {videos.length} 条)
-            </span>
-            <button
-              onClick={handleClearSearch}
-              className='text-rose-500 hover:underline flex items-center gap-1'
-            >
-              <RefreshCw className='w-3 h-3' /> 返回浏览
-            </button>
-          </div>
-        )}
-
-        {/* 视频网格 */}
-        {loading ? (
-          <div className='flex justify-center items-center h-64'>
-            <div className='animate-spin rounded-full h-8 w-8 border-b-2 border-rose-500'></div>
-          </div>
-        ) : videos.length > 0 ? (
-          <div>
-            <div className='grid grid-cols-3 gap-x-2 gap-y-12 sm:gap-y-16 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,_minmax(11rem,_1fr))] sm:gap-x-6'>
               {videos.map((item) => (
-                <div key={`${item.source}-${item.id}`} className='w-full'>
-                  <VideoCard
-                    id={item.id}
-                    title={item.title}
-                    poster={item.poster}
-                    episodes={item.episodes?.length || 1}
-                    source={item.source}
-                    source_name={item.source_name}
-                    douban_id={item.douban_id?.toString()}
-                    year={item.year}
-                    from='adult'
-                    type='movie'
-                  />
-                </div>
+                <VideoCard
+                  key={`${item.source}-${item.id}`}
+                  id={item.id}
+                  title={item.title}
+                  poster={item.poster}
+                  episodes={item.episodes?.length || 1}
+                  source={item.source}
+                  source_name={item.source_name}
+                  douban_id={item.douban_id?.toString()}
+                  year={item.year}
+                  from='adult'
+                  type='movie'
+                />
               ))}
             </div>
+          ) : null}
 
-            {/* 分页控制 (仅在浏览模式显示) */}
-            {!isSearching && pageCount > 1 && (
-              <div className='mt-12 flex items-center justify-center gap-3'>
-                <button
-                  disabled={page <= 1}
-                  onClick={() => {
-                    setPage((p) => Math.max(1, p - 1));
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
-                  }}
-                  className='p-2 rounded-lg border border-gray-200 dark:border-gray-700 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300'
-                >
-                  <ChevronLeft className='w-5 h-5' />
-                </button>
-                <span className='text-xs font-medium text-gray-600 dark:text-gray-400'>
-                  第 {page} / {pageCount} 页
-                </span>
-                <button
-                  disabled={page >= pageCount}
-                  onClick={() => {
-                    setPage((p) => Math.min(pageCount, p + 1));
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
-                  }}
-                  className='p-2 rounded-lg border border-gray-200 dark:border-gray-700 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300'
-                >
-                  <ChevronRight className='w-5 h-5' />
-                </button>
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className='text-center py-24 text-gray-400 dark:text-gray-500'>
-            <Flame className='w-12 h-12 mx-auto text-gray-300 dark:text-gray-600 mb-3' />
-            <p className='text-sm'>暂无内容，请尝试切换源站或分类</p>
-          </div>
-        )}
-      </div>
+          {!loading && videos.length === 0 ? (
+            <div className='py-20 text-center text-sm text-gray-400'>
+              这一页没有内容，换个源站或回到上一页
+            </div>
+          ) : null}
+
+          <PagePager
+            page={page}
+            pageCount={pageCount}
+            onPrev={() =>
+              setPage((current) => Math.max(1, asPage(current, 1) - 1))
+            }
+            onNext={() =>
+              setPage((current) =>
+                Math.min(Math.max(1, pageCount), asPage(current, 1) + 1)
+              )
+            }
+            onJump={goPage}
+          />
+        </div>
+      ) : null}
     </PageLayout>
   );
 }

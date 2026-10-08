@@ -3,12 +3,15 @@
 'use client';
 
 import {
+  Clapperboard,
   Clover,
   Film,
   Flame,
   Heart,
   Home,
+  Library,
   Menu,
+  MonitorPlay,
   Search,
   Sparkles,
   Star,
@@ -44,9 +47,9 @@ const Logo = () => {
   return (
     <Link
       href='/'
-      className='flex items-center justify-center h-16 select-none hover:opacity-80 transition-opacity duration-200'
+      className='flex h-16 w-full min-w-0 items-center select-none transition-opacity duration-200 hover:opacity-80'
     >
-      <span className='text-2xl font-bold text-green-600 tracking-tight'>
+      <span className='block w-full truncate whitespace-nowrap text-left text-lg font-bold tracking-tight text-green-600'>
         {siteName}
       </span>
     </Link>
@@ -163,6 +166,16 @@ const Sidebar = ({ onToggle, activePath = '/' }: SidebarProps) => {
       href: '/douban?type=tv&sub=tv_documentary',
     },
     {
+      icon: Library,
+      label: '番组',
+      href: '/douban?src=bangumi',
+    },
+    {
+      icon: MonitorPlay,
+      label: '哔哩',
+      href: '/douban?src=bilibili',
+    },
+    {
       icon: Heart,
       label: '收藏',
       href: '/?tab=favorites',
@@ -171,6 +184,11 @@ const Sidebar = ({ onToggle, activePath = '/' }: SidebarProps) => {
       icon: Flame,
       label: '18+专区',
       href: '/adult',
+    },
+    {
+      icon: Clapperboard,
+      label: 'AI黄果',
+      href: '/huangguo',
     },
   ]);
 
@@ -210,7 +228,7 @@ const Sidebar = ({ onToggle, activePath = '/' }: SidebarProps) => {
                   isCollapsed ? 'opacity-0' : 'opacity-100'
                 }`}
               >
-                <div className='w-[calc(100%-4rem)] flex justify-center'>
+                <div className='flex w-[calc(100%-4rem)] justify-start pl-4'>
                   {!isCollapsed && <Logo />}
                 </div>
               </div>
@@ -277,13 +295,21 @@ const Sidebar = ({ onToggle, activePath = '/' }: SidebarProps) => {
                   // 解码URL以进行正确的比较
                   const decodedActive = decodeURIComponent(active);
                   const decodedItemHref = decodeURIComponent(item.href);
+                  const srcMatch = decodedActive.match(
+                    /(?:^|[?&])src=([^&]+)/
+                  )?.[1];
 
                   // 精确匹配：如果有sub参数，必须同时匹配type和sub
                   let isActive =
                     decodedActive === decodedItemHref ||
                     (item.href === '/adult' &&
-                      decodedActive.startsWith('/adult'));
-                  if (
+                      decodedActive.startsWith('/adult')) ||
+                    (item.href === '/huangguo' &&
+                      decodedActive.startsWith('/huangguo'));
+                  // 番组和哔哩带 src，不能再按豆瓣 type 去高亮动漫。
+                  if (srcMatch === 'bangumi' || srcMatch === 'bilibili') {
+                    isActive = decodedItemHref.includes(`src=${srcMatch}`);
+                  } else if (
                     !isActive &&
                     decodedActive.startsWith('/douban') &&
                     typeMatch

@@ -3,6 +3,7 @@
 'use client';
 
 import {
+  Clapperboard,
   Clover,
   Film,
   Flame,
@@ -15,7 +16,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 interface MobileBottomNavProps {
   /**
@@ -49,6 +50,7 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
       href: '/douban?type=tv&sub=tv_documentary',
     },
     { icon: Flame, label: '18+专区', href: '/adult' },
+    { icon: Clapperboard, label: 'AI黄果', href: '/huangguo' },
   ]);
 
   useEffect(() => {
@@ -65,6 +67,24 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
     }
   }, []);
 
+  const listRef = useRef<HTMLUListElement>(null);
+
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+    const item = list.querySelector(
+      '[data-active="true"]'
+    ) as HTMLElement | null;
+    if (!item) return;
+    const left = item.offsetLeft;
+    const right = left + item.offsetWidth;
+    if (left < list.scrollLeft) {
+      list.scrollTo({ left: Math.max(0, left - 8) });
+    } else if (right > list.scrollLeft + list.clientWidth) {
+      list.scrollTo({ left: right - list.clientWidth + 8 });
+    }
+  }, [currentActive, navItems]);
+
   const isActive = (href: string) => {
     const typeMatch = href.match(/type=([^&]+)/)?.[1];
     const subMatch = href.match(/sub=([^&]+)/)?.[1];
@@ -72,10 +92,17 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
     // 解码URL以进行正确的比较
     const decodedActive = decodeURIComponent(currentActive);
     const decodedItemHref = decodeURIComponent(href);
+    const srcMatch = decodedActive.match(/(?:^|[?&])src=([^&]+)/)?.[1];
 
     // 精确匹配
     if (decodedActive === decodedItemHref) return true;
     if (href === '/adult' && decodedActive.startsWith('/adult')) return true;
+    if (href === '/huangguo' && decodedActive.startsWith('/huangguo')) {
+      return true;
+    }
+    if (srcMatch === 'bangumi' || srcMatch === 'bilibili') {
+      return decodedItemHref.includes(`src=${srcMatch}`);
+    }
 
     if (decodedActive.startsWith('/douban') && typeMatch) {
       const activeHasSub = decodedActive.includes('sub=');
@@ -106,40 +133,49 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
         minHeight: 'calc(3.5rem + env(safe-area-inset-bottom))',
       }}
     >
-      <ul className='flex items-center overflow-x-auto scrollbar-hide'>
-        {navItems.map((item) => {
-          const active = isActive(item.href);
-          return (
-            <li
-              key={item.href}
-              className='flex-shrink-0'
-              style={{ width: '20vw', minWidth: '20vw' }}
-            >
-              <Link
-                href={item.href}
-                className='flex flex-col items-center justify-center w-full h-14 gap-1 text-xs'
+      <div className='relative'>
+        <ul
+          ref={listRef}
+          className='flex items-center overflow-x-auto scrollbar-hide'
+        >
+          {navItems.map((item) => {
+            const active = isActive(item.href);
+            return (
+              <li
+                key={item.href}
+                data-active={active ? 'true' : 'false'}
+                className='min-w-[4.25rem] flex-shrink-0'
               >
-                <item.icon
-                  className={`h-6 w-6 ${
-                    active
-                      ? 'text-green-600 dark:text-green-400'
-                      : 'text-gray-500 dark:text-gray-400'
-                  }`}
-                />
-                <span
-                  className={
-                    active
-                      ? 'text-green-600 dark:text-green-400'
-                      : 'text-gray-600 dark:text-gray-300'
-                  }
+                <Link
+                  href={item.href}
+                  className='flex h-14 w-full flex-col items-center justify-center gap-0.5 text-[11px]'
                 >
-                  {item.label}
-                </span>
-              </Link>
-            </li>
-          );
-        })}
-      </ul>
+                  <item.icon
+                    className={`h-5 w-5 ${
+                      active
+                        ? 'text-green-600 dark:text-green-400'
+                        : 'text-gray-500 dark:text-gray-400'
+                    }`}
+                  />
+                  <span
+                    className={
+                      active
+                        ? 'text-green-600 dark:text-green-400'
+                        : 'text-gray-600 dark:text-gray-300'
+                    }
+                  >
+                    {item.label}
+                  </span>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+        <div
+          aria-hidden
+          className='pointer-events-none absolute inset-y-0 right-0 w-6 bg-gradient-to-l from-white to-transparent dark:from-gray-900'
+        />
+      </div>
     </nav>
   );
 };

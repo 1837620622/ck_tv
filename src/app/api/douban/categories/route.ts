@@ -9,20 +9,28 @@ import {
 } from '@/lib/edge-cache';
 import { DoubanItem, DoubanResult } from '@/lib/types';
 
+interface DoubanSubjectRow {
+  id?: string | number;
+  title?: string;
+  cover?: string;
+  rate?: string;
+}
+
 interface DoubanCategoryApiResponse {
-  total: number;
-  items: Array<{
+  total?: number;
+  items?: Array<{
     id: string;
     title: string;
-    card_subtitle: string;
-    pic: {
-      large: string;
-      normal: string;
+    card_subtitle?: string;
+    pic?: {
+      large?: string;
+      normal?: string;
     };
-    rating: {
-      value: number;
+    rating?: {
+      value?: number;
     };
   }>;
+  subjects?: DoubanSubjectRow[];
 }
 
 async function fetchDoubanData(
@@ -119,7 +127,39 @@ export async function GET(request: Request) {
     );
   }
 
-  const target = `https://m.douban.com/rexxar/api/v2/subject/recent_hot/${kind}?start=${pageStart}&limit=${pageLimit}&category=${category}&type=${type}`;
+  const regionTypes = new Set([
+    '全部',
+    '华语',
+    '欧美',
+    '韩国',
+    '日本',
+    'tv',
+    'tv_domestic',
+    'tv_american',
+    'tv_japanese',
+    'tv_korean',
+    'tv_animation',
+    'tv_documentary',
+    'show',
+    'show_domestic',
+    'show_foreign',
+  ]);
+  const movieGenre = kind === 'movie' && !!type && !regionTypes.has(type);
+  const subjectSort =
+    category === '最新'
+      ? 'time'
+      : category === '豆瓣高分'
+      ? 'rank'
+      : 'recommend';
+  const subjectTag = movieGenre ? type : category || type || '热门';
+  const recentHotUrl = `https://m.douban.com/rexxar/api/v2/subject/recent_hot/${kind}?start=${pageStart}&limit=${pageLimit}&category=${encodeURIComponent(
+    category || ''
+  )}&type=${encodeURIComponent(type || '')}`;
+  const subjectUrl = `https://movie.douban.com/j/search_subjects?type=${
+    kind === 'tv' ? 'tv' : 'movie'
+  }&tag=${encodeURIComponent(
+    subjectTag || '热门'
+  )}&sort=${subjectSort}&page_limit=${pageLimit}&page_start=${pageStart}`;
   const edgeSeconds = await getCacheTime();
   const browserSeconds = Math.min(600, edgeSeconds);
   // Pages Function 响应默认 DYNAMIC，Cache-Control 不会自动进边缘。热门列表单独放进 Cache API。
@@ -137,18 +177,36 @@ export async function GET(request: Request) {
       });
     }
 
-    // 调用豆瓣 API
-    const doubanData = await fetchDoubanData(target);
-    const items = Array.isArray(doubanData?.items) ? doubanData.items : [];
-
-    // 转换数据格式
-    const list: DoubanItem[] = items.map((item) => ({
-      id: item.id,
-      title: item.title,
-      poster: item.pic?.normal || item.pic?.large || '',
-      rate: item.rating?.value ? item.rating.value.toFixed(1) : '',
-      year: item.card_subtitle?.match(/(\d{4})/)?.[1] || '',
-    }));
+    // 题材分类不走 recent_hot，那个接口对这些 type 会返回空列表。
+    let list: DoubanItem[] = [];
+    if (!movieGenre) {
+      try {
+        const doubanData = await fetchDoubanData(recentHotUrl);
+        const items = Array.isArray(doubanData?.items) ? doubanData.items : [];
+        list = items.map((item) => ({
+          id: item.id,
+          title: item.title,
+          poster: item.pic?.normal || item.pic?.large || '',
+          rate: item.rating?.value ? item.rating.value.toFixed(1) : '',
+          year: item.card_subtitle?.match(/(\d{4})/)?.[1] || '',
+        }));
+      } catch {
+        list = [];
+      }
+    }
+    if (list.length === 0) {
+      const subjectData = await fetchDoubanData(subjectUrl);
+      const subjects = Array.isArray(subjectData.subjects)
+        ? subjectData.subjects
+        : [];
+      list = subjects.map((item) => ({
+        id: String(item.id || ''),
+        title: item.title || '',
+        poster: item.cover || '',
+        rate: item.rate || '',
+        year: '',
+      }));
+    }
 
     const response: DoubanResult = {
       code: 200,

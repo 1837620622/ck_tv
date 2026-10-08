@@ -732,55 +732,53 @@ export const UserMenu: React.FC = () => {
         onClick={() => setIsDonateOpen(false)}
       />
       {/* 弹窗主体 */}
-      <div className='fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] max-w-sm bg-white dark:bg-gray-900 rounded-2xl shadow-2xl z-[2001] overflow-hidden'>
-        {/* 顶部标题栏 */}
-        <div className='bg-gradient-to-r from-green-500 to-green-600 px-6 py-4 flex items-center justify-between'>
-          <h2 className='text-lg font-bold text-white'>传康KK万能播放器</h2>
-          <button
-            onClick={() => setIsDonateOpen(false)}
-            className='w-8 h-8 rounded-full flex items-center justify-center text-white/80 hover:text-white hover:bg-white/20 transition-colors'
-          >
-            <X className='w-5 h-5' />
-          </button>
-        </div>
-        {/* 内容区域 */}
-        <div className='p-6 space-y-4'>
-          <div className='text-center'>
-            <p className='text-gray-600 dark:text-gray-400 text-sm mb-2'>
-              感谢使用{' '}
-              <span className='font-semibold text-green-600'>
-                传康KK万能播放器
-              </span>
-            </p>
-            <p className='text-gray-500 dark:text-gray-500 text-xs mb-4'>
-              喜欢的朋友可以赞赏一下，感谢支持！
-            </p>
-          </div>
-          {/* 赞赏码图片 */}
-          <div className='flex justify-center'>
-            <div className='w-48 h-48 rounded-lg overflow-hidden shadow-lg border-2 border-green-100 dark:border-green-800'>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src='/ck.jpg'
-                alt='传康KK的赞赏码'
-                className='w-full h-full object-cover'
-              />
+      <div className='fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] max-w-sm bg-white dark:bg-neutral-950 border border-neutral-200 dark:border-neutral-800 z-[2001] overflow-hidden'>
+        <div className='h-1 bg-green-600' />
+        <div className='px-5 pt-4 pb-5'>
+          <div className='flex items-start justify-between gap-3'>
+            <div>
+              <h2 className='text-base font-semibold text-gray-900 dark:text-gray-100'>
+                赞赏
+              </h2>
+              <p className='mt-1 text-sm text-gray-600 dark:text-gray-300'>
+                传康KK万能播放器靠这个站点在跑。用得顺手，可以扫码请一杯咖啡。
+              </p>
             </div>
+            <button
+              onClick={() => setIsDonateOpen(false)}
+              className='flex h-8 w-8 shrink-0 items-center justify-center text-gray-500 hover:text-gray-900 dark:hover:text-gray-100'
+              aria-label='关闭赞赏'
+            >
+              <X className='w-5 h-5' />
+            </button>
           </div>
-          {/* 联系方式 */}
-          <div className='text-center text-xs text-gray-500 dark:text-gray-400 space-y-1'>
-            <p>微信：1837620622</p>
-            <p>邮箱：2040168455@qq.com</p>
-            <p>咸鱼/B站：万能程序员</p>
+          <div className='mt-4 flex justify-center bg-white p-3'>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src='/ck.jpg'
+              alt='赞赏码'
+              className='h-52 w-52 object-contain'
+            />
           </div>
-        </div>
-        {/* 底部按钮 */}
-        <div className='px-6 pb-6'>
+          <dl className='mt-4 space-y-1.5 text-sm text-gray-700 dark:text-gray-300'>
+            <div className='flex justify-between gap-4 border-b border-neutral-200 py-1.5 dark:border-neutral-800'>
+              <dt className='text-gray-500'>微信</dt>
+              <dd>1837620622</dd>
+            </div>
+            <div className='flex justify-between gap-4 border-b border-neutral-200 py-1.5 dark:border-neutral-800'>
+              <dt className='text-gray-500'>邮箱</dt>
+              <dd>2040168455@qq.com</dd>
+            </div>
+            <div className='flex justify-between gap-4 py-1.5'>
+              <dt className='text-gray-500'>咸鱼 / B站</dt>
+              <dd>万能程序员</dd>
+            </div>
+          </dl>
           <button
             onClick={() => setIsDonateOpen(false)}
-            className='w-full py-3 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white font-semibold rounded-lg transition-all duration-200'
+            className='mt-4 w-full bg-green-600 py-2.5 text-sm font-medium text-white hover:bg-green-700'
           >
-            关闭
+            知道了
           </button>
         </div>
       </div>

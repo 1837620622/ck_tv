@@ -1,4 +1,4 @@
-import { CheckCircle, Film, Heart, Link, PlayCircleIcon } from 'lucide-react';
+import { CheckCircle, Heart, Link, PlayCircleIcon } from 'lucide-react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -26,7 +26,7 @@ interface VideoCardProps {
   source_name?: string;
   progress?: number;
   year?: string;
-  from: 'playrecord' | 'favorite' | 'search' | 'douban' | 'adult';
+  from: 'playrecord' | 'favorite' | 'search' | 'douban' | 'adult' | 'huangguo';
   currentEpisode?: number;
   douban_id?: string;
   onDelete?: () => void;
@@ -128,9 +128,14 @@ export default function VideoCard({
   }, [actualPoster]);
 
   const handleImageError = useCallback(() => {
+    // 黄果封面已经是本站解密接口，再套图片代理会把相对地址请求坏。
+    const localCover =
+      imgSrc.includes('/api/huangguo/cover') ||
+      actualPoster.includes('/api/huangguo/cover');
     if (
       !isRetryingProxy &&
       actualPoster &&
+      !localCover &&
       !imgSrc.includes('/api/image-proxy')
     ) {
       setIsRetryingProxy(true);
@@ -254,6 +259,14 @@ export default function VideoCard({
     actualSearchType,
   ]);
 
+  // 成人采集站封面是横图，黄果短剧封面是竖图。
+  const posterFrame =
+    from === 'adult'
+      ? 'aspect-[4/3]'
+      : from === 'huangguo'
+      ? 'aspect-[3/4]'
+      : 'aspect-[2/3]';
+
   const config = useMemo(() => {
     const configs = {
       playrecord: {
@@ -292,6 +305,15 @@ export default function VideoCard({
         showDoubanLink: true,
         showRating: !!rate,
       },
+      huangguo: {
+        showSourceName: true,
+        showProgress: false,
+        showPlayButton: true,
+        showHeart: true,
+        showCheckCircle: false,
+        showDoubanLink: false,
+        showRating: false,
+      },
       adult: {
         showSourceName: true,
         showProgress: false,
@@ -311,21 +333,27 @@ export default function VideoCard({
       onClick={handleClick}
     >
       {/* 海报容器 */}
-      <div className='relative aspect-[2/3] overflow-hidden rounded-lg'>
+      <div
+        className={`relative overflow-hidden rounded-lg bg-neutral-950 ${posterFrame}`}
+      >
         {/* 骨架屏 */}
         {!isLoading && !hasError && (
-          <ImagePlaceholder aspectRatio='aspect-[2/3]' />
+          <ImagePlaceholder aspectRatio={posterFrame} />
         )}
         {hasError ? (
-          <div className='absolute inset-0 flex items-center justify-center bg-neutral-900'>
-            <Film className='h-8 w-8 text-neutral-500' strokeWidth={1.5} />
+          <div className='absolute inset-0 flex items-center justify-center bg-neutral-900 px-3'>
+            <span className='line-clamp-3 text-center text-xs text-neutral-400'>
+              {actualTitle || '封面加载失败'}
+            </span>
           </div>
         ) : (
           <Image
             src={imgSrc}
             alt={actualTitle}
             fill
-            className='object-cover'
+            className={
+              from === 'adult' ? 'object-cover object-center' : 'object-cover'
+            }
             referrerPolicy='no-referrer'
             onError={handleImageError}
             onLoadingComplete={() => setIsLoading(true)}
@@ -414,7 +442,13 @@ export default function VideoCard({
       {/* 标题与来源 */}
       <div className='mt-2 text-center'>
         <div className='relative'>
-          <span className='block text-sm font-semibold truncate text-gray-900 dark:text-gray-100 transition-colors duration-300 ease-in-out sm:group-hover:text-green-600 dark:sm:group-hover:text-green-400 peer'>
+          <span
+            className={`block text-sm font-semibold text-gray-900 dark:text-gray-100 transition-colors duration-300 ease-in-out sm:group-hover:text-green-600 dark:sm:group-hover:text-green-400 peer ${
+              from === 'adult' || from === 'huangguo'
+                ? 'line-clamp-2 text-left leading-5'
+                : 'truncate'
+            }`}
+          >
             {actualTitle}
           </span>
           {/* 自定义 tooltip */}

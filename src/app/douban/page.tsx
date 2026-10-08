@@ -2,13 +2,14 @@
 
 'use client';
 
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { getDoubanCategories, getDoubanList } from '@/lib/douban.client';
 import { DoubanItem, DoubanResult } from '@/lib/types';
 
+import CatalogPanel from '@/components/CatalogPanel';
 import DoubanCardSkeleton from '@/components/DoubanCardSkeleton';
 import DoubanCustomSelector from '@/components/DoubanCustomSelector';
 import DoubanSelector from '@/components/DoubanSelector';
@@ -16,6 +17,7 @@ import PageLayout from '@/components/PageLayout';
 import VideoCard from '@/components/VideoCard';
 
 function DoubanPageClient() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const [doubanData, setDoubanData] = useState<DoubanItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -30,6 +32,9 @@ function DoubanPageClient() {
   const type = searchParams.get('type') || 'movie';
   const subType = searchParams.get('sub') || '';
   const listKind = searchParams.get('cat') || '';
+  const src = searchParams.get('src') || '';
+  const catalogEngine: 'bangumi' | 'bilibili' | '' =
+    src === 'bangumi' || src === 'bilibili' ? src : '';
 
   // 获取 runtimeConfig 中的自定义分类数据
   const [customCategories, setCustomCategories] = useState<
@@ -180,8 +185,9 @@ function DoubanPageClient() {
       }
 
       if (data.code === 200) {
-        setDoubanData(data.list);
-        setHasMore(data.list.length === 25);
+        const list = Array.isArray(data.list) ? data.list : [];
+        setDoubanData(list);
+        setHasMore(list.length === 25);
         setLoading(false);
       } else {
         throw new Error(data.message || '获取数据失败');
@@ -199,6 +205,9 @@ function DoubanPageClient() {
 
   // 只在选择器准备好后才加载数据
   useEffect(() => {
+    if (catalogEngine) {
+      return;
+    }
     // 只有在选择器准备好时才开始加载
     if (!selectorsReady) {
       return;
@@ -227,6 +236,7 @@ function DoubanPageClient() {
       }
     };
   }, [
+    catalogEngine,
     selectorsReady,
     type,
     primarySelection,
@@ -236,6 +246,9 @@ function DoubanPageClient() {
 
   // 单独处理 currentPage 变化（加载更多）
   useEffect(() => {
+    if (catalogEngine || currentPage <= 0) {
+      return;
+    }
     if (currentPage > 0) {
       const fetchMoreData = async () => {
         try {
@@ -267,8 +280,9 @@ function DoubanPageClient() {
           }
 
           if (data.code === 200) {
-            setDoubanData((prev) => [...prev, ...data.list]);
-            setHasMore(data.list.length === 25);
+            const list = Array.isArray(data.list) ? data.list : [];
+            setDoubanData((prev) => [...prev, ...list]);
+            setHasMore(list.length === 25);
           } else {
             throw new Error(data.message || '获取数据失败');
           }
@@ -282,6 +296,7 @@ function DoubanPageClient() {
       fetchMoreData();
     }
   }, [
+    catalogEngine,
     currentPage,
     type,
     primarySelection,
@@ -359,7 +374,8 @@ function DoubanPageClient() {
   );
 
   const getPageTitle = () => {
-    // 根据 type 生成标题
+    if (catalogEngine === 'bangumi') return '番组计划';
+    if (catalogEngine === 'bilibili') return '哔哩哔哩';
     return type === 'movie'
       ? '电影'
       : type === 'tv'
@@ -369,15 +385,23 @@ function DoubanPageClient() {
       : '自定义';
   };
 
+  const openEngine = (next: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (next) params.set('src', next);
+    else params.delete('src');
+    const query = params.toString();
+    router.replace(query ? `/douban?${query}` : '/douban', { scroll: false });
+  };
+
   const getActivePath = () => {
+    // 番组、哔哩单独高亮，不落到豆瓣的动漫分类上。
+    if (catalogEngine) return `/douban?src=${catalogEngine}`;
     const params = new URLSearchParams();
     if (type) params.set('type', type);
-    // 包含 sub 参数以正确高亮动漫/纪录片
     if (subType) params.set('sub', subType);
 
     const queryString = params.toString();
-    const activePath = `/douban${queryString ? `?${queryString}` : ''}`;
-    return activePath;
+    return `/douban${queryString ? `?${queryString}` : ''}`;
   };
 
   return (
@@ -391,12 +415,35 @@ function DoubanPageClient() {
               {getPageTitle()}
             </h1>
             <p className='text-sm sm:text-base text-gray-600 dark:text-gray-400'>
-              来自豆瓣的精选内容
+              {catalogEngine
+                ? '按片名到片库检索，不经过豆瓣'
+                : '来自豆瓣的精选内容'}
             </p>
           </div>
 
+          <div className='flex gap-1 overflow-x-auto text-sm'>
+            {[
+              { id: '', label: '豆瓣' },
+              { id: 'bangumi', label: '番组计划' },
+              { id: 'bilibili', label: '哔哩哔哩' },
+            ].map((item) => (
+              <button
+                key={item.id || 'douban'}
+                type='button'
+                onClick={() => openEngine(item.id)}
+                className={`shrink-0 px-3 py-1.5 ${
+                  catalogEngine === item.id
+                    ? 'bg-green-600 text-white'
+                    : 'text-gray-700 hover:text-green-700 dark:text-gray-300 dark:hover:text-green-400'
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+
           {/* 选择器组件 */}
-          {type !== 'custom' ? (
+          {catalogEngine ? null : type !== 'custom' ? (
             <div className='bg-white/60 dark:bg-gray-800/40 rounded-2xl p-4 sm:p-6 border border-gray-200/30 dark:border-gray-700/30 backdrop-blur-sm'>
               <DoubanSelector
                 type={type as 'movie' | 'tv' | 'show'}
@@ -419,60 +466,69 @@ function DoubanPageClient() {
           )}
         </div>
 
-        {/* 内容展示区域 */}
-        <div className='max-w-[95%] mx-auto mt-8 overflow-visible'>
-          {/* 内容网格 */}
-          <div className='justify-start grid grid-cols-3 gap-x-2 gap-y-12 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,minmax(160px,1fr))] sm:gap-x-8 sm:gap-y-20'>
-            {loading || !selectorsReady
-              ? // 显示骨架屏
-                skeletonData.map((index) => <DoubanCardSkeleton key={index} />)
-              : // 显示实际数据
-                doubanData.map((item, index) => (
-                  <div key={`${item.title}-${index}`} className='w-full'>
-                    <VideoCard
-                      from='douban'
-                      title={item.title}
-                      poster={item.poster}
-                      douban_id={item.id}
-                      rate={item.rate}
-                      year={item.year}
-                      type={type === 'movie' ? 'movie' : ''} // 电影类型严格控制，tv 不控
-                    />
-                  </div>
-                ))}
+        {catalogEngine ? (
+          <div className='max-w-[95%] mx-auto mt-8'>
+            <CatalogPanel engine={catalogEngine} />
           </div>
-
-          {/* 加载更多指示器 */}
-          {hasMore && !loading && (
-            <div
-              ref={(el) => {
-                if (el && el.offsetParent !== null) {
-                  (
-                    loadingRef as React.MutableRefObject<HTMLDivElement | null>
-                  ).current = el;
-                }
-              }}
-              className='flex justify-center mt-12 py-8'
-            >
-              {isLoadingMore && (
-                <div className='flex items-center gap-2'>
-                  <div className='animate-spin rounded-full h-6 w-6 border-b-2 border-green-500'></div>
-                  <span className='text-gray-600'>加载中...</span>
-                </div>
-              )}
+        ) : (
+          <div className='max-w-[95%] mx-auto mt-8 overflow-visible'>
+            {/* 内容网格 */}
+            <div className='justify-start grid grid-cols-3 gap-x-2 gap-y-12 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,minmax(160px,1fr))] sm:gap-x-8 sm:gap-y-20'>
+              {loading || !selectorsReady
+                ? // 显示骨架屏
+                  skeletonData.map((index) => (
+                    <DoubanCardSkeleton key={index} />
+                  ))
+                : // 显示实际数据
+                  doubanData.map((item, index) => (
+                    <div key={`${item.title}-${index}`} className='w-full'>
+                      <VideoCard
+                        from='douban'
+                        title={item.title}
+                        poster={item.poster}
+                        douban_id={item.id}
+                        rate={item.rate}
+                        year={item.year}
+                        type={type === 'movie' ? 'movie' : ''} // 电影类型严格控制，tv 不控
+                      />
+                    </div>
+                  ))}
             </div>
-          )}
 
-          {/* 没有更多数据提示 */}
-          {!hasMore && doubanData.length > 0 && (
-            <div className='text-center text-gray-500 py-8'>已加载全部内容</div>
-          )}
+            {/* 加载更多指示器 */}
+            {hasMore && !loading && (
+              <div
+                ref={(el) => {
+                  if (el && el.offsetParent !== null) {
+                    (
+                      loadingRef as React.MutableRefObject<HTMLDivElement | null>
+                    ).current = el;
+                  }
+                }}
+                className='flex justify-center mt-12 py-8'
+              >
+                {isLoadingMore && (
+                  <div className='flex items-center gap-2'>
+                    <div className='animate-spin rounded-full h-6 w-6 border-b-2 border-green-500'></div>
+                    <span className='text-gray-600'>加载中...</span>
+                  </div>
+                )}
+              </div>
+            )}
 
-          {/* 空状态 */}
-          {!loading && doubanData.length === 0 && (
-            <div className='text-center text-gray-500 py-8'>暂无相关内容</div>
-          )}
-        </div>
+            {/* 没有更多数据提示 */}
+            {!hasMore && doubanData.length > 0 && (
+              <div className='text-center text-gray-500 py-8'>
+                已加载全部内容
+              </div>
+            )}
+
+            {/* 空状态 */}
+            {!loading && doubanData.length === 0 && (
+              <div className='text-center text-gray-500 py-8'>暂无相关内容</div>
+            )}
+          </div>
+        )}
       </div>
     </PageLayout>
   );

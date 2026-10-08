@@ -8,6 +8,7 @@ import {
   readJsonCache,
   writeJsonCache,
 } from '@/lib/edge-cache';
+import { detailHuangguo } from '@/lib/huangguo';
 
 export const runtime = 'edge';
 
@@ -32,6 +33,23 @@ export async function GET(request: Request) {
 
   if (!/^[\w-]+$/.test(id)) {
     return NextResponse.json({ error: '无效的视频ID格式' }, { status: 400 });
+  }
+
+  if (sourceCode === 'huangguo') {
+    try {
+      const result = await detailHuangguo(id);
+      return NextResponse.json(result, {
+        headers: {
+          ...jsonCacheHeaders(DETAIL_EDGE_SECONDS, DETAIL_BROWSER_SECONDS),
+          'content-type': 'application/json; charset=utf-8',
+        },
+      });
+    } catch (error) {
+      return NextResponse.json(
+        { error: (error as Error).message },
+        { status: 404 }
+      );
+    }
   }
 
   try {

@@ -330,6 +330,12 @@
       "name": "黑桃短剧",
       "category": "adult",
       "priority": 15
+    },
+    "yutu": {
+      "api": "https://apiyutu.com/api.php/provide/vod",
+      "name": "玉兔资源",
+      "category": "adult",
+      "priority": 16
     }
   }
 }
