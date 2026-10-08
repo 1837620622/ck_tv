@@ -15,7 +15,7 @@ import {
 
 export const runtime = 'edge';
 
-const EDGE_SECONDS = 300;
+const EDGE_SECONDS = 900;
 const BROWSER_SECONDS = 60;
 
 function asPage(value: unknown): number {

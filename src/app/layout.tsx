@@ -32,6 +32,13 @@ export async function generateMetadata(): Promise<Metadata> {
     description: '影视聚合',
     manifest: '/manifest.json',
     referrer: 'no-referrer',
+    icons: {
+      icon: [
+        { url: '/favicon.ico' },
+        { url: '/icons/icon-192x192.png', sizes: '192x192', type: 'image/png' },
+      ],
+      apple: '/icons/icon-192x192.png',
+    },
   };
 }
 

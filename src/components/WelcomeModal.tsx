@@ -33,9 +33,8 @@ export const WelcomeModal: React.FC = () => {
   return createPortal(
     <div className='fixed bottom-20 md:bottom-6 right-4 sm:right-6 z-[999] max-w-sm w-[calc(100%-2rem)] sm:w-80 transition-all duration-300 animate-in fade-in slide-in-from-bottom-5'>
       {/* 悬浮卡片 - 不遮挡全屏，不强制倒计时 */}
-      <div className='relative bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl rounded-2xl shadow-xl border border-gray-200/70 dark:border-gray-800 p-4 overflow-hidden'>
-        {/* 顶部微渐变条 */}
-        <div className='absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-green-500 via-emerald-400 to-teal-500' />
+      <div className='relative overflow-hidden border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-950'>
+        <div className='absolute left-0 right-0 top-0 h-1 bg-green-600' />
 
         {/* 标题栏 */}
         <div className='flex items-center justify-between pb-2 mb-2 border-b border-gray-100 dark:border-gray-800'>

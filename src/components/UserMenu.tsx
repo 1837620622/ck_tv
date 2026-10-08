@@ -2,8 +2,7 @@
 
 'use client';
 
-import { KeyRound, LogOut, Settings, Shield, User, X } from 'lucide-react';
-import { useRouter } from 'next/navigation';
+import { KeyRound, LogOut, Settings, User, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -16,7 +15,6 @@ interface AuthInfo {
 }
 
 export const UserMenu: React.FC = () => {
-  const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
@@ -146,10 +144,6 @@ export const UserMenu: React.FC = () => {
       console.error('注销请求失败:', error);
     }
     window.location.href = '/';
-  };
-
-  const handleAdminPanel = () => {
-    router.push('/admin');
   };
 
   const handleChangePassword = () => {
@@ -291,10 +285,6 @@ export const UserMenu: React.FC = () => {
     }
   };
 
-  // 检查是否显示管理面板按钮
-  const showAdminPanel =
-    authInfo?.role === 'owner' || authInfo?.role === 'admin';
-
   // 检查是否显示修改密码按钮
   const showChangePassword =
     authInfo?.role !== 'owner' && storageType !== 'localstorage';
@@ -331,15 +321,7 @@ export const UserMenu: React.FC = () => {
               <span className='text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
                 当前用户
               </span>
-              <span
-                className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium ${
-                  (authInfo?.role || 'user') === 'owner'
-                    ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300'
-                    : (authInfo?.role || 'user') === 'admin'
-                    ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
-                    : 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
-                }`}
-              >
+              <span className='inline-flex items-center bg-green-100 px-1.5 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900/30 dark:text-green-300'>
                 {getRoleText(authInfo?.role || 'user')}
               </span>
             </div>
@@ -365,17 +347,6 @@ export const UserMenu: React.FC = () => {
             <Settings className='w-4 h-4 text-gray-500 dark:text-gray-400' />
             <span className='font-medium'>设置</span>
           </button>
-
-          {/* 管理面板按钮 */}
-          {showAdminPanel && (
-            <button
-              onClick={handleAdminPanel}
-              className='w-full px-3 py-2 text-left flex items-center gap-2.5 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-sm'
-            >
-              <Shield className='w-4 h-4 text-gray-500 dark:text-gray-400' />
-              <span className='font-medium'>管理面板</span>
-            </button>
-          )}
 
           {/* 修改密码按钮 */}
           {showChangePassword && (

@@ -80,7 +80,7 @@ export default function CatalogPanel({
   }, [engine, kind, page]);
 
   return (
-    <div className='pb-36'>
+    <div className='pb-8'>
       <div className='mb-4 flex gap-2 overflow-x-auto'>
         {kinds.map((item) => (
           <button

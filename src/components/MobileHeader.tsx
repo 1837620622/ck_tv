@@ -14,7 +14,7 @@ interface MobileHeaderProps {
 const MobileHeader = ({ showBackButton = false }: MobileHeaderProps) => {
   const { siteName } = useSite();
   return (
-    <header className='md:hidden relative w-full bg-white/70 backdrop-blur-xl border-b border-gray-200/50 shadow-sm dark:bg-gray-900/70 dark:border-gray-700/50'>
+    <header className='relative w-full border-b border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 md:hidden'>
       <div className='h-12 flex items-center justify-between px-4'>
         {/* 左侧：返回按钮和设置按钮 */}
         <div className='flex items-center gap-2'>

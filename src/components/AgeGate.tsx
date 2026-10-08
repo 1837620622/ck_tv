@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useState } from 'react';
 
 export const AGE_GATE_KEY = 'cktv-adult-ok';
@@ -90,6 +91,12 @@ export default function AgeGate({
           >
             进入
           </button>
+          <Link
+            href='/'
+            className='mt-2 block w-full border border-neutral-300 py-2.5 text-center text-sm text-gray-700 dark:border-neutral-700 dark:text-gray-200'
+          >
+            返回首页
+          </Link>
         </div>
       </form>
     </div>

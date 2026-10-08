@@ -8,17 +8,26 @@ export function compactTitle(raw: string): string {
     .replace(/[：:·・,，.。!！?？'"“”‘’]/g, '');
 }
 
+function coreTitle(raw: string): string {
+  return compactTitle(raw).replace(
+    /第[0-9一二三四五六七八九十百]+[季部期]/g,
+    ''
+  );
+}
+
 export function titlesMatch(
   resultTitle: string,
   wanted: string,
   year: string
 ): boolean {
-  const result = compactTitle(resultTitle);
-  const query = compactTitle(wanted);
+  const result = coreTitle(resultTitle);
+  const query = coreTitle(wanted);
   if (!result || !query) return false;
   if (result === query) return true;
   if (/^\d{4}$/.test(year) && result === `${query}${year}`) return true;
-  return false;
+  const short = result.length <= query.length ? result : query;
+  const long = short === result ? query : result;
+  return short.length >= 4 && long.startsWith(short);
 }
 
 function episodeCount(item: SearchResult): number {

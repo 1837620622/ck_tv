@@ -10,7 +10,7 @@ import { DoubanItem } from '@/lib/types';
 
 export const runtime = 'edge';
 
-const EDGE_SECONDS = 1800;
+const EDGE_SECONDS = 7200;
 const BROWSER_SECONDS = 300;
 const PAGE_SIZE = 20;
 
@@ -98,6 +98,53 @@ async function loadBangumi(kind: string, page: number) {
   };
 }
 
+const DOUBAN_KIND: Record<string, { type: string; tag: string }> = {
+  bangumi: { type: 'tv', tag: '动漫' },
+  guochuang: { type: 'tv', tag: '国产剧' },
+  movie: { type: 'movie', tag: '热门' },
+  tv: { type: 'tv', tag: '热门' },
+  documentary: { type: 'tv', tag: '纪录片' },
+  variety: { type: 'tv', tag: '综艺' },
+};
+
+interface DoubanSubject {
+  id?: string;
+  title?: string;
+  cover?: string;
+  rate?: string;
+}
+
+async function loadDoubanFallback(kind: string, page: number) {
+  const picked = DOUBAN_KIND[kind] || DOUBAN_KIND.bangumi;
+  const start = (page - 1) * PAGE_SIZE;
+  const data = (await fetchJson(
+    `https://movie.douban.com/j/search_subjects?type=${
+      picked.type
+    }&tag=${encodeURIComponent(
+      picked.tag
+    )}&sort=recommend&page_limit=${PAGE_SIZE}&page_start=${start}`,
+    {
+      Accept: 'application/json',
+      Referer: 'https://movie.douban.com/',
+      'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+    }
+  )) as { subjects?: DoubanSubject[] };
+  const list: DoubanItem[] = (data.subjects || []).map((item) => ({
+    id: String(item.id || ''),
+    title: item.title || '',
+    poster: item.cover || '',
+    rate: rateText(item.rate),
+    year: '',
+  }));
+  const rows = list.filter((item) => item.id && item.title);
+  return {
+    list: rows,
+    page,
+    pagecount: rows.length >= PAGE_SIZE ? page + 1 : page,
+  };
+}
+
 async function loadBilibili(kind: string, page: number) {
   const seasonType = BILIBILI_KIND[kind] || BILIBILI_KIND.bangumi;
   const data = (await fetchJson(
@@ -154,10 +201,19 @@ export async function GET(request: Request) {
   }
 
   try {
-    const payload =
-      engine === 'bilibili'
-        ? await loadBilibili(kind, page)
-        : await loadBangumi(kind, page);
+    let payload;
+    try {
+      payload =
+        engine === 'bilibili'
+          ? await loadBilibili(kind, page)
+          : await loadBangumi(kind, page);
+    } catch (error) {
+      if (engine !== 'bilibili') throw error;
+      payload = await loadDoubanFallback(kind, page);
+    }
+    if (engine === 'bilibili' && payload.list.length === 0) {
+      payload = await loadDoubanFallback(kind, page);
+    }
     const body = JSON.stringify(payload);
     if (payload.list.length > 0) {
       writeJsonCache(ctx, cacheUrl, body, EDGE_SECONDS, BROWSER_SECONDS);

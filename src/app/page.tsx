@@ -16,7 +16,6 @@ import {
 } from '@/lib/db.client';
 import { getDoubanCategories } from '@/lib/douban.client';
 import { DoubanItem } from '@/lib/types';
-import { processImageUrl } from '@/lib/utils';
 
 import CapsuleSwitch from '@/components/CapsuleSwitch';
 import ContinueWatching from '@/components/ContinueWatching';
@@ -67,18 +66,6 @@ function RowSkeleton() {
         </div>
       ))}
     </>
-  );
-}
-
-function openFilm(
-  router: ReturnType<typeof useRouter>,
-  item: DoubanItem,
-  cardType?: string
-) {
-  const year = item.year ? `&year=${encodeURIComponent(item.year)}` : '';
-  const stype = cardType ? `&stype=${encodeURIComponent(cardType)}` : '';
-  router.push(
-    `/play?title=${encodeURIComponent(item.title.trim())}${year}${stype}`
   );
 }
 
@@ -422,44 +409,7 @@ function HomeClient() {
                     ))}
                   </div>
                 ) : (
-                  hotMovies.length > 0 && (
-                    <div className='grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-[220px_minmax(0,1fr)] lg:items-start xl:grid-cols-[240px_minmax(0,1fr)]'>
-                      <button
-                        type='button'
-                        onClick={() => openFilm(router, hotMovies[0], 'movie')}
-                        className='flex gap-3 text-left lg:flex-col'
-                      >
-                        {/* 海报域名不固定，不用 next/image 的远程白名单 */}
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={processImageUrl(hotMovies[0].poster)}
-                          alt={hotMovies[0].title}
-                          className='h-40 w-28 shrink-0 rounded-md object-cover lg:aspect-[2/3] lg:h-auto lg:w-full'
-                        />
-                        <div className='min-w-0 py-1'>
-                          <div className='text-xs text-green-700 dark:text-green-500'>
-                            豆瓣热门
-                          </div>
-                          <div className='mt-1 line-clamp-2 text-base font-semibold text-gray-900 dark:text-gray-100'>
-                            {hotMovies[0].title}
-                          </div>
-                          <div className='mt-1 text-sm text-gray-500 dark:text-gray-400'>
-                            {[hotMovies[0].year, hotMovies[0].rate]
-                              .filter(Boolean)
-                              .join(' · ')}
-                          </div>
-                          <div className='mt-3 inline-block bg-green-600 px-3 py-1.5 text-sm text-white'>
-                            播放
-                          </div>
-                        </div>
-                      </button>
-                      <PosterGrid
-                        items={hotMovies.slice(1, 13)}
-                        cardType='movie'
-                        className='grid min-w-0 grid-cols-3 gap-x-2 gap-y-4 sm:grid-cols-4 sm:gap-x-3 lg:grid-cols-3 xl:grid-cols-4'
-                      />
-                    </div>
-                  )
+                  <PosterGrid items={hotMovies.slice(0, 18)} cardType='movie' />
                 )}
               </section>
 

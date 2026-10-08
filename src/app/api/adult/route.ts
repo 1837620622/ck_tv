@@ -36,7 +36,7 @@ function cleanPoster(raw: unknown): string {
 
 export const runtime = 'edge';
 
-const ADULT_EDGE_SECONDS = 600;
+const ADULT_EDGE_SECONDS = 1800;
 const ADULT_BROWSER_SECONDS = 60;
 
 function adultCacheHeaders(state: string) {

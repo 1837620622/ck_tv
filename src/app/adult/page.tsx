@@ -209,7 +209,7 @@ function AdultPageClient() {
         <AgeGate title='18+ 专区' onUnlock={() => setUnlocked(true)} />
       ) : null}
       {ready && unlocked ? (
-        <div className='min-h-screen max-w-full overflow-x-hidden px-3 py-4 pb-36 sm:px-10 sm:py-8'>
+        <div className='min-h-screen max-w-full overflow-x-hidden px-3 py-4 pb-8 sm:px-10 sm:py-8'>
           <div className='mb-5 flex flex-col gap-4 border-b border-gray-200 pb-4 dark:border-gray-800 sm:flex-row sm:items-center sm:justify-between'>
             <div className='flex items-center gap-3'>
               <Flame className='h-5 w-5 text-green-600' />

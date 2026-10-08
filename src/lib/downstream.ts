@@ -42,7 +42,7 @@ export async function searchFromApi(
 
     const response = await fetch(
       apiUrl,
-      edgeFetchInit(API_CONFIG.search.headers, controller.signal, 300)
+      edgeFetchInit(API_CONFIG.search.headers, controller.signal, 1800)
     );
 
     clearTimeout(timeoutId);
