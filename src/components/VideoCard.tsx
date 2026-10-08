@@ -67,7 +67,8 @@ export default function VideoCard({
       if (item.douban_id && item.douban_id !== 0) {
         countMap.set(item.douban_id, (countMap.get(item.douban_id) || 0) + 1);
       }
-      const len = item.episodes?.length || 0;
+      // 搜索列表不带播放地址，集数在 episode_count 上。
+      const len = item.episode_count ?? item.episodes?.length ?? 0;
       if (len > 0) {
         episodeCountMap.set(len, (episodeCountMap.get(len) || 0) + 1);
       }
@@ -104,10 +105,13 @@ export default function VideoCard({
   const actualEpisodes = aggregateData?.mostFrequentEpisodes ?? episodes;
   const actualYear = aggregateData?.first.year ?? year;
   const actualQuery = query || '';
+  const aggregateEpisodes = aggregateData?.mostFrequentEpisodes ?? 0;
   const actualSearchType = isAggregate
-    ? aggregateData?.first.episodes?.length === 1
+    ? aggregateEpisodes === 1
       ? 'movie'
-      : 'tv'
+      : aggregateEpisodes > 1
+      ? 'tv'
+      : ''
     : type;
 
   const [imgSrc, setImgSrc] = useState<string>(() =>

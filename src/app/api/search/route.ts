@@ -16,15 +16,59 @@ import { isAdultContent, isAdultSource } from '@/lib/yellow';
 
 export const runtime = 'edge';
 
+const inflight = new Map<string, Promise<void>>();
+
 function searchCacheHeaders(
   state: string,
   edgeSeconds: number,
   browserSeconds: number
 ) {
+  if (state === 'PARTIAL') {
+    return {
+      'Cache-Control': 'private, no-store',
+      'CDN-Cache-Control': 'no-store',
+      'x-ck-cache': state,
+    };
+  }
   return {
     ...jsonCacheHeaders(edgeSeconds, browserSeconds),
     'x-ck-cache': state,
   };
+}
+
+function startFill(cacheUrl: string, work: () => Promise<void>) {
+  if (inflight.has(cacheUrl)) return;
+  let resolve: () => void;
+  const task = new Promise<void>((done) => {
+    resolve = done;
+  });
+  inflight.set(cacheUrl, task);
+  void work().finally(() => {
+    inflight.delete(cacheUrl);
+    resolve();
+  });
+}
+
+async function writeIfRicher(
+  ctx: Parameters<typeof writeJsonCache>[0],
+  cacheUrl: string,
+  body: string,
+  count: number,
+  edgeSeconds: number,
+  browserSeconds: number
+) {
+  const old = await readJsonCache(cacheUrl);
+  if (old) {
+    try {
+      const previous = JSON.parse(await old.text()) as {
+        results?: unknown[];
+      };
+      if ((previous.results?.length || 0) > count) return;
+    } catch {
+      // 旧缓存解析失败时用新结果覆盖。
+    }
+  }
+  writeJsonCache(ctx, cacheUrl, body, edgeSeconds, browserSeconds);
 }
 
 function packResults(lists: SearchResult[][], line: string, slim: boolean) {
@@ -76,7 +120,7 @@ export async function GET(request: Request) {
   const slim = searchParams.get('slim') === '1';
   const cacheUrl = `https://cktv-cache.local/search?q=${encodeURIComponent(
     query
-  )}&line=${line}&slim=${slim ? '1' : '0'}&v=9`;
+  )}&line=${line}&slim=${slim ? '1' : '0'}&v=10`;
 
   const loadSites = async () =>
     (await getSearchApiSites(line)).filter((site) => !isAdultSource(site));
@@ -90,10 +134,11 @@ export async function GET(request: Request) {
     );
     const packed = packResults(lists, line, slim);
     if (packed.count > 0) {
-      writeJsonCache(
+      await writeIfRicher(
         ctx,
         cacheUrl,
         packed.body,
+        packed.count,
         budget.edgeSeconds,
         budget.browserSeconds
       );
@@ -101,12 +146,24 @@ export async function GET(request: Request) {
   };
 
   try {
-    const hit = await readJsonCache(cacheUrl);
+    const waitInflight = async () => {
+      const pending = inflight.get(cacheUrl);
+      if (!pending) return null;
+      await Promise.race([
+        pending.catch(() => undefined),
+        new Promise((resolve) => setTimeout(resolve, 2600)),
+      ]);
+      return readJsonCache(cacheUrl);
+    };
+
+    const hit = (await readJsonCache(cacheUrl)) || (await waitInflight());
     if (hit) {
       const age = cacheAgeSeconds(hit);
       const text = await hit.text();
       if (age >= budget.freshSeconds) {
-        ctx?.waitUntil(refresh().catch(() => undefined));
+        startFill(cacheUrl, refresh);
+        const pending = inflight.get(cacheUrl);
+        if (pending) ctx?.waitUntil(pending.catch(() => undefined));
       }
       return new NextResponse(text, {
         headers: searchCacheHeaders(
@@ -129,30 +186,30 @@ export async function GET(request: Request) {
     );
     const packed = packResults(settled.values, line, slim);
 
-    const fillCache = async () => {
-      await settled.done;
-      const restLists = await Promise.all(
-        restSites.map((site) =>
-          searchFromApi(site, query, { timeoutMs: budget.timeoutMs })
-        )
-      );
-      const full = packResults([...settled.values, ...restLists], line, slim);
-      if (full.count > 0) {
-        writeJsonCache(
-          ctx,
-          cacheUrl,
-          full.body,
-          budget.edgeSeconds,
-          budget.browserSeconds
+    const fillCache = () =>
+      startFill(cacheUrl, async () => {
+        await settled.done;
+        const restLists = await Promise.all(
+          restSites.map((site) =>
+            searchFromApi(site, query, { timeoutMs: budget.timeoutMs })
+          )
         );
-      }
-    };
+        const full = packResults([...settled.values, ...restLists], line, slim);
+        if (full.count > 0) {
+          await writeIfRicher(
+            ctx,
+            cacheUrl,
+            full.body,
+            full.count,
+            budget.edgeSeconds,
+            budget.browserSeconds
+          );
+        }
+      });
 
-    if (ctx) {
-      ctx.waitUntil(fillCache().catch(() => undefined));
-    } else {
-      void fillCache();
-    }
+    fillCache();
+    const pending = inflight.get(cacheUrl);
+    if (ctx && pending) ctx.waitUntil(pending.catch(() => undefined));
 
     return new NextResponse(packed.body, {
       headers: searchCacheHeaders(

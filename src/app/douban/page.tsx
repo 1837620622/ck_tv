@@ -29,6 +29,7 @@ function DoubanPageClient() {
 
   const type = searchParams.get('type') || 'movie';
   const subType = searchParams.get('sub') || '';
+  const listKind = searchParams.get('cat') || '';
 
   // 获取 runtimeConfig 中的自定义分类数据
   const [customCategories, setCustomCategories] = useState<
@@ -37,7 +38,7 @@ function DoubanPageClient() {
 
   // 选择器状态 - 支持URL参数预设
   const [primarySelection, setPrimarySelection] = useState<string>(() => {
-    return type === 'movie' ? '热门' : '';
+    return type === 'movie' ? listKind || '热门' : '';
   });
   const [secondarySelection, setSecondarySelection] = useState<string>(() => {
     // 如果URL中有sub参数，使用sub参数作为默认选择
@@ -100,7 +101,7 @@ function DoubanPageClient() {
     } else {
       // 原有逻辑，支持sub参数预设
       if (type === 'movie') {
-        setPrimarySelection('热门');
+        setPrimarySelection(listKind || '热门');
         setSecondarySelection(subType || '全部');
       } else if (type === 'tv') {
         setPrimarySelection('');
@@ -120,7 +121,7 @@ function DoubanPageClient() {
     }, 50);
 
     return () => clearTimeout(timer);
-  }, [type, subType, customCategories]);
+  }, [type, subType, listKind, customCategories]);
 
   // 生成骨架屏数据
   const skeletonData = Array.from({ length: 25 }, (_, index) => index);

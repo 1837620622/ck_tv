@@ -173,8 +173,15 @@ export async function searchFromApi(
   }
 }
 
-// 保留 .m3u8 后面的签名参数。旧正则在问号处截断，带鉴权的地址会直接播不了。
-const M3U8_PATTERN = /(https?:\/\/[^\s"'<>]+?\.m3u8[^\s"'<>]*)/g;
+// 保留 .m3u8 后面的签名参数。问号、括号都可能是地址的一部分，不能在那里截断。
+const M3U8_PATTERN =
+  /(https?:\/\/[^\s"'<>，。！？、；：）】》]+?\.m3u8[^\s"'<>，。！？、；：）】》]*)/g;
+
+function episodeUrl(episode: string): string {
+  const dollar = episode.indexOf('$');
+  const raw = (dollar < 0 ? episode : episode.slice(dollar + 1)).trim();
+  return raw.replace(/（[^）]*）\s*$/u, '');
+}
 
 // 苹果 CMS 播放串：线路用 $$$，集数用 #，集名和地址用 $。
 export function extractPlayUrls(vodPlayUrl: string): string[] {
@@ -183,16 +190,17 @@ export function extractPlayUrls(vodPlayUrl: string): string[] {
   for (const group of groups) {
     const urls = group
       .split('#')
-      .map((episode) => {
-        const dollar = episode.indexOf('$');
-        if (dollar < 0) return '';
-        const url = episode.slice(dollar + 1);
-        const parenIndex = url.indexOf('(');
-        return parenIndex > 0 ? url.slice(0, parenIndex) : url;
-      })
+      .map(episodeUrl)
       .filter((url) => url.startsWith('http://') || url.startsWith('https://'));
     const m3u8s = urls.filter((url) => url.includes('.m3u8'));
-    const chosen = m3u8s.length > 0 ? m3u8s : urls;
+    const others = urls.filter((url) => !url.includes('.m3u8'));
+    // 整组以 m3u8 为主才只用 m3u8。只有一条预告 m3u8、正片是 mp4 时不能把正片丢掉。
+    const chosen =
+      m3u8s.length === 0
+        ? urls
+        : m3u8s.length >= others.length
+        ? m3u8s
+        : others;
     if (chosen.length > best.length) {
       best = chosen;
     }
@@ -288,21 +296,20 @@ async function handleSpecialSourceDetail(
 
   if (apiSite.key === 'ffzy') {
     const ffzyPattern =
-      /\$(https?:\/\/[^"'\s]+?\/\d{8}\/\d+_[a-f0-9]+\/index\.m3u8)/g;
+      /\$(https?:\/\/[^"'\s]+?\/\d{8}\/\d+_[a-f0-9]+\/index\.m3u8[^\s"'<>]*)/g;
     matches = html.match(ffzyPattern) || [];
   }
 
   if (matches.length === 0) {
-    const generalPattern = /\$(https?:\/\/[^"'\s]+?\.m3u8)/g;
+    const generalPattern =
+      /\$(https?:\/\/[^\s"'<>，。！？、；：）】》]+?\.m3u8[^\s"'<>，。！？、；：）】》]*)/g;
     matches = html.match(generalPattern) || [];
   }
 
-  // 去重并清理链接前缀
-  matches = Array.from(new Set(matches)).map((link: string) => {
-    link = link.substring(1); // 去掉开头的 $
-    const parenIndex = link.indexOf('(');
-    return parenIndex > 0 ? link.substring(0, parenIndex) : link;
-  });
+  // 去掉开头的 $，签名参数和路径里的括号都保留。
+  matches = Array.from(new Set(matches)).map((link: string) =>
+    link.startsWith('$') ? link.slice(1) : link
+  );
 
   // 提取标题
   const titleMatch = html.match(/<h1[^>]*>([^<]+)<\/h1>/);

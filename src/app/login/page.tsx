@@ -11,18 +11,31 @@ import { checkForUpdates, CURRENT_VERSION, UpdateStatus } from '@/lib/version';
 import { useSite } from '@/components/SiteProvider';
 import { ThemeToggle } from '@/components/ThemeToggle';
 
-// 登录后只回到本站路径，避免跳到外部地址。
+// 登录后只回到本站路径。控制字符和点段会被浏览器吃掉，不能只看原始字符串。
 function safeNextPath(raw: string | null): string {
   if (
     !raw ||
     !raw.startsWith('/') ||
     raw.startsWith('//') ||
-    raw.includes('\\')
+    raw.includes('\\') ||
+    raw.includes('://') ||
+    Array.from(raw).some((char) => {
+      const code = char.charCodeAt(0);
+      return code <= 31 || code === 127;
+    })
   ) {
     return '/';
   }
-  if (raw.includes('://')) return '/';
-  return raw;
+  try {
+    const parsed = new URL(raw, 'https://local.invalid');
+    if (parsed.origin !== 'https://local.invalid') return '/';
+    if (!parsed.pathname.startsWith('/') || parsed.pathname.startsWith('//')) {
+      return '/';
+    }
+    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch {
+    return '/';
+  }
 }
 
 // 版本显示组件 - 点击弹出赞赏码

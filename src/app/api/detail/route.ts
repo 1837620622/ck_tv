@@ -49,7 +49,7 @@ export async function GET(request: Request) {
 
     const cacheUrl = `https://cktv-cache.local/detail?source=${encodeURIComponent(
       sourceCode
-    )}&id=${encodeURIComponent(id)}&v=5`;
+    )}&id=${encodeURIComponent(id)}&v=6`;
     const hit = await readJsonCache(cacheUrl);
     if (hit) {
       return new NextResponse(await hit.text(), {

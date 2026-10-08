@@ -92,7 +92,7 @@ export default function ScrollableRow({
 
   return (
     <div
-      className='relative'
+      className='relative min-w-0 max-w-full'
       onMouseEnter={() => {
         setIsHovered(true);
         // 当鼠标进入时重新检查一次
@@ -102,7 +102,7 @@ export default function ScrollableRow({
     >
       <div
         ref={containerRef}
-        className='flex space-x-6 overflow-x-auto scrollbar-hide py-1 sm:py-2 pb-12 sm:pb-14 px-4 sm:px-6'
+        className='flex min-w-0 max-w-full gap-3 overflow-x-auto scrollbar-hide py-1 sm:gap-4 sm:py-2 pb-4 sm:pb-6 px-1 sm:px-2'
         onScroll={checkScroll}
       >
         {children}
@@ -122,7 +122,7 @@ export default function ScrollableRow({
             style={{
               top: '40%',
               bottom: '60%',
-              left: '-4.5rem',
+              left: '0.25rem',
               pointerEvents: 'auto',
             }}
           >
@@ -151,7 +151,7 @@ export default function ScrollableRow({
             style={{
               top: '40%',
               bottom: '60%',
-              right: '-4.5rem',
+              right: '0.25rem',
               pointerEvents: 'auto',
             }}
           >

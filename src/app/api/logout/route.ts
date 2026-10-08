@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+import { isHttpsRequest } from '@/lib/https';
+
 export const runtime = 'edge';
 
 export async function POST(req: NextRequest) {
@@ -11,7 +13,7 @@ export async function POST(req: NextRequest) {
     expires: new Date(0),
     sameSite: 'lax',
     httpOnly: false,
-    secure: req.nextUrl.protocol === 'https:',
+    secure: isHttpsRequest(req),
   });
 
   return response;

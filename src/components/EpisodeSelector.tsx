@@ -12,6 +12,38 @@ import React, {
 import { SearchResult } from '@/lib/types';
 import { processImageUrl } from '@/lib/utils';
 
+function sourceKey(source: SearchResult): string {
+  return `${source.source}:${source.id}`;
+}
+
+// 只拉 m3u8 清单，不下载正片。测不到（跨域失败）就保持原来的线路顺序。
+async function probeManifest(
+  url: string,
+  parent: AbortSignal
+): Promise<number | null> {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), 2200);
+  const stop = () => controller.abort();
+  parent.addEventListener('abort', stop);
+  const started = performance.now();
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      cache: 'no-store',
+      mode: 'cors',
+    });
+    if (!response.ok) return null;
+    const text = await response.text();
+    if (!text.includes('#EXTM3U')) return null;
+    return Math.max(1, Math.round(performance.now() - started));
+  } catch {
+    return null;
+  } finally {
+    window.clearTimeout(timer);
+    parent.removeEventListener('abort', stop);
+  }
+}
+
 interface EpisodeSelectorProps {
   /** 总集数 */
   totalEpisodes: number;
@@ -63,6 +95,46 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
 
   // 是否倒序显示
   const [descending, setDescending] = useState<boolean>(false);
+  const [latencyMs, setLatencyMs] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    if (availableSources.length === 0) return;
+    const parent = new AbortController();
+    const timer = window.setTimeout(() => {
+      const jobs: { key: string; url: string }[] = [];
+      const missed: Record<string, number> = {};
+      availableSources.forEach((source) => {
+        const url = source.episodes?.find((item) => item.includes('.m3u8'));
+        const key = sourceKey(source);
+        // 分享页地址测不出清单延迟，直接标未测到，避免一直停在测速中。
+        if (url) jobs.push({ key, url });
+        else missed[key] = -1;
+      });
+      if (Object.keys(missed).length > 0) {
+        setLatencyMs((current) => ({ ...current, ...missed }));
+      }
+      let cursor = 0;
+      const worker = async () => {
+        while (cursor < jobs.length && !parent.signal.aborted) {
+          const job = jobs[cursor];
+          cursor += 1;
+          const latency = await probeManifest(job.url, parent.signal);
+          if (parent.signal.aborted) continue;
+          const value = latency ?? -1;
+          setLatencyMs((current) =>
+            current[job.key] === value
+              ? current
+              : { ...current, [job.key]: value }
+          );
+        }
+      };
+      void Promise.all([worker(), worker()]);
+    }, 1200);
+    return () => {
+      window.clearTimeout(timer);
+      parent.abort();
+    };
+  }, [availableSources]);
 
   // 根据 descending 状态计算实际显示的分页索引
   const displayPage = useMemo(() => {
@@ -315,80 +387,83 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
           {!sourceSearchLoading &&
             !sourceSearchError &&
             availableSources.length > 0 && (
-              <div className='flex-1 overflow-y-auto space-y-2 pb-20'>
+              <div className='flex-1 overflow-y-auto space-y-1.5 pb-20'>
                 {[...availableSources]
-                  .sort(
-                    (a, b) => (a.source_rank ?? 999) - (b.source_rank ?? 999)
-                  )
+                  .sort((a, b) => {
+                    const rankA = a.source_rank ?? 999;
+                    const rankB = b.source_rank ?? 999;
+                    const readLatency = (item: SearchResult) => {
+                      const value = latencyMs[sourceKey(item)];
+                      return value && value > 0 ? value : 480;
+                    };
+                    const latencyA = readLatency(a);
+                    const latencyB = readLatency(b);
+                    // 配置顺序仍是基准。清单延迟大约每差一个名次抵 180ms，测不到不降级。
+                    const scoreA = latencyA + (rankA - 1) * 180;
+                    const scoreB = latencyB + (rankB - 1) * 180;
+                    if (scoreA !== scoreB) return scoreA - scoreB;
+                    return rankA - rankB;
+                  })
                   .map((source, index) => {
                     const isCurrentSource =
                       source.source?.toString() === currentSource?.toString() &&
                       source.id?.toString() === currentId?.toString();
+                    const latency = latencyMs[sourceKey(source)];
+                    const episodeCount =
+                      source.episodes?.length || source.episode_count || 0;
                     return (
                       <div
                         key={`${source.source}-${source.id}`}
                         onClick={() =>
                           !isCurrentSource && handleSourceClick(source)
                         }
-                        className={`flex items-start gap-3 px-2 py-3 rounded-lg transition-all select-none duration-200 relative
+                        className={`flex items-center gap-3 px-2 py-2 rounded-md select-none
                       ${
                         isCurrentSource
-                          ? 'bg-green-500/10 dark:bg-green-500/20 border-green-500/30 border'
-                          : 'hover:bg-gray-200/50 dark:hover:bg-white/10 hover:scale-[1.02] cursor-pointer'
+                          ? 'bg-green-500/10 dark:bg-green-500/15 border border-green-600/40'
+                          : 'border border-transparent hover:bg-gray-100 dark:hover:bg-white/5 cursor-pointer'
                       }`.trim()}
                       >
-                        {/* 封面 */}
-                        <div className='flex-shrink-0 w-12 h-20 bg-gray-300 dark:bg-gray-600 rounded overflow-hidden'>
-                          {source.episodes && source.episodes.length > 0 && (
-                            <img
-                              src={processImageUrl(source.poster)}
-                              alt={source.title}
-                              className='w-full h-full object-cover'
-                              onError={(e) => {
-                                const target = e.target as HTMLImageElement;
-                                target.style.display = 'none';
-                              }}
-                            />
-                          )}
+                        <div
+                          className={`flex h-8 w-8 shrink-0 items-center justify-center text-sm font-semibold ${
+                            isCurrentSource
+                              ? 'bg-green-600 text-white'
+                              : 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-200'
+                          }`}
+                        >
+                          {index + 1}
                         </div>
-
-                        {/* 信息区域 */}
-                        <div className='flex-1 min-w-0 flex flex-col justify-between h-20'>
-                          {/* 标题和分辨率 - 顶部 */}
-                          <div className='flex items-start justify-between gap-3 h-6'>
-                            <div className='flex-1 min-w-0 relative group/title'>
-                              <h3 className='font-medium text-base truncate text-gray-900 dark:text-gray-100 leading-none'>
-                                {source.title}
-                              </h3>
-                              {/* 标题级别的 tooltip - 第一个元素不显示 */}
-                              {index !== 0 && (
-                                <div className='absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-1 bg-gray-800 text-white text-xs rounded-md shadow-lg opacity-0 invisible group-hover/title:opacity-100 group-hover/title:visible transition-all duration-200 ease-out delay-100 whitespace-nowrap z-[500] pointer-events-none'>
-                                  {source.title}
-                                  <div className='absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-800'></div>
-                                </div>
-                              )}
-                            </div>
-                            <span className='text-[11px] px-1.5 py-0.5 rounded bg-gray-500/10 text-gray-600 dark:text-gray-300 flex-shrink-0'>
-                              线路 {source.source_rank || index + 1}
-                            </span>
-                          </div>
-
-                          {/* 源名称和集数信息 - 垂直居中 */}
-                          <div className='flex items-center justify-between'>
-                            <span className='text-xs px-2 py-1 border border-gray-500/60 rounded text-gray-700 dark:text-gray-300'>
+                        <div className='min-w-0 flex-1'>
+                          <div className='flex items-center justify-between gap-2'>
+                            <span className='truncate text-sm font-medium text-gray-900 dark:text-gray-100'>
                               {source.source_name}
                             </span>
-                            {source.episodes.length > 1 && (
-                              <span className='text-xs text-gray-500 dark:text-gray-400 font-medium'>
-                                {source.episodes.length} 集
-                              </span>
-                            )}
+                            <span className='shrink-0 text-xs text-gray-500 dark:text-gray-400'>
+                              {isCurrentSource
+                                ? '正在播放'
+                                : latency == null
+                                ? '测速中'
+                                : latency > 0
+                                ? `${latency} ms`
+                                : '未测到'}
+                            </span>
                           </div>
-
-                          <div className='flex items-end h-6 text-[11px] text-gray-500 dark:text-gray-400'>
-                            {isCurrentSource ? '正在播放' : '按顺序切换'}
+                          <div className='mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400'>
+                            {episodeCount > 1 ? `${episodeCount} 集 · ` : ''}
+                            {source.title}
                           </div>
                         </div>
+                        {source.poster && (
+                          <img
+                            src={processImageUrl(source.poster)}
+                            alt=''
+                            className='h-12 w-8 shrink-0 rounded-sm object-cover'
+                            onError={(e) => {
+                              const target = e.target as HTMLImageElement;
+                              target.style.display = 'none';
+                            }}
+                          />
+                        )}
                       </div>
                     );
                   })}

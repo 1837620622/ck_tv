@@ -21,6 +21,7 @@ import {
   saveSkipConfig,
   subscribeToDataUpdates,
 } from '@/lib/db.client';
+import { pickPlayable } from '@/lib/match-title';
 import { SearchResult } from '@/lib/types';
 import { processImageUrl } from '@/lib/utils';
 
@@ -206,18 +207,31 @@ function PlayPageClient() {
 
   const artPlayerRef = useRef<any>(null);
   const artRef = useRef<HTMLDivElement | null>(null);
+  const availableSourcesRef = useRef<SearchResult[]>([]);
+  const failedSourceKeysRef = useRef<Set<string>>(new Set());
+  const sourceSwitchingRef = useRef(false);
+  const handleSourceChangeRef = useRef<
+    (source: string, id: string, title: string) => void
+  >(() => undefined);
+  availableSourcesRef.current = availableSources;
 
   // -----------------------------------------------------------------------------
   // 工具函数（Utils）
   // -----------------------------------------------------------------------------
 
-  // 按上游顺序取第一个能播的源。不再预先下载正片测速，避免占带宽导致卡顿。
+  // 按上游顺序起播。有直链 m3u8 的优先，分享页经常打不开。不下载正片。
   const pickOrderedSource = (sources: SearchResult[]): SearchResult => {
     const ranked = [...sources].sort(
       (a, b) => (a.source_rank ?? 999) - (b.source_rank ?? 999)
     );
+    const withEpisodes = ranked.filter(
+      (source) => source.episodes && source.episodes.length > 0
+    );
     return (
-      ranked.find((source) => source.episodes && source.episodes.length > 0) ||
+      withEpisodes.find((source) =>
+        source.episodes.some((episode) => episode.includes('.m3u8'))
+      ) ||
+      withEpisodes[0] ||
       ranked[0] ||
       sources[0]
     );
@@ -269,24 +283,30 @@ function PlayPageClient() {
     // 只去掉两段不连续标记中间的短插播。单独的不连续标记要留给正片换音轨，删掉会卡。
     const lines = m3u8Content.split('\n');
     const filteredLines = [];
+    const isBreak = (line: string) => line.trim() === '#EXT-X-DISCONTINUITY';
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
-      const info = lines[i + 1] || '';
-      const uri = (lines[i + 2] || '').trim();
-      const end = lines[i + 3] || '';
-      const duration = Number((info.match(/#EXTINF:([\d.]+)/) || [])[1]);
-      const shortInsert =
-        line.includes('#EXT-X-DISCONTINUITY') &&
-        info.startsWith('#EXTINF:') &&
-        Number.isFinite(duration) &&
-        duration > 0 &&
-        duration <= 15 &&
-        uri !== '' &&
-        !uri.startsWith('#') &&
-        end.includes('#EXT-X-DISCONTINUITY');
-      if (shortInsert) {
-        i += 3;
+      if (!isBreak(line)) {
+        filteredLines.push(line);
+        continue;
+      }
+      // 序号标签也包含这串字，必须整行相等，否则会把正片删掉。
+      let cursor = i + 1;
+      let duration = 0;
+      let sawInfo = false;
+      while (cursor < lines.length && !isBreak(lines[cursor])) {
+        const row = lines[cursor].trim();
+        if (row.startsWith('#EXTINF:')) {
+          const value = Number((row.match(/#EXTINF:([\d.]+)/) || [])[1]);
+          if (Number.isFinite(value)) duration += value;
+          sawInfo = true;
+        }
+        cursor += 1;
+      }
+      const closed = cursor < lines.length && isBreak(lines[cursor]);
+      if (sawInfo && closed && duration > 0 && duration <= 15) {
+        i = cursor;
         continue;
       }
       filteredLines.push(line);
@@ -461,54 +481,74 @@ function PlayPageClient() {
     ): Promise<SearchResult[]> => {
       // 根据搜索词获取全部源信息
       try {
-        const response = await fetch(
-          `/api/search?q=${encodeURIComponent(query.trim())}&v=9`
-        );
+        const searchUrl = `/api/search?q=${encodeURIComponent(
+          query.trim()
+        )}&v=10`;
+        const response = await fetch(searchUrl, { cache: 'no-store' });
         if (!response.ok) {
           throw new Error('搜索失败');
         }
         const data = await response.json();
-
-        // 处理搜索结果，根据规则过滤
-        const matchSource = (result: SearchResult) =>
-          result.title.replaceAll(' ', '').toLowerCase() ===
-            videoTitleRef.current.replaceAll(' ', '').toLowerCase() &&
-          (videoYearRef.current
-            ? result.year.toLowerCase() === videoYearRef.current.toLowerCase()
-            : true) &&
-          (searchType
-            ? (searchType === 'tv' && result.episodes.length > 1) ||
-              (searchType === 'movie' && result.episodes.length === 1)
-            : true);
-        const results = data.results.filter(matchSource);
-        if (response.headers.get('x-ck-cache') === 'PARTIAL') {
-          window.setTimeout(async () => {
-            try {
-              const again = await fetch(
-                `/api/search?q=${encodeURIComponent(query.trim())}&v=9`
-              );
-              if (!again.ok) return;
+        const wantedTitle = searchTitle || videoTitleRef.current;
+        const matchList = (list: SearchResult[]) =>
+          pickPlayable(
+            list || [],
+            wantedTitle,
+            videoYearRef.current,
+            searchType
+          );
+        let results = matchList(data.results);
+        const partial = response.headers.get('x-ck-cache') === 'PARTIAL';
+        // 首批源还没凑齐时先等一次完整结果，避免页面先报没找到。
+        if (partial && results.length === 0) {
+          await new Promise((resolve) => window.setTimeout(resolve, 1600));
+          try {
+            const again = await fetch(searchUrl, { cache: 'no-store' });
+            if (again.ok) {
               const againData = await again.json();
-              const more = againData.results.filter(matchSource);
-              if (more.length > results.length) {
-                setAvailableSources((current) => {
-                  const seen = new Set(
-                    more.map(
-                      (item: SearchResult) => `${item.source}:${item.id}`
-                    )
-                  );
-                  const kept = current.filter(
-                    (item) => !seen.has(`${item.source}:${item.id}`)
-                  );
-                  return [...more, ...kept];
-                });
-              }
-            } catch {
-              // 线路补全失败时继续用已经开播的源
+              const more = matchList(againData.results);
+              if (more.length > 0) results = more;
             }
-          }, 1800);
+          } catch {
+            // 补搜失败时沿用第一批
+          }
+        } else if (partial) {
+          // 首包是快的那几条。完整片源写进缓存还要几秒，这里最多再拉两次。
+          const mergeLater = (delay: number) => {
+            window.setTimeout(async () => {
+              try {
+                const again = await fetch(searchUrl, { cache: 'no-store' });
+                if (!again.ok) return;
+                const againData = await again.json();
+                const more = matchList(againData.results);
+                if (more.length > results.length) {
+                  results = more;
+                  setAvailableSources((current) => {
+                    const seen = new Set(
+                      more.map(
+                        (item: SearchResult) => `${item.source}:${item.id}`
+                      )
+                    );
+                    const kept = current.filter(
+                      (item) => !seen.has(`${item.source}:${item.id}`)
+                    );
+                    return [...more, ...kept];
+                  });
+                }
+                if (
+                  again.headers.get('x-ck-cache') === 'PARTIAL' &&
+                  delay < 4000
+                ) {
+                  mergeLater(delay + 2200);
+                }
+              } catch {
+                // 线路补全失败时继续用已经开播的源
+              }
+            }, delay);
+          };
+          mergeLater(1800);
         }
-        setAvailableSources(results);
+        if (!background) setAvailableSources(results);
         return results;
       } catch (err) {
         if (!background) {
@@ -536,56 +576,48 @@ function PlayPageClient() {
       );
 
       // 已经点了具体片源时，先拉这一条详情就开播，其它线路在后台补。
+      // 详情没有地址时改走片名搜索，不再直接报没找到。
       let sourcesInfo: SearchResult[] = [];
       if (currentSource && currentId && !needPreferRef.current) {
         const quick = await fetchSourceDetail(currentSource, currentId);
         const quickDetail = quick[0];
-        if (!quickDetail?.episodes?.length) {
-          setError('未找到匹配结果');
-          setLoading(false);
-          return;
+        if (quickDetail?.episodes?.length) {
+          sourcesInfo = [quickDetail];
+          void fetchSourcesData(searchTitle || videoTitle, true).then(
+            (results) => {
+              if (results.length === 0) return;
+              const hasCurrent = results.some(
+                (source) =>
+                  source.source === currentSource && source.id === currentId
+              );
+              setAvailableSources(
+                hasCurrent ? results : [quickDetail, ...results]
+              );
+            }
+          );
         }
-        sourcesInfo = [quickDetail];
-        void fetchSourcesData(searchTitle || videoTitle, true).then(
-          (results) => {
-            if (results.length === 0) return;
-            const hasCurrent = results.some(
-              (source) =>
-                source.source === currentSource && source.id === currentId
-            );
-            setAvailableSources(
-              hasCurrent ? results : [quickDetail, ...results]
-            );
-          }
-        );
-      } else {
+      }
+      if (sourcesInfo.length === 0) {
         sourcesInfo = await fetchSourcesData(searchTitle || videoTitle);
       }
       if (sourcesInfo.length === 0) {
-        setError('未找到匹配结果');
+        setError('片库里暂时没有这一部');
         setLoading(false);
         return;
       }
 
       let detailData: SearchResult = sourcesInfo[0];
-      // 指定源和id且无需优选
-      if (currentSource && currentId && !needPreferRef.current) {
-        const target = sourcesInfo.find(
-          (source) => source.source === currentSource && source.id === currentId
-        );
-        if (target) {
-          detailData = target;
-        } else {
-          setError('未找到匹配结果');
-          setLoading(false);
-          return;
-        }
-      }
-
-      // 未指定源时按 1、2、3、4 的线路顺序直接起播，国内和海外的顺序由搜索接口按 CF 地区排好
-      if (!currentSource || !currentId || needPreferRef.current) {
-        detailData = pickOrderedSource(sourcesInfo);
-      }
+      const pinned =
+        currentSource && currentId && !needPreferRef.current
+          ? sourcesInfo.find(
+              (source) =>
+                source.source === currentSource &&
+                source.id === currentId &&
+                source.episodes?.length
+            )
+          : undefined;
+      // 指定源能播就用它，否则按 1、2、3、4 的线路顺序起播。
+      detailData = pinned || pickOrderedSource(sourcesInfo);
 
       console.log(detailData.source, detailData.id);
 
@@ -758,6 +790,7 @@ function PlayPageClient() {
       setError(err instanceof Error ? err.message : '换源失败');
     }
   };
+  handleSourceChangeRef.current = handleSourceChange;
 
   useEffect(() => {
     document.addEventListener('keydown', handleKeyboardShortcuts);
@@ -1067,6 +1100,8 @@ function PlayPageClient() {
       setError('视频地址无效');
       return;
     }
+    // 新地址已经交到播放器，允许下一次起播失败再换线。
+    sourceSwitchingRef.current = false;
     console.log(videoUrl);
 
     // 检测是否为WebKit浏览器
@@ -1511,9 +1546,23 @@ function PlayPageClient() {
 
       artPlayerRef.current.on('error', (err: any) => {
         console.error('播放器错误:', err);
-        if (artPlayerRef.current.currentTime > 0) {
-          return;
-        }
+        // 已经播起来了就不要中途换线。只有一开始就打不开才换下一条直链。
+        if ((artPlayerRef.current?.currentTime || 0) > 0) return;
+        if (sourceSwitchingRef.current) return;
+        const currentKey = `${currentSourceRef.current}:${currentIdRef.current}`;
+        failedSourceKeysRef.current.add(currentKey);
+        const next = [...availableSourcesRef.current]
+          .filter((source) =>
+            source.episodes?.some((episode) => episode.includes('.m3u8'))
+          )
+          .filter(
+            (source) =>
+              !failedSourceKeysRef.current.has(`${source.source}:${source.id}`)
+          )
+          .sort((a, b) => (a.source_rank ?? 999) - (b.source_rank ?? 999))[0];
+        if (!next) return;
+        sourceSwitchingRef.current = true;
+        handleSourceChangeRef.current(next.source, next.id, next.title);
       });
 
       // 监听视频播放结束事件，自动播放下一集
@@ -1704,7 +1753,7 @@ function PlayPageClient() {
                 </p>
               </div>
               <p className='text-sm text-gray-500 dark:text-gray-400'>
-                请检查网络连接或尝试刷新页面
+                可以返回搜索换一部，或刷新后再试
               </p>
             </div>
 

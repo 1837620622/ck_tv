@@ -1,5 +1,3 @@
-import { edgeFetchInit } from '@/lib/edge-cache';
-
 export const runtime = 'edge';
 
 const FALLBACK_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 600" width="100%" height="100%">
@@ -17,14 +15,113 @@ const FALLBACK_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 6
   <text x="200" y="380" font-family="-apple-system,BlinkMacSystemFont,sans-serif" font-size="12" fill="#64748b" text-anchor="middle">影视海报</text>
 </svg>`;
 
-function fallback(cacheSeconds = 3600) {
+function fallback() {
   return new Response(FALLBACK_SVG, {
     status: 200,
     headers: {
       'Content-Type': 'image/svg+xml',
-      'Cache-Control': `public, max-age=${cacheSeconds}`,
+      'Cache-Control': 'no-store',
+      'X-Content-Type-Options': 'nosniff',
     },
   });
+}
+
+function privateIPv4(parts: number[]): boolean {
+  if (
+    parts.length !== 4 ||
+    parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)
+  ) {
+    return true;
+  }
+  const a = parts[0];
+  const b = parts[1];
+  return (
+    a === 0 ||
+    a === 10 ||
+    a === 127 ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168) ||
+    (a === 100 && b >= 64 && b <= 127)
+  );
+}
+
+function expandIPv6(host: string): number[] | null {
+  if (!host.includes(':')) return null;
+  const halves = host.split('::');
+  if (halves.length > 2) return null;
+
+  const parseSide = (side: string): string[] | null => {
+    if (!side) return [];
+    const out: string[] = [];
+    for (const bit of side.split(':')) {
+      if (bit.includes('.')) {
+        const nums = bit.split('.').map((part) => Number(part));
+        if (
+          nums.length !== 4 ||
+          nums.some((part) => !Number.isInteger(part) || part > 255)
+        ) {
+          return null;
+        }
+        out.push(((nums[0] << 8) | nums[1]).toString(16));
+        out.push(((nums[2] << 8) | nums[3]).toString(16));
+        continue;
+      }
+      if (!/^[0-9a-f]{0,4}$/i.test(bit)) return null;
+      out.push(bit || '0');
+    }
+    return out;
+  };
+
+  const left = parseSide(halves[0]);
+  if (!left) return null;
+  if (halves.length === 1) {
+    if (left.length !== 8) return null;
+    return left.map((part) => parseInt(part, 16));
+  }
+  const right = parseSide(halves[1]);
+  if (!right) return null;
+  const missing = 8 - left.length - right.length;
+  if (missing < 0) return null;
+  return [...left, ...Array(missing).fill('0'), ...right].map((part) =>
+    parseInt(part, 16)
+  );
+}
+
+function ipv4FromPair(hi: number, lo: number): number[] {
+  return [(hi >> 8) & 255, hi & 255, (lo >> 8) & 255, lo & 255];
+}
+
+function blockedIPv6(host: string): boolean {
+  const nums = expandIPv6(host);
+  if (!nums || nums.some((part) => Number.isNaN(part) || part > 0xffff)) {
+    return true;
+  }
+  const loopback =
+    nums.every((part) => part === 0) ||
+    (nums.slice(0, 7).every((part) => part === 0) && nums[7] === 1);
+  if (loopback) return true;
+  const head = nums[0];
+  // fe80::/10、fec0::/10、ff00::/8、fc00::/7
+  if (head >= 0xfe80 && head <= 0xfeff) return true;
+  if (head >= 0xff00) return true;
+  if (head >= 0xfc00 && head <= 0xfdff) return true;
+
+  let embedded: number[] | null = null;
+  if (nums.slice(0, 5).every((part) => part === 0) && nums[5] === 0xffff) {
+    embedded = ipv4FromPair(nums[6], nums[7]);
+  } else if (nums.slice(0, 6).every((part) => part === 0)) {
+    embedded = ipv4FromPair(nums[6], nums[7]);
+  } else if (head === 0x2002) {
+    embedded = ipv4FromPair(nums[1], nums[2]);
+  } else if (
+    head === 0x64 &&
+    nums[1] === 0xff9b &&
+    nums.slice(2, 6).every((part) => part === 0)
+  ) {
+    embedded = ipv4FromPair(nums[6], nums[7]);
+  }
+  return embedded ? privateIPv4(embedded) : false;
 }
 
 // 只允许公网 http(s) 图片。挡住内网、云元数据地址和任意网页代理。
@@ -37,7 +134,10 @@ function safeImageUrl(raw: string): URL | null {
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
   if (url.username || url.password) return null;
-  const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  const host = url.hostname
+    .toLowerCase()
+    .replace(/^\[|\]$/g, '')
+    .replace(/\.+$/, '');
   if (
     host === 'localhost' ||
     host.endsWith('.local') ||
@@ -48,32 +148,10 @@ function safeImageUrl(raw: string): URL | null {
   }
   const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
   if (ipv4) {
-    const a = Number(ipv4[1]);
-    const b = Number(ipv4[2]);
-    const parts = [a, b, Number(ipv4[3]), Number(ipv4[4])];
-    if (parts.some((part) => part > 255)) return null;
-    if (
-      a === 0 ||
-      a === 10 ||
-      a === 127 ||
-      (a === 169 && b === 254) ||
-      (a === 172 && b >= 16 && b <= 31) ||
-      (a === 192 && b === 168) ||
-      (a === 100 && b >= 64 && b <= 127)
-    ) {
-      return null;
-    }
+    const parts = ipv4.slice(1).map((part) => Number(part));
+    if (privateIPv4(parts)) return null;
   }
-  if (host.includes(':')) {
-    if (
-      host === '::1' ||
-      host.startsWith('fc') ||
-      host.startsWith('fd') ||
-      host.startsWith('fe80')
-    ) {
-      return null;
-    }
-  }
+  if (host.includes(':') && blockedIPv6(host)) return null;
   return url;
 }
 
@@ -85,8 +163,10 @@ async function fetchPublicImage(
   let current = start;
   for (let hop = 0; hop < 3; hop += 1) {
     const response = await fetch(current.toString(), {
-      ...edgeFetchInit(headers, signal, 86400),
+      headers,
+      signal,
       redirect: 'manual',
+      cache: 'no-store',
     });
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get('location');
@@ -107,12 +187,12 @@ export async function GET(request: Request) {
   const imageUrl = searchParams.get('url');
 
   if (!imageUrl) {
-    return fallback(3600);
+    return fallback();
   }
 
   const target = safeImageUrl(imageUrl);
   if (!target) {
-    return fallback(60);
+    return fallback();
   }
 
   try {
@@ -138,18 +218,22 @@ export async function GET(request: Request) {
       return fallback();
     }
 
-    const contentType = (
-      imageResponse.headers.get('content-type') || ''
-    ).toLowerCase();
+    const mime = (imageResponse.headers.get('content-type') || '')
+      .split(';')[0]
+      .trim()
+      .toLowerCase();
     const imageType =
-      contentType.startsWith('image/') ||
-      contentType.startsWith('application/octet-stream') ||
-      contentType === '';
+      (mime.startsWith('image/') && mime !== 'image/svg+xml') ||
+      mime === 'application/octet-stream';
     if (!imageResponse.ok || !imageResponse.body || !imageType) {
       return fallback();
     }
     const resHeaders = new Headers();
-    resHeaders.set('Content-Type', contentType || 'image/jpeg');
+    resHeaders.set(
+      'Content-Type',
+      mime === 'application/octet-stream' ? 'image/jpeg' : mime
+    );
+    resHeaders.set('X-Content-Type-Options', 'nosniff');
     resHeaders.set(
       'Cache-Control',
       'public, max-age=15720000, s-maxage=15720000'

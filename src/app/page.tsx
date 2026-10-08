@@ -16,6 +16,7 @@ import {
 } from '@/lib/db.client';
 import { getDoubanCategories } from '@/lib/douban.client';
 import { DoubanItem } from '@/lib/types';
+import { processImageUrl } from '@/lib/utils';
 
 import CapsuleSwitch from '@/components/CapsuleSwitch';
 import ContinueWatching from '@/components/ContinueWatching';
@@ -23,7 +24,8 @@ import PageLayout from '@/components/PageLayout';
 import ScrollableRow from '@/components/ScrollableRow';
 import VideoCard from '@/components/VideoCard';
 
-const POSTER_CARD = 'min-w-[96px] w-24 sm:min-w-[180px] sm:w-44';
+const POSTER_CARD =
+  'min-w-[31%] w-[31%] max-w-[132px] sm:min-w-[144px] sm:w-36 sm:max-w-none md:w-40 lg:w-44';
 
 const homeEntries = [
   { label: '电影', href: '/douban?type=movie' },
@@ -63,6 +65,45 @@ function RowSkeleton() {
         </div>
       ))}
     </>
+  );
+}
+
+function openFilm(
+  router: ReturnType<typeof useRouter>,
+  item: DoubanItem,
+  cardType?: string
+) {
+  const year = item.year ? `&year=${encodeURIComponent(item.year)}` : '';
+  const stype = cardType ? `&stype=${encodeURIComponent(cardType)}` : '';
+  router.push(
+    `/play?title=${encodeURIComponent(item.title.trim())}${year}${stype}`
+  );
+}
+
+function PosterGrid({
+  items,
+  cardType,
+  className = 'grid min-w-0 grid-cols-3 gap-x-2 gap-y-4 sm:grid-cols-4 sm:gap-x-3 lg:grid-cols-5 xl:grid-cols-6',
+}: {
+  items: DoubanItem[];
+  cardType?: string;
+  className?: string;
+}) {
+  return (
+    <div className={className}>
+      {items.map((item) => (
+        <VideoCard
+          key={item.id}
+          from='douban'
+          title={item.title}
+          poster={item.poster}
+          douban_id={item.id}
+          rate={item.rate}
+          year={item.year}
+          type={cardType}
+        />
+      ))}
+    </div>
   );
 }
 
@@ -127,6 +168,7 @@ function HomeClient() {
   const activeTab =
     searchParams.get('tab') === 'favorites' ? 'favorites' : 'home';
   const [hotMovies, setHotMovies] = useState<DoubanItem[]>([]);
+  const [latestMovies, setLatestMovies] = useState<DoubanItem[]>([]);
   const [hotTvShows, setHotTvShows] = useState<DoubanItem[]>([]);
   const [hotAnime, setHotAnime] = useState<DoubanItem[]>([]);
   const [hotVarietyShows, setHotVarietyShows] = useState<DoubanItem[]>([]);
@@ -152,9 +194,10 @@ function HomeClient() {
       try {
         setLoading(true);
 
-        const [movies, tvShows, anime, varietyShows, documentaries] =
+        const [movies, latest, tvShows, anime, varietyShows, documentaries] =
           await Promise.all([
             loadDoubanRow({ kind: 'movie', category: '热门', type: '全部' }),
+            loadDoubanRow({ kind: 'movie', category: '最新', type: '全部' }),
             loadDoubanRow({ kind: 'tv', category: 'tv', type: 'tv' }),
             loadDoubanRow({
               kind: 'tv',
@@ -170,6 +213,7 @@ function HomeClient() {
           ]);
 
         setHotMovies(movies);
+        setLatestMovies(latest);
         setHotTvShows(tvShows);
         setHotAnime(anime);
         setHotVarietyShows(varietyShows);
@@ -237,7 +281,7 @@ function HomeClient() {
 
   return (
     <PageLayout>
-      <div className='px-2 sm:px-10 py-4 sm:py-8 overflow-visible'>
+      <div className='overflow-x-hidden px-3 py-4 sm:px-4 sm:py-6 lg:px-8 lg:py-8'>
         {/* 顶部 Tab 切换 */}
         <div className='mb-5 flex justify-center'>
           <CapsuleSwitch
@@ -275,7 +319,7 @@ function HomeClient() {
                   </button>
                 )}
               </div>
-              <div className='justify-start grid grid-cols-3 gap-x-2 gap-y-14 sm:gap-y-20 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fill,_minmax(11rem,_1fr))] sm:gap-x-8'>
+              <div className='grid grid-cols-3 gap-x-2 gap-y-8 sm:grid-cols-4 sm:gap-x-4 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6'>
                 {favoriteItems.map((item) => (
                   <div key={item.id + item.source} className='w-full'>
                     <VideoCard
@@ -316,13 +360,93 @@ function HomeClient() {
 
               <ContinueWatching />
 
-              <HomeRow
-                title='热门电影'
-                href='/douban?type=movie'
-                loading={loading}
-                items={hotMovies}
-                cardType='movie'
-              />
+              <section className='mb-8'>
+                <SectionTitle
+                  title='热度最高'
+                  href='/douban?type=movie&cat=热门'
+                />
+                {loading ? (
+                  <div className='grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5'>
+                    {Array.from({ length: 6 }).map((_, index) => (
+                      <div
+                        key={index}
+                        className='aspect-[2/3] rounded-md bg-gray-200 animate-pulse dark:bg-gray-800'
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  hotMovies.length > 0 && (
+                    <div className='grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-[220px_minmax(0,1fr)] lg:items-start xl:grid-cols-[240px_minmax(0,1fr)]'>
+                      <button
+                        type='button'
+                        onClick={() => openFilm(router, hotMovies[0], 'movie')}
+                        className='flex gap-3 text-left lg:flex-col'
+                      >
+                        {/* 海报域名不固定，不用 next/image 的远程白名单 */}
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={processImageUrl(hotMovies[0].poster)}
+                          alt={hotMovies[0].title}
+                          className='h-40 w-28 shrink-0 rounded-md object-cover lg:aspect-[2/3] lg:h-auto lg:w-full'
+                        />
+                        <div className='min-w-0 py-1'>
+                          <div className='text-xs text-green-700 dark:text-green-500'>
+                            豆瓣热门
+                          </div>
+                          <div className='mt-1 line-clamp-2 text-base font-semibold text-gray-900 dark:text-gray-100'>
+                            {hotMovies[0].title}
+                          </div>
+                          <div className='mt-1 text-sm text-gray-500 dark:text-gray-400'>
+                            {[hotMovies[0].year, hotMovies[0].rate]
+                              .filter(Boolean)
+                              .join(' · ')}
+                          </div>
+                          <div className='mt-3 inline-block bg-green-600 px-3 py-1.5 text-sm text-white'>
+                            播放
+                          </div>
+                        </div>
+                      </button>
+                      <PosterGrid
+                        items={hotMovies.slice(1, 13)}
+                        cardType='movie'
+                        className='grid min-w-0 grid-cols-3 gap-x-2 gap-y-4 sm:grid-cols-4 sm:gap-x-3 lg:grid-cols-3 xl:grid-cols-4'
+                      />
+                    </div>
+                  )
+                )}
+              </section>
+
+              <section className='mb-8'>
+                <SectionTitle
+                  title='最新上线'
+                  href='/douban?type=movie&cat=最新'
+                />
+                {loading ? (
+                  <div className='grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6'>
+                    {Array.from({ length: 6 }).map((_, index) => (
+                      <div
+                        key={index}
+                        className='aspect-[2/3] rounded-md bg-gray-200 animate-pulse dark:bg-gray-800'
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <PosterGrid
+                    items={(() => {
+                      const used = new Set(
+                        hotMovies.slice(0, 13).map((item) => item.id)
+                      );
+                      const fresh = latestMovies.filter(
+                        (item) => !used.has(item.id)
+                      );
+                      const list = fresh.length > 0 ? fresh : latestMovies;
+                      return list.slice(0, 12);
+                    })()}
+                    cardType='movie'
+                  />
+                )}
+              </section>
+
               <HomeRow
                 title='热门剧集'
                 href='/douban?type=tv'

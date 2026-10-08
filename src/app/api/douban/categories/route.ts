@@ -3,7 +3,6 @@ import { NextResponse } from 'next/server';
 
 import { getCacheTime } from '@/lib/config';
 import {
-  edgeFetchInit,
   jsonCacheHeaders,
   readJsonCache,
   writeJsonCache,
@@ -27,8 +26,7 @@ interface DoubanCategoryApiResponse {
 }
 
 async function fetchDoubanData(
-  url: string,
-  ttlSeconds: number
+  url: string
 ): Promise<DoubanCategoryApiResponse> {
   // 添加超时控制
   const controller = new AbortController();
@@ -43,11 +41,12 @@ async function fetchDoubanData(
   };
 
   try {
-    // 豆瓣原始 JSON 走边缘缓存。首页各分类热门列表命中后不再重复出网。
-    const response = await fetch(
-      url,
-      edgeFetchInit(headers, controller.signal, ttlSeconds)
-    );
+    // 空列表和异常正文不能进 fetch 缓存，否则热门行会空上两小时。
+    const response = await fetch(url, {
+      headers,
+      signal: controller.signal,
+      cache: 'no-store',
+    });
     clearTimeout(timeoutId);
 
     if (!response.ok) {
@@ -139,10 +138,11 @@ export async function GET(request: Request) {
     }
 
     // 调用豆瓣 API
-    const doubanData = await fetchDoubanData(target, edgeSeconds);
+    const doubanData = await fetchDoubanData(target);
+    const items = Array.isArray(doubanData?.items) ? doubanData.items : [];
 
     // 转换数据格式
-    const list: DoubanItem[] = doubanData.items.map((item) => ({
+    const list: DoubanItem[] = items.map((item) => ({
       id: item.id,
       title: item.title,
       poster: item.pic?.normal || item.pic?.large || '',
@@ -159,14 +159,20 @@ export async function GET(request: Request) {
     const body = JSON.stringify(response);
     if (list.length > 0) {
       writeJsonCache(ctx, cacheUrl, body, edgeSeconds, browserSeconds);
+      return new NextResponse(body, {
+        headers: doubanCacheHeaders('MISS', edgeSeconds, browserSeconds),
+      });
     }
     return new NextResponse(body, {
-      headers: doubanCacheHeaders('MISS', edgeSeconds, browserSeconds),
+      headers: {
+        'Cache-Control': 'no-store',
+        'x-ck-cache': 'EMPTY',
+      },
     });
   } catch (error) {
     return NextResponse.json(
       { error: '获取豆瓣数据失败', details: (error as Error).message },
-      { status: 500 }
+      { status: 500, headers: { 'Cache-Control': 'no-store' } }
     );
   }
 }

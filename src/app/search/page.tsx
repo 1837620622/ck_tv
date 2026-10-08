@@ -185,10 +185,10 @@ function SearchPageClient() {
     const seq = ++searchSeq.current;
     const searchUrl = `/api/search?q=${encodeURIComponent(
       query.trim()
-    )}&slim=1&v=9`;
+    )}&slim=1&v=10`;
     try {
       setIsLoading(true);
-      const response = await fetch(searchUrl);
+      const response = await fetch(searchUrl, { cache: 'no-store' });
       const data = await response.json();
       if (seq !== searchSeq.current) return;
       const results = (data.results || []).filter(
@@ -201,7 +201,7 @@ function SearchPageClient() {
         window.setTimeout(async () => {
           if (seq !== searchSeq.current) return;
           try {
-            const again = await fetch(searchUrl);
+            const again = await fetch(searchUrl, { cache: 'no-store' });
             const againData = await again.json();
             if (seq !== searchSeq.current) return;
             const more = (againData.results || []).filter(
@@ -209,6 +209,24 @@ function SearchPageClient() {
             );
             if (more.length > results.length) {
               setSearchResults(sortResults(more, query));
+            }
+            if (again.headers.get('x-ck-cache') === 'PARTIAL') {
+              window.setTimeout(async () => {
+                if (seq !== searchSeq.current) return;
+                try {
+                  const third = await fetch(searchUrl, { cache: 'no-store' });
+                  const thirdData = await third.json();
+                  if (seq !== searchSeq.current) return;
+                  const full = (thirdData.results || []).filter(
+                    (result: SearchResult) => !isAdultContent(result)
+                  );
+                  if (full.length > more.length) {
+                    setSearchResults(sortResults(full, query));
+                  }
+                } catch {
+                  // 第二次补全失败时保留当前结果
+                }
+              }, 2000);
             }
           } catch {
             // 补全失败时保留已经显示的首批结果
@@ -333,7 +351,7 @@ function SearchPageClient() {
                       >
                         <VideoCard
                           id={item.id}
-                          title={item.title + ' ' + item.type_name}
+                          title={item.title}
                           poster={item.poster}
                           episodes={item.episode_count ?? item.episodes.length}
                           source={item.source}
@@ -349,7 +367,7 @@ function SearchPageClient() {
                           type={
                             (item.episode_count ?? item.episodes.length) > 1
                               ? 'tv'
-                              : 'movie'
+                              : ''
                           }
                         />
                       </div>
