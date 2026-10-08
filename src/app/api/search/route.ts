@@ -29,12 +29,16 @@ function searchCacheHeaders(state: string) {
   };
 }
 
-function packResults(lists: SearchResult[][], line: string) {
+function packResults(lists: SearchResult[][], line: string, slim: boolean) {
   const results = lists.flatMap((list, index) =>
     list
       .filter((item) => !isAdultContent(item))
       .map((item) => ({
         ...item,
+        episode_count: item.episodes?.length || 0,
+        // 列表页不带播放地址。地址是响应体的大头，留给播放页和详情接口。
+        episodes: slim ? [] : item.episodes,
+        desc: slim ? (item.desc || '').slice(0, 80) : item.desc,
         source_rank: index + 1,
       }))
   );
@@ -63,9 +67,10 @@ export async function GET(request: Request) {
   }
 
   const line = viewerLine(request);
+  const slim = searchParams.get('slim') === '1';
   const cacheUrl = `https://cktv-cache.local/search?q=${encodeURIComponent(
     query
-  )}&line=${line}&v=5`;
+  )}&line=${line}&slim=${slim ? '1' : '0'}&v=6`;
 
   const refresh = async () => {
     const apiSites = (await getSearchApiSites(line)).filter(
@@ -74,7 +79,7 @@ export async function GET(request: Request) {
     const lists = await Promise.all(
       apiSites.map((site) => searchFromApi(site, query))
     );
-    const packed = packResults(lists, line);
+    const packed = packResults(lists, line, slim);
     if (packed.count > 0) {
       writeJsonCache(
         ctx,
@@ -109,7 +114,7 @@ export async function GET(request: Request) {
       SEARCH_DEADLINE_MS,
       [] as SearchResult[]
     );
-    const packed = packResults(settled.values, line);
+    const packed = packResults(settled.values, line, slim);
 
     if (settled.complete) {
       if (packed.count > 0) {
@@ -125,7 +130,7 @@ export async function GET(request: Request) {
       ctx.waitUntil(
         settled.done
           .then(() => {
-            const full = packResults(settled.values, line);
+            const full = packResults(settled.values, line, slim);
             if (full.count > 0) {
               writeJsonCache(
                 ctx,

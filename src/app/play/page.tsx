@@ -442,7 +442,10 @@ function PlayPageClient() {
         setSourceSearchLoading(false);
       }
     };
-    const fetchSourcesData = async (query: string): Promise<SearchResult[]> => {
+    const fetchSourcesData = async (
+      query: string,
+      background = false
+    ): Promise<SearchResult[]> => {
       // 根据搜索词获取全部源信息
       try {
         const response = await fetch(
@@ -469,11 +472,13 @@ function PlayPageClient() {
         setAvailableSources(results);
         return results;
       } catch (err) {
-        setSourceSearchError(err instanceof Error ? err.message : '搜索失败');
-        setAvailableSources([]);
+        if (!background) {
+          setSourceSearchError(err instanceof Error ? err.message : '搜索失败');
+          setAvailableSources([]);
+        }
         return [];
       } finally {
-        setSourceSearchLoading(false);
+        if (!background) setSourceSearchLoading(false);
       }
     };
 
@@ -491,15 +496,31 @@ function PlayPageClient() {
           : '🔍 正在搜索播放源...'
       );
 
-      let sourcesInfo = await fetchSourcesData(searchTitle || videoTitle);
-      if (
-        currentSource &&
-        currentId &&
-        !sourcesInfo.some(
-          (source) => source.source === currentSource && source.id === currentId
-        )
-      ) {
-        sourcesInfo = await fetchSourceDetail(currentSource, currentId);
+      // 已经点了具体片源时，先拉这一条详情就开播，其它线路在后台补。
+      let sourcesInfo: SearchResult[] = [];
+      if (currentSource && currentId && !needPreferRef.current) {
+        const quick = await fetchSourceDetail(currentSource, currentId);
+        const quickDetail = quick[0];
+        if (!quickDetail?.episodes?.length) {
+          setError('未找到匹配结果');
+          setLoading(false);
+          return;
+        }
+        sourcesInfo = [quickDetail];
+        void fetchSourcesData(searchTitle || videoTitle, true).then(
+          (results) => {
+            if (results.length === 0) return;
+            const hasCurrent = results.some(
+              (source) =>
+                source.source === currentSource && source.id === currentId
+            );
+            setAvailableSources(
+              hasCurrent ? results : [quickDetail, ...results]
+            );
+          }
+        );
+      } else {
+        sourcesInfo = await fetchSourcesData(searchTitle || videoTitle);
       }
       if (sourcesInfo.length === 0) {
         setError('未找到匹配结果');

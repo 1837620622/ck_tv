@@ -53,7 +53,7 @@ function SearchPageClient() {
       // 使用 title + year + type 作为键，year 必然存在，但依然兜底 'unknown'
       const key = `${item.title.replaceAll(' ', '')}-${
         item.year || 'unknown'
-      }-${item.episodes.length === 1 ? 'movie' : 'tv'}`;
+      }-${(item.episode_count ?? item.episodes.length) === 1 ? 'movie' : 'tv'}`;
       const arr = map.get(key) || [];
       arr.push(item);
       map.set(key, arr);
@@ -163,7 +163,7 @@ function SearchPageClient() {
     try {
       setIsLoading(true);
       const response = await fetch(
-        `/api/search?q=${encodeURIComponent(query.trim())}&v=5`
+        `/api/search?q=${encodeURIComponent(query.trim())}&slim=1&v=6`
       );
       const data = await response.json();
       const results = (data.results || []).filter(
@@ -317,7 +317,7 @@ function SearchPageClient() {
                           id={item.id}
                           title={item.title + ' ' + item.type_name}
                           poster={item.poster}
-                          episodes={item.episodes.length}
+                          episodes={item.episode_count ?? item.episodes.length}
                           source={item.source}
                           source_name={item.source_name}
                           douban_id={item.douban_id?.toString()}
@@ -328,7 +328,11 @@ function SearchPageClient() {
                           }
                           year={item.year}
                           from='search'
-                          type={item.episodes.length > 1 ? 'tv' : 'movie'}
+                          type={
+                            (item.episode_count ?? item.episodes.length) > 1
+                              ? 'tv'
+                              : 'movie'
+                          }
                         />
                       </div>
                     ))}
