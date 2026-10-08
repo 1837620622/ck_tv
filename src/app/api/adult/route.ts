@@ -1,15 +1,40 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { getOptionalRequestContext } from '@cloudflare/next-on-pages';
 import { NextResponse } from 'next/server';
 
 import { getAdultApiSites, getConfig } from '@/lib/config';
 import { searchFromApi } from '@/lib/downstream';
-import { edgeFetchInit, jsonCacheHeaders } from '@/lib/edge-cache';
+import {
+  edgeFetchInit,
+  jsonCacheHeaders,
+  readJsonCache,
+  writeJsonCache,
+} from '@/lib/edge-cache';
+import { settleWithin } from '@/lib/settle';
+import { SearchResult } from '@/lib/types';
 import { cleanHtmlTags } from '@/lib/utils';
 import { adultSourceKeys } from '@/lib/yellow';
 
 export const runtime = 'edge';
 
+const ADULT_EDGE_SECONDS = 180;
+const ADULT_BROWSER_SECONDS = 30;
+
+function adultCacheHeaders(state: string) {
+  return {
+    ...jsonCacheHeaders(ADULT_EDGE_SECONDS, ADULT_BROWSER_SECONDS),
+    'x-ck-cache': state,
+  };
+}
+
 export async function GET(request: Request) {
+  const ctx = (() => {
+    try {
+      return getOptionalRequestContext()?.ctx;
+    } catch {
+      return undefined;
+    }
+  })();
   const { searchParams } = new URL(request.url);
   const action = searchParams.get('action') || 'list';
   const query = searchParams.get('q');
@@ -46,19 +71,45 @@ export async function GET(request: Request) {
     if (!q) {
       return NextResponse.json({ list: [] });
     }
-    const searchPromises = adultSites.map((site) =>
-      searchFromApi(site, q, { keepAdult: true })
-    );
+    const cacheUrl = `https://cktv-cache.local/adult-search?q=${encodeURIComponent(
+      q
+    )}&v=5`;
     try {
-      const results = await Promise.all(searchPromises);
-      const flattened = results.flat();
-      return NextResponse.json(
-        {
-          list: flattened,
-          total: flattened.length,
-        },
-        { headers: jsonCacheHeaders(180, 30) }
+      const hit = await readJsonCache(cacheUrl);
+      if (hit) {
+        return new NextResponse(await hit.text(), {
+          headers: adultCacheHeaders('HIT'),
+        });
+      }
+      const settled = await settleWithin(
+        adultSites.map((site) => searchFromApi(site, q, { keepAdult: true })),
+        1500,
+        [] as SearchResult[]
       );
+      const flattened = settled.values.flat();
+      const body = JSON.stringify({
+        list: flattened,
+        total: flattened.length,
+      });
+      const store = () => {
+        const full = settled.values.flat();
+        if (full.length === 0) return;
+        writeJsonCache(
+          ctx,
+          cacheUrl,
+          JSON.stringify({ list: full, total: full.length }),
+          ADULT_EDGE_SECONDS,
+          ADULT_BROWSER_SECONDS
+        );
+      };
+      if (settled.complete) {
+        if (flattened.length > 0) store();
+      } else {
+        ctx?.waitUntil(settled.done.then(store).catch(() => undefined));
+      }
+      return new NextResponse(body, {
+        headers: adultCacheHeaders(settled.complete ? 'MISS' : 'PARTIAL'),
+      });
     } catch {
       return NextResponse.json({ list: [] });
     }
@@ -94,6 +145,16 @@ export async function GET(request: Request) {
   }
 
   // 3. 列表分页动作
+  const listCacheUrl = `https://cktv-cache.local/adult-list?source=${encodeURIComponent(
+    currentSite.key
+  )}&page=${page}&t=${encodeURIComponent(typeId)}&v=5`;
+  const listHit = await readJsonCache(listCacheUrl);
+  if (listHit) {
+    return new NextResponse(await listHit.text(), {
+      headers: adultCacheHeaders('HIT'),
+    });
+  }
+
   try {
     const tParam = typeId ? `&t=${encodeURIComponent(typeId)}` : '';
     const apiUrl = `${currentSite.api}?ac=videolist&pg=${page}${tParam}`;
@@ -152,17 +213,30 @@ export async function GET(request: Request) {
       };
     });
 
-    return NextResponse.json(
-      {
-        list: formattedList,
-        page: data.page || page,
-        pagecount: data.pagecount || 1,
-        total: data.total || 0,
-        categories,
-        sources: adultSites.map((s) => ({ key: s.key, name: s.name })),
+    const payload = {
+      list: formattedList,
+      page: data.page || page,
+      pagecount: data.pagecount || 1,
+      total: data.total || 0,
+      categories,
+      sources: adultSites.map((s) => ({ key: s.key, name: s.name })),
+    };
+    const body = JSON.stringify(payload);
+    if (formattedList.length > 0) {
+      writeJsonCache(
+        ctx,
+        listCacheUrl,
+        body,
+        ADULT_EDGE_SECONDS,
+        ADULT_BROWSER_SECONDS
+      );
+    }
+    return new NextResponse(body, {
+      headers: {
+        ...adultCacheHeaders('MISS'),
+        'content-type': 'application/json; charset=utf-8',
       },
-      { headers: jsonCacheHeaders(180, 30) }
-    );
+    });
   } catch (error) {
     return NextResponse.json({
       list: [],

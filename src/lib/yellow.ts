@@ -14,6 +14,7 @@ export const adultSourceKeys = [
   'thzy',
   'bwzy',
   'lbby',
+  'shayu',
 ];
 
 // 成人采集站域名。后台旧配置即使换了 key，也不能再进全站搜索。
@@ -33,6 +34,7 @@ export const adultApiHosts = [
   'thzy1.me',
   'bwzyz.com',
   'lbapiby.com',
+  'shayuapi.com',
 ];
 
 export function apiHost(api?: string): string {

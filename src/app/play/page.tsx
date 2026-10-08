@@ -446,7 +446,7 @@ function PlayPageClient() {
       // 根据搜索词获取全部源信息
       try {
         const response = await fetch(
-          `/api/search?q=${encodeURIComponent(query.trim())}&v=4`
+          `/api/search?q=${encodeURIComponent(query.trim())}&v=5`
         );
         if (!response.ok) {
           throw new Error('搜索失败');
@@ -1108,7 +1108,10 @@ function PlayPageClient() {
               lowLatencyMode: false,
               capLevelToPlayerSize: true,
               startLevel: -1,
-              abrEwmaDefaultEstimate: 2_000_000,
+              // 先按约 900kbps 起播，缓冲上来再升档，避免一上来选 1080p 把线路打满
+              abrEwmaDefaultEstimate: 900_000,
+              abrBandWidthFactor: 0.85,
+              abrBandWidthUpFactor: 0.7,
 
               /* 先攒够可播缓冲，再限制上限，避免手机硬解 4K 把线路打满 */
               maxBufferLength: 30,

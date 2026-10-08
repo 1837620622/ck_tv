@@ -222,6 +222,14 @@
       "region": "both",
       "priority": 27,
       "globalPriority": 27
+    },
+    "iqiyi": {
+      "api": "https://iqiyizyapi.com/api.php/provide/vod",
+      "name": "爱奇艺资源",
+      "category": "general",
+      "region": "both",
+      "priority": 28,
+      "globalPriority": 28
     }
   },
   "adult_api_site": {
@@ -302,6 +310,12 @@
       "name": "CK伦理",
       "category": "adult",
       "priority": 13
+    },
+    "shayu": {
+      "api": "https://shayuapi.com/api.php/provide/vod",
+      "name": "鲨鱼资源",
+      "category": "adult",
+      "priority": 14
     }
   }
 }
