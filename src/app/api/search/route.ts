@@ -1,68 +1,50 @@
 import { NextResponse } from 'next/server';
 
-import { getCacheTime, getConfig } from '@/lib/config';
+import { getSearchApiSites } from '@/lib/config';
 import { searchFromApi } from '@/lib/downstream';
-import { isAdultContent } from '@/lib/yellow';
+import { jsonCacheHeaders } from '@/lib/edge-cache';
+import { viewerLine } from '@/lib/line';
+import { isAdultContent, isAdultSource } from '@/lib/yellow';
 
 export const runtime = 'edge';
+
+function searchCacheHeaders() {
+  // 浏览器 60 秒，边缘 300 秒。CDN-Cache-Control 只给 Cloudflare 边缘看。
+  return jsonCacheHeaders(300, 60);
+}
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const query = searchParams.get('q');
-  const includeAdult = searchParams.get('includeAdult') === 'true';
 
   if (!query) {
-    const cacheTime = await getCacheTime();
     return NextResponse.json(
       { results: [] },
-      {
-        headers: {
-          'Cache-Control': `public, max-age=${cacheTime}, s-maxage=${cacheTime}`,
-          'CDN-Cache-Control': `public, s-maxage=${cacheTime}`,
-          'Vercel-CDN-Cache-Control': `public, s-maxage=${cacheTime}`,
-        },
-      }
+      { headers: searchCacheHeaders() }
     );
   }
 
-  const config = await getConfig();
-  let apiSites = config.SourceConfig.filter((site) => !site.disabled);
-
-  // 默认搜索完全移除色情/成人站点
-  if (!includeAdult) {
-    apiSites = apiSites.filter(
-      (site) => site.category !== 'adult' && site.category !== 'erotic'
-    );
-  }
-
-  const searchPromises = apiSites.map((site) => searchFromApi(site, query));
+  const line = viewerLine(request);
+  const apiSites = (await getSearchApiSites(line)).filter(
+    (site) => !isAdultSource(site)
+  );
 
   try {
-    const results = await Promise.all(searchPromises);
-    let flattenedResults = results.flat();
-
-    // 默认搜索中严格移除所有色情/成人内容
-    if (!includeAdult) {
-      flattenedResults = flattenedResults.filter(
-        (result) => !isAdultContent(result)
-      );
-    } else if (!config.SiteConfig.DisableYellowFilter) {
-      flattenedResults = flattenedResults.filter(
-        (result) => !isAdultContent(result)
-      );
-    }
-
-    const cacheTime = await getCacheTime();
+    const results = await Promise.all(
+      apiSites.map((site) => searchFromApi(site, query))
+    );
+    const flattenedResults = results.flatMap((list, index) =>
+      list
+        .filter((item) => !isAdultContent(item))
+        .map((item) => ({
+          ...item,
+          source_rank: index + 1,
+        }))
+    );
 
     return NextResponse.json(
-      { results: flattenedResults },
-      {
-        headers: {
-          'Cache-Control': `public, max-age=${cacheTime}, s-maxage=${cacheTime}`,
-          'CDN-Cache-Control': `public, s-maxage=${cacheTime}`,
-          'Vercel-CDN-Cache-Control': `public, s-maxage=${cacheTime}`,
-        },
-      }
+      { results: flattenedResults, line },
+      { headers: searchCacheHeaders() }
     );
   } catch (error) {
     return NextResponse.json({ error: '搜索失败' }, { status: 500 });

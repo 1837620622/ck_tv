@@ -22,7 +22,7 @@ import {
   subscribeToDataUpdates,
 } from '@/lib/db.client';
 import { SearchResult } from '@/lib/types';
-import { getVideoResolutionFromM3u8, processImageUrl } from '@/lib/utils';
+import { processImageUrl } from '@/lib/utils';
 
 import CloudflareAISubtitle from '@/components/CloudflareAISubtitle';
 import EpisodeSelector from '@/components/EpisodeSelector';
@@ -187,26 +187,6 @@ function PlayPageClient() {
     null
   );
 
-  // 优选和测速开关
-  const [optimizationEnabled] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('enableOptimization');
-      if (saved !== null) {
-        try {
-          return JSON.parse(saved);
-        } catch {
-          /* ignore */
-        }
-      }
-    }
-    return true;
-  });
-
-  // 保存优选时的测速结果，避免EpisodeSelector重复测速
-  const [precomputedVideoInfo, setPrecomputedVideoInfo] = useState<
-    Map<string, { quality: string; loadSpeed: string; pingTime: number }>
-  >(new Map());
-
   // 折叠状态（仅在 lg 及以上屏幕有效）
   const [isEpisodeSelectorCollapsed, setIsEpisodeSelectorCollapsed] =
     useState(false);
@@ -231,203 +211,16 @@ function PlayPageClient() {
   // 工具函数（Utils）
   // -----------------------------------------------------------------------------
 
-  // 播放源优选函数
-  const preferBestSource = async (
-    sources: SearchResult[]
-  ): Promise<SearchResult> => {
-    if (sources.length === 1) return sources[0];
-
-    // 采用受控小批次并发（并发数3），避免占满带宽导致测速失真或超时
-    const batchSize = 3;
-    const allResults: Array<{
-      source: SearchResult;
-      testResult: { quality: string; loadSpeed: string; pingTime: number };
-    } | null> = [];
-
-    for (let start = 0; start < sources.length; start += batchSize) {
-      const batchSources = sources.slice(start, start + batchSize);
-      const batchResults = await Promise.all(
-        batchSources.map(async (source) => {
-          try {
-            // 检查是否有第一集的播放地址
-            if (!source.episodes || source.episodes.length === 0) {
-              console.warn(`播放源 ${source.source_name} 没有可用的播放地址`);
-              return null;
-            }
-
-            const episodeUrl =
-              source.episodes.length > 1
-                ? source.episodes[1]
-                : source.episodes[0];
-            const testResult = await getVideoResolutionFromM3u8(episodeUrl);
-
-            return {
-              source,
-              testResult,
-            };
-          } catch (error) {
-            return null;
-          }
-        })
-      );
-      allResults.push(...batchResults);
-    }
-
-    // 等待所有测速完成，包含成功和失败的结果
-    // 保存所有测速结果到 precomputedVideoInfo，供 EpisodeSelector 使用（包含错误结果）
-    const newVideoInfoMap = new Map<
-      string,
-      {
-        quality: string;
-        loadSpeed: string;
-        pingTime: number;
-        hasError?: boolean;
-      }
-    >();
-    allResults.forEach((result, index) => {
-      const source = sources[index];
-      const sourceKey = `${source.source}-${source.id}`;
-
-      if (result) {
-        // 成功的结果
-        newVideoInfoMap.set(sourceKey, result.testResult);
-      }
-    });
-
-    // 过滤出成功的结果用于优选计算
-    const successfulResults = allResults.filter(Boolean) as Array<{
-      source: SearchResult;
-      testResult: { quality: string; loadSpeed: string; pingTime: number };
-    }>;
-
-    setPrecomputedVideoInfo(newVideoInfoMap);
-
-    if (successfulResults.length === 0) {
-      console.warn('所有播放源测速都失败，使用第一个播放源');
-      return sources[0];
-    }
-
-    // 找出所有有效速度的最大值，用于线性映射
-    const validSpeeds = successfulResults
-      .map((result) => {
-        const speedStr = result.testResult.loadSpeed;
-        if (speedStr === '未知' || speedStr === '测量中...') return 0;
-
-        const match = speedStr.match(/^([\d.]+)\s*(KB\/s|MB\/s)$/);
-        if (!match) return 0;
-
-        const value = parseFloat(match[1]);
-        const unit = match[2];
-        return unit === 'MB/s' ? value * 1024 : value; // 统一转换为 KB/s
-      })
-      .filter((speed) => speed > 0);
-
-    const maxSpeed = validSpeeds.length > 0 ? Math.max(...validSpeeds) : 1024; // 默认1MB/s作为基准
-
-    // 找出所有有效延迟的最小值和最大值，用于线性映射
-    const validPings = successfulResults
-      .map((result) => result.testResult.pingTime)
-      .filter((ping) => ping > 0);
-
-    const minPing = validPings.length > 0 ? Math.min(...validPings) : 50;
-    const maxPing = validPings.length > 0 ? Math.max(...validPings) : 1000;
-
-    // 计算每个结果的评分
-    const resultsWithScore = successfulResults.map((result) => ({
-      ...result,
-      score: calculateSourceScore(
-        result.testResult,
-        maxSpeed,
-        minPing,
-        maxPing
-      ),
-    }));
-
-    // 按综合评分排序，选择最佳播放源
-    resultsWithScore.sort((a, b) => b.score - a.score);
-
-    console.log('播放源评分排序结果:');
-    resultsWithScore.forEach((result, index) => {
-      console.log(
-        `${index + 1}. ${
-          result.source.source_name
-        } - 评分: ${result.score.toFixed(2)} (${result.testResult.quality}, ${
-          result.testResult.loadSpeed
-        }, ${result.testResult.pingTime}ms)`
-      );
-    });
-
-    return resultsWithScore[0].source;
-  };
-
-  // 计算播放源综合评分（兼容国内与国外线路）
-  const calculateSourceScore = (
-    testResult: {
-      quality: string;
-      loadSpeed: string;
-      pingTime: number;
-    },
-    _maxSpeed: number,
-    _minPing: number,
-    _maxPing: number
-  ): number => {
-    let score = 0;
-
-    // 1. 分辨率评分 (35% 权重)
-    const qualityScore = (() => {
-      switch (testResult.quality) {
-        case '4K':
-          return 100;
-        case '2K':
-          return 90;
-        case '1080p':
-          return 80;
-        case '720p':
-          return 60;
-        case '480p':
-          return 40;
-        case 'SD':
-          return 20;
-        default:
-          return 40;
-      }
-    })();
-    score += qualityScore * 0.35;
-
-    // 2. 下载速度评分 (50% 权重) - 播放流畅度核心指标
-    const speedScore = (() => {
-      const speedStr = testResult.loadSpeed;
-      if (speedStr === '未知' || speedStr === '测量中...') return 40;
-
-      const match = speedStr.match(/^([\d.]+)\s*(KB\/s|MB\/s)$/);
-      if (!match) return 40;
-
-      const value = parseFloat(match[1]);
-      const unit = match[2];
-      const speedKBps = unit === 'MB/s' ? value * 1024 : value;
-
-      if (speedKBps >= 3072) return 100;
-      if (speedKBps >= 2048) return 92;
-      if (speedKBps >= 1024) return 82;
-      if (speedKBps >= 512) return 65;
-      if (speedKBps >= 256) return 45;
-      return 25;
-    })();
-    score += speedScore * 0.5;
-
-    // 3. 网络延迟评分 (15% 权重) - 宽容海外CDN线路的正常网络距离
-    const pingScore = (() => {
-      const ping = testResult.pingTime;
-      if (ping <= 0) return 50;
-      if (ping <= 80) return 100;
-      if (ping <= 180) return 85;
-      if (ping <= 350) return 70;
-      if (ping <= 600) return 45;
-      return 20;
-    })();
-    score += pingScore * 0.15;
-
-    return Math.round(score * 100) / 100;
+  // 按上游顺序取第一个能播的源。不再预先下载正片测速，避免占带宽导致卡顿。
+  const pickOrderedSource = (sources: SearchResult[]): SearchResult => {
+    const ranked = [...sources].sort(
+      (a, b) => (a.source_rank ?? 999) - (b.source_rank ?? 999)
+    );
+    return (
+      ranked.find((source) => source.episodes && source.episodes.length > 0) ||
+      ranked[0] ||
+      sources[0]
+    );
   };
 
   // 更新视频地址
@@ -653,7 +446,7 @@ function PlayPageClient() {
       // 根据搜索词获取全部源信息
       try {
         const response = await fetch(
-          `/api/search?q=${encodeURIComponent(query.trim())}`
+          `/api/search?q=${encodeURIComponent(query.trim())}&v=4`
         );
         if (!response.ok) {
           throw new Error('搜索失败');
@@ -729,15 +522,9 @@ function PlayPageClient() {
         }
       }
 
-      // 未指定源和 id 或需要优选，且开启优选开关
-      if (
-        (!currentSource || !currentId || needPreferRef.current) &&
-        optimizationEnabled
-      ) {
-        setLoadingStage('preferring');
-        setLoadingMessage('⚡ 正在优选最佳播放源...');
-
-        detailData = await preferBestSource(sourcesInfo);
+      // 未指定源时按 1、2、3、4 的线路顺序直接起播，国内和海外的顺序由搜索接口按 CF 地区排好
+      if (!currentSource || !currentId || needPreferRef.current) {
+        detailData = pickOrderedSource(sourcesInfo);
       }
 
       console.log(detailData.source, detailData.id);
@@ -768,7 +555,7 @@ function PlayPageClient() {
       // 短暂延迟让用户看到完成状态
       setTimeout(() => {
         setLoading(false);
-      }, 1000);
+      }, 160);
     };
 
     initAll();
@@ -1318,30 +1105,30 @@ function PlayPageClient() {
             const hls = new Hls({
               debug: false,
               enableWorker: true,
-              lowLatencyMode: false, // 点播视频禁用 LL-HLS，彻底消除持续卡顿与频繁缓冲
+              lowLatencyMode: false,
+              capLevelToPlayerSize: true,
+              startLevel: -1,
+              abrEwmaDefaultEstimate: 2_000_000,
 
-              /* 深度调优缓冲区，稳定承载国内外各节点波动 */
-              maxBufferLength: 60, // 前向缓冲提升至 60s
-              maxMaxBufferLength: 120, // 最大缓冲 120s
-              backBufferLength: 30, // 保留 30s 已播内容
-              maxBufferSize: 100 * 1000 * 1000, // 100MB 缓冲区
-              startFragPrefetch: true, // 预拉取下一个分片
+              /* 先攒够可播缓冲，再限制上限，避免手机硬解 4K 把线路打满 */
+              maxBufferLength: 30,
+              maxMaxBufferLength: 60,
+              backBufferLength: 20,
+              maxBufferSize: 60 * 1000 * 1000,
+              startFragPrefetch: true,
 
-              /* 容错与切片时间戳间隙平滑跳跃 */
-              maxBufferHole: 0.8, // 允许跨越 0.8s 内部切片间隙
-              highBufferWatchdogPeriod: 2, // 快速监控并解卡
+              maxBufferHole: 0.5,
+              highBufferWatchdogPeriod: 2,
               nudgeOffset: 0.1,
-              nudgeMaxRetry: 5,
+              nudgeMaxRetry: 3,
 
-              /* 超时与网络重试（容纳海外及弱网线路充足握手时间） */
-              manifestLoadingTimeOut: 15000,
-              manifestLoadingMaxRetry: 4,
-              levelLoadingTimeOut: 15000,
-              levelLoadingMaxRetry: 4,
-              fragLoadingTimeOut: 20000,
-              fragLoadingMaxRetry: 6,
+              manifestLoadingTimeOut: 12000,
+              manifestLoadingMaxRetry: 2,
+              levelLoadingTimeOut: 12000,
+              levelLoadingMaxRetry: 2,
+              fragLoadingTimeOut: 12000,
+              fragLoadingMaxRetry: 3,
 
-              /* 自定义loader */
               loader: blockAdEnabledRef.current
                 ? CustomHlsJsLoader
                 : Hls.DefaultConfig.loader,
@@ -1353,18 +1140,28 @@ function PlayPageClient() {
 
             ensureVideoSource(video, url);
 
-            // 当视频因细微时间戳间隙进入卡顿等待时，自动轻微微移恢复播放
+            // 只在卡住超过 1.2 秒、且后面已经有缓冲时轻轻前移，避免每次 waiting 都跳进度
+            let stallTimer = 0;
             video.addEventListener('waiting', () => {
-              if (video.buffered && video.buffered.length > 0) {
+              if (stallTimer) return;
+              stallTimer = window.setTimeout(() => {
+                stallTimer = 0;
+                if (video.readyState >= 3 || !video.buffered) return;
                 const cur = video.currentTime;
                 for (let i = 0; i < video.buffered.length; i++) {
-                  const s = video.buffered.start(i);
-                  const e = video.buffered.end(i);
-                  if (s <= cur + 0.3 && e - cur > 0.5) {
-                    video.currentTime = cur + 0.1;
+                  const start = video.buffered.start(i);
+                  const end = video.buffered.end(i);
+                  if (start <= cur + 0.4 && end - cur > 1) {
+                    video.currentTime = Math.min(cur + 0.2, end - 0.2);
                     break;
                   }
                 }
+              }, 1200);
+            });
+            video.addEventListener('playing', () => {
+              if (stallTimer) {
+                window.clearTimeout(stallTimer);
+                stallTimer = 0;
               }
             });
 
@@ -2030,7 +1827,6 @@ function PlayPageClient() {
                 availableSources={availableSources}
                 sourceSearchLoading={sourceSearchLoading}
                 sourceSearchError={sourceSearchError}
-                precomputedVideoInfo={precomputedVideoInfo}
               />
             </div>
           </div>

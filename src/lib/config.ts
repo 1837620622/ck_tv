@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any, no-console, @typescript-eslint/no-non-null-assertion */
 
 import { getStorage } from '@/lib/db';
+import { LineMode, sourceRank } from '@/lib/line';
+import { apiHost, isAdultSource } from '@/lib/yellow';
 
 import { AdminConfig } from './admin.types';
 import runtimeConfig from './runtime';
@@ -11,6 +13,29 @@ export interface ApiSite {
   name: string;
   category?: string;
   detail?: string;
+  priority?: number;
+  globalPriority?: number;
+  region?: 'cn' | 'global' | 'both';
+}
+
+function toSourceConfig(key: string, site: ApiSite) {
+  return {
+    key,
+    name: site.name,
+    api: site.api,
+    detail: site.detail,
+    category: site.category || 'general',
+    priority: typeof site.priority === 'number' ? site.priority : 100,
+    globalPriority:
+      typeof site.globalPriority === 'number'
+        ? site.globalPriority
+        : typeof site.priority === 'number'
+        ? site.priority
+        : 100,
+    region: site.region || 'both',
+    from: 'config' as const,
+    disabled: false,
+  };
 }
 
 interface ConfigFileStruct {
@@ -104,14 +129,7 @@ async function initConfig() {
         );
 
         apiSiteEntries.forEach(([key, site]) => {
-          sourceConfigMap.set(key, {
-            key,
-            name: site.name,
-            api: site.api,
-            detail: site.detail,
-            from: 'config',
-            disabled: false,
-          });
+          sourceConfigMap.set(key, toSourceConfig(key, site));
         });
 
         // 将 Map 转换回数组
@@ -212,14 +230,9 @@ async function initConfig() {
             AllowRegister: process.env.NEXT_PUBLIC_ENABLE_REGISTER === 'true',
             Users: allUsers as any,
           },
-          SourceConfig: apiSiteEntries.map(([key, site]) => ({
-            key,
-            name: site.name,
-            api: site.api,
-            detail: site.detail,
-            from: 'config',
-            disabled: false,
-          })),
+          SourceConfig: apiSiteEntries.map(([key, site]) =>
+            toSourceConfig(key, site)
+          ),
           CustomCategories: customCategories.map((category) => ({
             name: category.name,
             type: category.type,
@@ -260,14 +273,9 @@ async function initConfig() {
         AllowRegister: process.env.NEXT_PUBLIC_ENABLE_REGISTER === 'true',
         Users: [],
       },
-      SourceConfig: Object.entries(fileConfig.api_site).map(([key, site]) => ({
-        key,
-        name: site.name,
-        api: site.api,
-        detail: site.detail,
-        from: 'config',
-        disabled: false,
-      })),
+      SourceConfig: Object.entries(fileConfig.api_site).map(([key, site]) =>
+        toSourceConfig(key, site)
+      ),
       CustomCategories:
         fileConfig.custom_category?.map((category) => ({
           name: category.name,
@@ -323,21 +331,21 @@ export async function getConfig(): Promise<AdminConfig> {
     apiSiteEntries.forEach(([key, site]) => {
       const existingSource = sourceConfigMap.get(key);
       if (existingSource) {
-        // 如果已存在，只覆盖 name、api、detail 和 from
+        // 如果已存在，覆盖 name、api、detail、category 和 from
         existingSource.name = site.name;
         existingSource.api = site.api;
         existingSource.detail = site.detail;
+        existingSource.category = site.category || 'general';
+        existingSource.priority =
+          typeof site.priority === 'number' ? site.priority : 100;
+        existingSource.globalPriority =
+          typeof site.globalPriority === 'number'
+            ? site.globalPriority
+            : existingSource.priority;
+        existingSource.region = site.region || 'both';
         existingSource.from = 'config';
       } else {
-        // 如果不存在，创建新条目
-        sourceConfigMap.set(key, {
-          key,
-          name: site.name,
-          api: site.api,
-          detail: site.detail,
-          from: 'config',
-          disabled: false,
-        });
+        sourceConfigMap.set(key, toSourceConfig(key, site));
       }
     });
 
@@ -450,14 +458,9 @@ export async function resetConfig() {
       AllowRegister: process.env.NEXT_PUBLIC_ENABLE_REGISTER === 'true',
       Users: allUsers as any,
     },
-    SourceConfig: apiSiteEntries.map(([key, site]) => ({
-      key,
-      name: site.name,
-      api: site.api,
-      detail: site.detail,
-      from: 'config',
-      disabled: false,
-    })),
+    SourceConfig: apiSiteEntries.map(([key, site]) =>
+      toSourceConfig(key, site)
+    ),
     CustomCategories:
       storageType === 'redis'
         ? customCategories?.map((category) => ({
@@ -488,22 +491,60 @@ export async function getCacheTime(): Promise<number> {
   return config.SiteConfig.SiteInterfaceCacheTime || 7200;
 }
 
-export async function getAvailableApiSites(): Promise<ApiSite[]> {
+export async function getAvailableApiSites(
+  line: LineMode = 'cn'
+): Promise<ApiSite[]> {
+  return getSearchApiSites(line);
+}
+
+// 全站搜索只使用当前配置里的普通源。数据库里残留的成人源、重复源不再请求。
+export async function getSearchApiSites(line: LineMode): Promise<ApiSite[]> {
   const config = await getConfig();
-  return config.SourceConfig.filter((s) => !s.disabled).map((s) => ({
-    key: s.key,
-    name: s.name,
-    api: s.api,
-    detail: s.detail,
+  const curatedEntries = Object.entries(
+    fileConfig?.api_site ||
+      (runtimeConfig as unknown as ConfigFileStruct).api_site ||
+      {}
+  );
+  const curated = curatedEntries.map(([key, site]) => ({
+    ...site,
+    key,
+    category: site.category || 'general',
   }));
+  const curatedHosts = new Set(
+    curated.map((site) => apiHost(site.api)).filter(Boolean)
+  );
+
+  const extras = config.SourceConfig.filter((site) => {
+    if (site.disabled || site.from !== 'custom') return false;
+    if (isAdultSource(site)) return false;
+    const host = apiHost(site.api);
+    if (host && curatedHosts.has(host)) return false;
+    return true;
+  }).map((site) => ({
+    key: site.key,
+    name: site.name,
+    api: site.api,
+    detail: site.detail,
+    category: site.category,
+    priority: site.priority ?? 100,
+    globalPriority: site.globalPriority ?? site.priority ?? 100,
+    region: site.region,
+  }));
+
+  return [...curated, ...extras]
+    .filter((site) => !isAdultSource(site))
+    .sort((a, b) => sourceRank(a, line) - sourceRank(b, line));
 }
 
 export async function getAdultApiSites(): Promise<ApiSite[]> {
   await initConfig();
   const adultSites =
     fileConfig?.adult_api_site || (runtimeConfig as any)?.adult_api_site || {};
-  return Object.keys(adultSites).map((key) => ({
-    key,
-    ...adultSites[key],
-  }));
+  return Object.keys(adultSites)
+    .map((key) => ({
+      key,
+      ...adultSites[key],
+      category: 'adult' as const,
+    }))
+    .sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
 }

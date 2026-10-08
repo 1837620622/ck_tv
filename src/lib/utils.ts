@@ -33,21 +33,44 @@ export function getImageProxyUrl(): string | null {
  * 豆瓣图片会自动使用内置代理绕过防盗链
  */
 export function processImageUrl(originalUrl: string): string {
-  if (!originalUrl) return originalUrl;
+  if (!originalUrl) return '';
+  const cleanUrl = originalUrl.trim();
+  if (!cleanUrl) return '';
+
+  if (cleanUrl.startsWith('/')) return cleanUrl;
 
   // 检测是否为豆瓣图片（doubanio.com 域名有防盗链保护）
-  const isDoubanImage = originalUrl.includes('doubanio.com');
-
-  // 如果是豆瓣图片，使用内置图片代理API绕过防盗链
+  const isDoubanImage = cleanUrl.includes('doubanio.com');
   if (isDoubanImage) {
-    return `/api/image-proxy?url=${encodeURIComponent(originalUrl)}`;
+    return `/api/image-proxy?url=${encodeURIComponent(cleanUrl)}`;
+  }
+
+  // 针对已知防盗链严重且常403的图片域名（如暴风、极速、电影天堂等部分CDN），自动走内置代理保证可用
+  if (
+    cleanUrl.includes('bfvp26.com') ||
+    cleanUrl.includes('bfzypic.com') ||
+    cleanUrl.includes('img.bfzypic.com') ||
+    cleanUrl.includes('dytt-tupian.com')
+  ) {
+    return `/api/image-proxy?url=${encodeURIComponent(cleanUrl)}`;
   }
 
   // 其他图片使用用户配置的代理（如果有）
   const proxyUrl = getImageProxyUrl();
-  if (!proxyUrl) return originalUrl;
+  if (proxyUrl) {
+    return `${proxyUrl}${encodeURIComponent(cleanUrl)}`;
+  }
 
-  return `${proxyUrl}${encodeURIComponent(originalUrl)}`;
+  // 若为 http 图片，在 https 站点下升级为 https 防止混合内容拦截
+  if (
+    cleanUrl.startsWith('http://') &&
+    typeof window !== 'undefined' &&
+    window.location.protocol === 'https:'
+  ) {
+    return cleanUrl.replace('http://', 'https://');
+  }
+
+  return cleanUrl;
 }
 
 /**

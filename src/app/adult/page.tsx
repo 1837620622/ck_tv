@@ -210,7 +210,7 @@ function AdultPageClient() {
 
         {/* 分类切换 */}
         {categories.length > 0 && !isSearching && (
-          <div className='mb-6 flex items-center gap-1.5 flex-wrap'>
+          <div className='mb-6 flex items-center gap-1.5 flex-wrap max-h-28 overflow-y-auto pr-1'>
             <button
               onClick={() => handleCategoryChange('')}
               className={`text-xs px-3 py-1 rounded-full transition-all duration-150 ${

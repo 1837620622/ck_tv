@@ -1,6 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
-import { CheckCircle, Heart, Link, PlayCircleIcon } from 'lucide-react';
+import { CheckCircle, Film, Heart, Link, PlayCircleIcon } from 'lucide-react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -112,6 +110,33 @@ export default function VideoCard({
       : 'tv'
     : type;
 
+  const [imgSrc, setImgSrc] = useState<string>(() =>
+    processImageUrl(actualPoster)
+  );
+  const [hasError, setHasError] = useState(!actualPoster);
+  const [isRetryingProxy, setIsRetryingProxy] = useState(false);
+
+  useEffect(() => {
+    setImgSrc(processImageUrl(actualPoster));
+    setHasError(!actualPoster);
+    setIsRetryingProxy(false);
+    setIsLoading(false);
+  }, [actualPoster]);
+
+  const handleImageError = useCallback(() => {
+    if (
+      !isRetryingProxy &&
+      actualPoster &&
+      !imgSrc.includes('/api/image-proxy')
+    ) {
+      setIsRetryingProxy(true);
+      setImgSrc(`/api/image-proxy?url=${encodeURIComponent(actualPoster)}`);
+    } else {
+      setHasError(true);
+      setIsLoading(true);
+    }
+  }, [isRetryingProxy, actualPoster, imgSrc]);
+
   // 获取收藏状态
   useEffect(() => {
     if (from === 'douban' || !actualSource || !actualId) return;
@@ -131,7 +156,7 @@ export default function VideoCard({
     const storageKey = generateStorageKey(actualSource, actualId);
     const unsubscribe = subscribeToDataUpdates(
       'favoritesUpdated',
-      (newFavorites: Record<string, any>) => {
+      (newFavorites: Record<string, unknown>) => {
         // 检查当前项目是否在新的收藏列表中
         const isNowFavorited = !!newFavorites[storageKey];
         setFavorited(isNowFavorited);
@@ -284,16 +309,24 @@ export default function VideoCard({
       {/* 海报容器 */}
       <div className='relative aspect-[2/3] overflow-hidden rounded-lg'>
         {/* 骨架屏 */}
-        {!isLoading && <ImagePlaceholder aspectRatio='aspect-[2/3]' />}
-        {/* 图片 */}
-        <Image
-          src={processImageUrl(actualPoster)}
-          alt={actualTitle}
-          fill
-          className='object-cover'
-          referrerPolicy='no-referrer'
-          onLoadingComplete={() => setIsLoading(true)}
-        />
+        {!isLoading && !hasError && (
+          <ImagePlaceholder aspectRatio='aspect-[2/3]' />
+        )}
+        {hasError ? (
+          <div className='absolute inset-0 flex items-center justify-center bg-neutral-900'>
+            <Film className='h-8 w-8 text-neutral-500' strokeWidth={1.5} />
+          </div>
+        ) : (
+          <Image
+            src={imgSrc}
+            alt={actualTitle}
+            fill
+            className='object-cover'
+            referrerPolicy='no-referrer'
+            onError={handleImageError}
+            onLoadingComplete={() => setIsLoading(true)}
+          />
+        )}
 
         {/* 悬浮遮罩 */}
         <div className='absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 transition-opacity duration-300 ease-in-out sm:group-hover:opacity-100' />

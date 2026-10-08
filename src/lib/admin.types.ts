@@ -22,6 +22,9 @@ export interface AdminConfig {
     api: string;
     detail?: string;
     category?: string;
+    priority?: number;
+    globalPriority?: number;
+    region?: 'cn' | 'global' | 'both';
     from: 'config' | 'custom';
     disabled?: boolean;
   }[];

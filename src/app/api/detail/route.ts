@@ -6,6 +6,7 @@ import {
   getCacheTime,
 } from '@/lib/config';
 import { getDetailFromApi } from '@/lib/downstream';
+import { jsonCacheHeaders } from '@/lib/edge-cache';
 
 export const runtime = 'edge';
 
@@ -36,14 +37,10 @@ export async function GET(request: Request) {
     }
 
     const result = await getDetailFromApi(apiSite, id);
-    const cacheTime = await getCacheTime();
+    const cacheTime = Math.min(await getCacheTime(), 600);
 
     return NextResponse.json(result, {
-      headers: {
-        'Cache-Control': `public, max-age=${cacheTime}, s-maxage=${cacheTime}`,
-        'CDN-Cache-Control': `public, s-maxage=${cacheTime}`,
-        'Vercel-CDN-Cache-Control': `public, s-maxage=${cacheTime}`,
-      },
+      headers: jsonCacheHeaders(cacheTime, 120),
     });
   } catch (error) {
     return NextResponse.json(

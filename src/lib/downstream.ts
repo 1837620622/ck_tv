@@ -1,6 +1,8 @@
 import { API_CONFIG, ApiSite, getConfig } from '@/lib/config';
+import { edgeFetchInit } from '@/lib/edge-cache';
 import { SearchResult } from '@/lib/types';
 import { cleanHtmlTags } from '@/lib/utils';
+import { isAdultContent } from '@/lib/yellow';
 
 interface ApiSearchItem {
   vod_id: string;
@@ -17,7 +19,8 @@ interface ApiSearchItem {
 
 export async function searchFromApi(
   apiSite: ApiSite,
-  query: string
+  query: string,
+  options?: { keepAdult?: boolean }
 ): Promise<SearchResult[]> {
   try {
     const apiBaseUrl = apiSite.api;
@@ -27,12 +30,12 @@ export async function searchFromApi(
 
     // 添加超时处理
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4000);
+    const timeoutId = setTimeout(() => controller.abort(), 2800);
 
-    const response = await fetch(apiUrl, {
-      headers: API_CONFIG.search.headers,
-      signal: controller.signal,
-    });
+    const response = await fetch(
+      apiUrl,
+      edgeFetchInit(API_CONFIG.search.headers, controller.signal, 300)
+    );
 
     clearTimeout(timeoutId);
 
@@ -50,7 +53,7 @@ export async function searchFromApi(
       return [];
     }
     // 处理第一页结果
-    const results = data.list.map((item: ApiSearchItem) => {
+    const results: SearchResult[] = data.list.map((item: ApiSearchItem) => {
       let episodes: string[] = [];
 
       // 使用正则表达式从 vod_play_url 提取 m3u8 链接
@@ -91,11 +94,12 @@ export async function searchFromApi(
     });
 
     const config = await getConfig();
-    const MAX_SEARCH_PAGES: number = config.SiteConfig.SearchDownstreamMaxPage;
+    // 每个源只取第一页。多页会打满 Cloudflare 子请求，也会把模糊命中的成人条目翻出来。
+    const configuredPages =
+      Number(config.SiteConfig.SearchDownstreamMaxPage) || 1;
+    const MAX_SEARCH_PAGES = Math.min(Math.max(configuredPages, 1), 1);
 
-    // 获取总页数
     const pageCount = data.pagecount || 1;
-    // 确定需要获取的额外页数
     const pagesToFetch = Math.min(pageCount - 1, MAX_SEARCH_PAGES - 1);
 
     // 如果有额外页数，获取更多页的结果
@@ -114,13 +118,17 @@ export async function searchFromApi(
             const pageController = new AbortController();
             const pageTimeoutId = setTimeout(
               () => pageController.abort(),
-              4000
+              2800
             );
 
-            const pageResponse = await fetch(pageUrl, {
-              headers: API_CONFIG.search.headers,
-              signal: pageController.signal,
-            });
+            const pageResponse = await fetch(
+              pageUrl,
+              edgeFetchInit(
+                API_CONFIG.search.headers,
+                pageController.signal,
+                300
+              )
+            );
 
             clearTimeout(pageTimeoutId);
 
@@ -181,7 +189,10 @@ export async function searchFromApi(
       });
     }
 
-    return results;
+    if (options?.keepAdult) {
+      return results;
+    }
+    return results.filter((item: SearchResult) => !isAdultContent(item));
   } catch (error) {
     return [];
   }
@@ -203,10 +214,10 @@ export async function getDetailFromApi(
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 10000);
 
-  const response = await fetch(detailUrl, {
-    headers: API_CONFIG.detail.headers,
-    signal: controller.signal,
-  });
+  const response = await fetch(
+    detailUrl,
+    edgeFetchInit(API_CONFIG.detail.headers, controller.signal, 600)
+  );
 
   clearTimeout(timeoutId);
 
@@ -230,11 +241,11 @@ export async function getDetailFromApi(
 
   // 处理播放源拆分
   if (videoDetail.vod_play_url) {
-    const playSources = videoDetail.vod_play_url.split('$$$');
-    if (playSources.length > 0) {
-      const mainSource = playSources[0];
-      const episodeList = mainSource.split('#');
-      episodes = episodeList
+    const playSources = String(videoDetail.vod_play_url).split('$$$');
+    let best: string[] = [];
+    playSources.forEach((group: string) => {
+      const urls = group
+        .split('#')
         .map((ep: string) => {
           const parts = ep.split('$');
           return parts.length > 1 ? parts[1] : '';
@@ -243,7 +254,13 @@ export async function getDetailFromApi(
           (url: string) =>
             url && (url.startsWith('http://') || url.startsWith('https://'))
         );
-    }
+      const m3u8s = urls.filter((url: string) => url.includes('.m3u8'));
+      const chosen = m3u8s.length > 0 ? m3u8s : urls;
+      if (chosen.length > best.length) {
+        best = chosen;
+      }
+    });
+    episodes = best;
   }
 
   // 如果播放源为空，则尝试从内容中解析 m3u8
@@ -278,10 +295,10 @@ async function handleSpecialSourceDetail(
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 10000);
 
-  const response = await fetch(detailUrl, {
-    headers: API_CONFIG.detail.headers,
-    signal: controller.signal,
-  });
+  const response = await fetch(
+    detailUrl,
+    edgeFetchInit(API_CONFIG.detail.headers, controller.signal, 600)
+  );
 
   clearTimeout(timeoutId);
 

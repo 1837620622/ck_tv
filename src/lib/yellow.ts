@@ -1,3 +1,94 @@
+export const adultSourceKeys = [
+  'zy91md',
+  'zy155',
+  'danaizi',
+  'apilj',
+  'slzy',
+  'ckzy',
+  'lbzy',
+  'fhapi9',
+  'aosika',
+  'souav',
+  'naixx',
+  'jkun',
+  'thzy',
+  'bwzy',
+  'lbby',
+];
+
+// 成人采集站域名。后台旧配置即使换了 key，也不能再进全站搜索。
+export const adultApiHosts = [
+  '91md.me',
+  '155api.com',
+  'apidanaizi.com',
+  'apilj.com',
+  'slapibf.com',
+  'ckzy.me',
+  'lbapi9.com',
+  'fhapi9.com',
+  'jkunzyapi.com',
+  'souavzy.vip',
+  'aosikazy.com',
+  'naixxzy.com',
+  'thzy1.me',
+  'bwzyz.com',
+  'lbapiby.com',
+];
+
+export function apiHost(api?: string): string {
+  if (!api) return '';
+  try {
+    return new URL(api).host.replace(/^www\./, '').toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+export function isAdultSource(site: {
+  key?: string;
+  api?: string;
+  category?: string;
+}): boolean {
+  if (!site) return false;
+  if (site.key && adultSourceKeys.includes(site.key)) return true;
+  const category = (site.category || '').toLowerCase();
+  if (category === 'adult' || category === 'erotic') return true;
+  const host = apiHost(site.api);
+  return adultApiHosts.some(
+    (item) => host === item || host.endsWith(`.${item}`)
+  );
+}
+
+export const adultCategoryKeywords = [
+  '伦理',
+  '三级',
+  '情色',
+  '写真',
+  '福利',
+  '里番',
+  '成人',
+  '自拍',
+  '性爱',
+  '偷拍',
+  '盗摄',
+  '裸聊',
+  '群交',
+  '乱伦',
+  '两性',
+  '无码',
+  '有码',
+  '性爱',
+  '盗摄',
+  '黄片',
+  '女优',
+  '极品',
+  '调教',
+  '性交',
+  '人妖',
+  '女同',
+  '强奸',
+];
+
 export const yellowWords = [
   '伦理片',
   '福利',
@@ -65,9 +156,49 @@ export const yellowWords = [
   '人妻',
   '中文字幕无码',
   '欧美无码',
+  '被操',
+  '操死',
+  '操逼',
+  '操弄',
+  '操我',
+  '操了',
+  '操妹',
+  '操嫂',
+  '操妈',
+  '操姐',
+  '操女',
+  '操同学',
+  '操长相',
+  '做爱',
+  '性交',
+  '内射',
+  '射精',
+  '口交',
+  '高潮',
+  '肉棒',
+  '骚货',
+  '淫乱',
+  '淫荡',
+  '淫妻',
+  '换妻',
+  '裸聊',
+  '盗摄',
+  '迷奸',
+  '轮奸',
+  '福利姬',
+  '打炮',
+  '约炮',
+  '性奴',
+  '阴道',
+  '阴茎',
+  '开苞',
+  '破处',
+  '啪啪',
+  '炮友',
+  '淫叫',
+  '黄片',
+  '中出',
 ];
-
-export const adultSourceKeys = ['zy91md', 'zy155', 'danaizi', 'apilj'];
 
 export function isAdultContent(item: {
   title?: string;
@@ -81,6 +212,16 @@ export function isAdultContent(item: {
   const typeName = (item.type_name || '').toLowerCase();
   const title = (item.title || '').toLowerCase();
   const cls = (item.class || '').toLowerCase();
+
+  // 分类命中色情/成人关键词则直接阻断
+  if (
+    adultCategoryKeywords.some(
+      (cat) => typeName.includes(cat) || cls.includes(cat)
+    )
+  ) {
+    return true;
+  }
+
   return yellowWords.some((w) => {
     const word = w.toLowerCase();
     return (

@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 
 import { getAdultApiSites, getConfig } from '@/lib/config';
 import { searchFromApi } from '@/lib/downstream';
+import { edgeFetchInit, jsonCacheHeaders } from '@/lib/edge-cache';
 import { cleanHtmlTags } from '@/lib/utils';
 import { adultSourceKeys } from '@/lib/yellow';
 
@@ -45,14 +46,19 @@ export async function GET(request: Request) {
     if (!q) {
       return NextResponse.json({ list: [] });
     }
-    const searchPromises = adultSites.map((site) => searchFromApi(site, q));
+    const searchPromises = adultSites.map((site) =>
+      searchFromApi(site, q, { keepAdult: true })
+    );
     try {
       const results = await Promise.all(searchPromises);
       const flattened = results.flat();
-      return NextResponse.json({
-        list: flattened,
-        total: flattened.length,
-      });
+      return NextResponse.json(
+        {
+          list: flattened,
+          total: flattened.length,
+        },
+        { headers: jsonCacheHeaders(180, 30) }
+      );
     } catch {
       return NextResponse.json({ list: [] });
     }
@@ -64,14 +70,18 @@ export async function GET(request: Request) {
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 6000);
-      const res = await fetch(`${currentSite.api}?ac=list`, {
-        signal: controller.signal,
-        headers: {
-          'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-          Accept: 'application/json',
-        },
-      });
+      const res = await fetch(
+        `${currentSite.api}?ac=list`,
+        edgeFetchInit(
+          {
+            'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            Accept: 'application/json',
+          },
+          controller.signal,
+          180
+        )
+      );
       clearTimeout(timeoutId);
       if (!res.ok) return NextResponse.json({ categories: [] });
       const data = await res.json();
@@ -89,14 +99,18 @@ export async function GET(request: Request) {
     const apiUrl = `${currentSite.api}?ac=videolist&pg=${page}${tParam}`;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 8000);
-    const res = await fetch(apiUrl, {
-      signal: controller.signal,
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        Accept: 'application/json',
-      },
-    });
+    const res = await fetch(
+      apiUrl,
+      edgeFetchInit(
+        {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          Accept: 'application/json',
+        },
+        controller.signal,
+        180
+      )
+    );
     clearTimeout(timeoutId);
     if (!res.ok) {
       return NextResponse.json({
@@ -138,14 +152,17 @@ export async function GET(request: Request) {
       };
     });
 
-    return NextResponse.json({
-      list: formattedList,
-      page: data.page || page,
-      pagecount: data.pagecount || 1,
-      total: data.total || 0,
-      categories,
-      sources: adultSites.map((s) => ({ key: s.key, name: s.name })),
-    });
+    return NextResponse.json(
+      {
+        list: formattedList,
+        page: data.page || page,
+        pagecount: data.pagecount || 1,
+        total: data.total || 0,
+        categories,
+        sources: adultSites.map((s) => ({ key: s.key, name: s.name })),
+      },
+      { headers: jsonCacheHeaders(180, 30) }
+    );
   } catch (error) {
     return NextResponse.json({
       list: [],
