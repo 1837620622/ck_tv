@@ -266,17 +266,30 @@ function PlayPageClient() {
   function filterAdsFromM3U8(m3u8Content: string): string {
     if (!m3u8Content) return '';
 
-    // 按行分割M3U8内容
+    // 只去掉两段不连续标记中间的短插播。单独的不连续标记要留给正片换音轨，删掉会卡。
     const lines = m3u8Content.split('\n');
     const filteredLines = [];
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
-
-      // 只过滤#EXT-X-DISCONTINUITY标识
-      if (!line.includes('#EXT-X-DISCONTINUITY')) {
-        filteredLines.push(line);
+      const info = lines[i + 1] || '';
+      const uri = (lines[i + 2] || '').trim();
+      const end = lines[i + 3] || '';
+      const duration = Number((info.match(/#EXTINF:([\d.]+)/) || [])[1]);
+      const shortInsert =
+        line.includes('#EXT-X-DISCONTINUITY') &&
+        info.startsWith('#EXTINF:') &&
+        Number.isFinite(duration) &&
+        duration > 0 &&
+        duration <= 15 &&
+        uri !== '' &&
+        !uri.startsWith('#') &&
+        end.includes('#EXT-X-DISCONTINUITY');
+      if (shortInsert) {
+        i += 3;
+        continue;
       }
+      filteredLines.push(line);
     }
 
     return filteredLines.join('\n');
@@ -449,7 +462,7 @@ function PlayPageClient() {
       // 根据搜索词获取全部源信息
       try {
         const response = await fetch(
-          `/api/search?q=${encodeURIComponent(query.trim())}&v=8`
+          `/api/search?q=${encodeURIComponent(query.trim())}&v=9`
         );
         if (!response.ok) {
           throw new Error('搜索失败');
@@ -457,18 +470,44 @@ function PlayPageClient() {
         const data = await response.json();
 
         // 处理搜索结果，根据规则过滤
-        const results = data.results.filter(
-          (result: SearchResult) =>
-            result.title.replaceAll(' ', '').toLowerCase() ===
-              videoTitleRef.current.replaceAll(' ', '').toLowerCase() &&
-            (videoYearRef.current
-              ? result.year.toLowerCase() === videoYearRef.current.toLowerCase()
-              : true) &&
-            (searchType
-              ? (searchType === 'tv' && result.episodes.length > 1) ||
-                (searchType === 'movie' && result.episodes.length === 1)
-              : true)
-        );
+        const matchSource = (result: SearchResult) =>
+          result.title.replaceAll(' ', '').toLowerCase() ===
+            videoTitleRef.current.replaceAll(' ', '').toLowerCase() &&
+          (videoYearRef.current
+            ? result.year.toLowerCase() === videoYearRef.current.toLowerCase()
+            : true) &&
+          (searchType
+            ? (searchType === 'tv' && result.episodes.length > 1) ||
+              (searchType === 'movie' && result.episodes.length === 1)
+            : true);
+        const results = data.results.filter(matchSource);
+        if (response.headers.get('x-ck-cache') === 'PARTIAL') {
+          window.setTimeout(async () => {
+            try {
+              const again = await fetch(
+                `/api/search?q=${encodeURIComponent(query.trim())}&v=9`
+              );
+              if (!again.ok) return;
+              const againData = await again.json();
+              const more = againData.results.filter(matchSource);
+              if (more.length > results.length) {
+                setAvailableSources((current) => {
+                  const seen = new Set(
+                    more.map(
+                      (item: SearchResult) => `${item.source}:${item.id}`
+                    )
+                  );
+                  const kept = current.filter(
+                    (item) => !seen.has(`${item.source}:${item.id}`)
+                  );
+                  return [...more, ...kept];
+                });
+              }
+            } catch {
+              // 线路补全失败时继续用已经开播的源
+            }
+          }, 1800);
+        }
         setAvailableSources(results);
         return results;
       } catch (err) {

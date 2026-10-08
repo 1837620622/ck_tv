@@ -3,7 +3,7 @@
 
 import { ChevronUp, Search, X } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   addSearchHistory,
@@ -159,48 +159,66 @@ function SearchPageClient() {
     }
   }, [searchParams]);
 
+  const searchSeq = useRef(0);
+
+  const sortResults = (results: SearchResult[], query: string) =>
+    results.sort((a: SearchResult, b: SearchResult) => {
+      const keyword = query.trim();
+      const aExactMatch = a.title === keyword;
+      const bExactMatch = b.title === keyword;
+
+      if (aExactMatch && !bExactMatch) return -1;
+      if (!aExactMatch && bExactMatch) return 1;
+
+      if (a.year === b.year) {
+        return a.title.localeCompare(b.title);
+      }
+      if (a.year === 'unknown' && b.year === 'unknown') {
+        return 0;
+      }
+      if (a.year === 'unknown') return 1;
+      if (b.year === 'unknown') return -1;
+      return parseInt(a.year) > parseInt(b.year) ? -1 : 1;
+    });
+
   const fetchSearchResults = async (query: string) => {
+    const seq = ++searchSeq.current;
+    const searchUrl = `/api/search?q=${encodeURIComponent(
+      query.trim()
+    )}&slim=1&v=9`;
     try {
       setIsLoading(true);
-      const response = await fetch(
-        `/api/search?q=${encodeURIComponent(query.trim())}&slim=1&v=8`
-      );
+      const response = await fetch(searchUrl);
       const data = await response.json();
+      if (seq !== searchSeq.current) return;
       const results = (data.results || []).filter(
         (result: SearchResult) => !isAdultContent(result)
       );
-      setSearchResults(
-        results.sort((a: SearchResult, b: SearchResult) => {
-          // 优先排序：标题与搜索词完全一致的排在前面
-          const aExactMatch = a.title === query.trim();
-          const bExactMatch = b.title === query.trim();
-
-          if (aExactMatch && !bExactMatch) return -1;
-          if (!aExactMatch && bExactMatch) return 1;
-
-          // 如果都匹配或都不匹配，则按原来的逻辑排序
-          if (a.year === b.year) {
-            return a.title.localeCompare(b.title);
-          } else {
-            // 处理 unknown 的情况
-            if (a.year === 'unknown' && b.year === 'unknown') {
-              return 0;
-            } else if (a.year === 'unknown') {
-              return 1; // a 排在后面
-            } else if (b.year === 'unknown') {
-              return -1; // b 排在后面
-            } else {
-              // 都是数字年份，按数字大小排序（大的在前面）
-              return parseInt(a.year) > parseInt(b.year) ? -1 : 1;
-            }
-          }
-        })
-      );
+      setSearchResults(sortResults(results, query));
       setShowResults(true);
+      // 首包只有排序靠前的片源。等边缘把其余源写入缓存后再拉一次完整结果。
+      if (response.headers.get('x-ck-cache') === 'PARTIAL') {
+        window.setTimeout(async () => {
+          if (seq !== searchSeq.current) return;
+          try {
+            const again = await fetch(searchUrl);
+            const againData = await again.json();
+            if (seq !== searchSeq.current) return;
+            const more = (againData.results || []).filter(
+              (result: SearchResult) => !isAdultContent(result)
+            );
+            if (more.length > results.length) {
+              setSearchResults(sortResults(more, query));
+            }
+          } catch {
+            // 补全失败时保留已经显示的首批结果
+          }
+        }, 1800);
+      }
     } catch (error) {
-      setSearchResults([]);
+      if (seq === searchSeq.current) setSearchResults([]);
     } finally {
-      setIsLoading(false);
+      if (seq === searchSeq.current) setIsLoading(false);
     }
   };
 

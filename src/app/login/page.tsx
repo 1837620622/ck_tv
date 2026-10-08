@@ -11,6 +11,20 @@ import { checkForUpdates, CURRENT_VERSION, UpdateStatus } from '@/lib/version';
 import { useSite } from '@/components/SiteProvider';
 import { ThemeToggle } from '@/components/ThemeToggle';
 
+// 登录后只回到本站路径，避免跳到外部地址。
+function safeNextPath(raw: string | null): string {
+  if (
+    !raw ||
+    !raw.startsWith('/') ||
+    raw.startsWith('//') ||
+    raw.includes('\\')
+  ) {
+    return '/';
+  }
+  if (raw.includes('://')) return '/';
+  return raw;
+}
+
 // 版本显示组件 - 点击弹出赞赏码
 function VersionDisplay() {
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
@@ -165,8 +179,7 @@ function LoginPageClient() {
       });
 
       if (res.ok) {
-        const redirect = searchParams.get('redirect') || '/';
-        router.replace(redirect);
+        router.replace(safeNextPath(searchParams.get('redirect')));
       } else if (res.status === 401) {
         setError('密码错误');
       } else {
@@ -194,8 +207,7 @@ function LoginPageClient() {
       });
 
       if (res.ok) {
-        const redirect = searchParams.get('redirect') || '/';
-        router.replace(redirect);
+        router.replace(safeNextPath(searchParams.get('redirect')));
       } else {
         const data = await res.json().catch(() => ({}));
         setError(data.error ?? '服务器错误');
