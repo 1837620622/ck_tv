@@ -88,7 +88,8 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
   return (
     <section className={`mb-8 ${className || ''}`}>
       <div className='mb-4 flex items-center justify-between'>
-        <h2 className='text-xl font-bold text-gray-800 dark:text-gray-200'>
+        <h2 className='flex items-center gap-2 text-lg font-semibold text-gray-900 dark:text-gray-100'>
+          <span className='h-4 w-0.5 bg-green-600' aria-hidden />
           继续观看
         </h2>
         {!loading && playRecords.length > 0 && (

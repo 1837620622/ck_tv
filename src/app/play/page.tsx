@@ -449,7 +449,7 @@ function PlayPageClient() {
       // 根据搜索词获取全部源信息
       try {
         const response = await fetch(
-          `/api/search?q=${encodeURIComponent(query.trim())}&v=7`
+          `/api/search?q=${encodeURIComponent(query.trim())}&v=8`
         );
         if (!response.ok) {
           throw new Error('搜索失败');

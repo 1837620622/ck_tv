@@ -76,7 +76,7 @@ export async function GET(request: Request) {
   const slim = searchParams.get('slim') === '1';
   const cacheUrl = `https://cktv-cache.local/search?q=${encodeURIComponent(
     query
-  )}&line=${line}&slim=${slim ? '1' : '0'}&v=7`;
+  )}&line=${line}&slim=${slim ? '1' : '0'}&v=8`;
 
   const loadSites = async () =>
     (await getSearchApiSites(line)).filter((site) => !isAdultSource(site));

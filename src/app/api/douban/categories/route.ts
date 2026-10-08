@@ -1,6 +1,13 @@
+import { getOptionalRequestContext } from '@cloudflare/next-on-pages';
 import { NextResponse } from 'next/server';
 
 import { getCacheTime } from '@/lib/config';
+import {
+  edgeFetchInit,
+  jsonCacheHeaders,
+  readJsonCache,
+  writeJsonCache,
+} from '@/lib/edge-cache';
 import { DoubanItem, DoubanResult } from '@/lib/types';
 
 interface DoubanCategoryApiResponse {
@@ -20,27 +27,27 @@ interface DoubanCategoryApiResponse {
 }
 
 async function fetchDoubanData(
-  url: string
+  url: string,
+  ttlSeconds: number
 ): Promise<DoubanCategoryApiResponse> {
   // 添加超时控制
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 10000); // 10秒超时
 
-  // 设置请求选项，包括信号和头部
-  const fetchOptions = {
-    signal: controller.signal,
-    headers: {
-      'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-      Referer: 'https://movie.douban.com/',
-      Accept: 'application/json, text/plain, */*',
-      Origin: 'https://movie.douban.com',
-    },
+  const headers = {
+    'User-Agent':
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+    Referer: 'https://movie.douban.com/',
+    Accept: 'application/json, text/plain, */*',
+    Origin: 'https://movie.douban.com',
   };
 
   try {
-    // 尝试直接访问豆瓣API
-    const response = await fetch(url, fetchOptions);
+    // 豆瓣原始 JSON 走边缘缓存。首页各分类热门列表命中后不再重复出网。
+    const response = await fetch(
+      url,
+      edgeFetchInit(headers, controller.signal, ttlSeconds)
+    );
     clearTimeout(timeoutId);
 
     if (!response.ok) {
@@ -56,7 +63,25 @@ async function fetchDoubanData(
 
 export const runtime = 'edge';
 
+function doubanCacheHeaders(
+  state: string,
+  edgeSeconds: number,
+  browserSeconds: number
+) {
+  return {
+    ...jsonCacheHeaders(edgeSeconds, browserSeconds),
+    'x-ck-cache': state,
+  };
+}
+
 export async function GET(request: Request) {
+  const ctx = (() => {
+    try {
+      return getOptionalRequestContext()?.ctx;
+    } catch {
+      return undefined;
+    }
+  })();
   const { searchParams } = new URL(request.url);
 
   // 获取参数
@@ -96,10 +121,25 @@ export async function GET(request: Request) {
   }
 
   const target = `https://m.douban.com/rexxar/api/v2/subject/recent_hot/${kind}?start=${pageStart}&limit=${pageLimit}&category=${category}&type=${type}`;
+  const edgeSeconds = await getCacheTime();
+  const browserSeconds = Math.min(600, edgeSeconds);
+  // Pages Function 响应默认 DYNAMIC，Cache-Control 不会自动进边缘。热门列表单独放进 Cache API。
+  const cacheUrl = `https://cktv-cache.local/douban?kind=${encodeURIComponent(
+    kind
+  )}&category=${encodeURIComponent(category || '')}&type=${encodeURIComponent(
+    type || ''
+  )}&start=${pageStart}&limit=${pageLimit}&v=1`;
 
   try {
+    const hit = await readJsonCache(cacheUrl);
+    if (hit) {
+      return new NextResponse(await hit.text(), {
+        headers: doubanCacheHeaders('HIT', edgeSeconds, browserSeconds),
+      });
+    }
+
     // 调用豆瓣 API
-    const doubanData = await fetchDoubanData(target);
+    const doubanData = await fetchDoubanData(target, edgeSeconds);
 
     // 转换数据格式
     const list: DoubanItem[] = doubanData.items.map((item) => ({
@@ -116,13 +156,12 @@ export async function GET(request: Request) {
       list: list,
     };
 
-    const cacheTime = await getCacheTime();
-    return NextResponse.json(response, {
-      headers: {
-        'Cache-Control': `public, max-age=${cacheTime}, s-maxage=${cacheTime}`,
-        'CDN-Cache-Control': `public, s-maxage=${cacheTime}`,
-        'Vercel-CDN-Cache-Control': `public, s-maxage=${cacheTime}`,
-      },
+    const body = JSON.stringify(response);
+    if (list.length > 0) {
+      writeJsonCache(ctx, cacheUrl, body, edgeSeconds, browserSeconds);
+    }
+    return new NextResponse(body, {
+      headers: doubanCacheHeaders('MISS', edgeSeconds, browserSeconds),
     });
   } catch (error) {
     return NextResponse.json(

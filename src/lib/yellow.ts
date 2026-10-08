@@ -15,6 +15,7 @@ export const adultSourceKeys = [
   'bwzy',
   'lbby',
   'shayu',
+  'heitao',
 ];
 
 // 成人采集站域名。后台旧配置即使换了 key，也不能再进全站搜索。
@@ -35,6 +36,8 @@ export const adultApiHosts = [
   'bwzyz.com',
   'lbapiby.com',
   'shayuapi.com',
+  'zy.heitaodj.com',
+  'heitaodj.com',
 ];
 
 export function apiHost(api?: string): string {
@@ -66,6 +69,7 @@ export const adultCategoryKeywords = [
   '三级',
   '情色',
   '写真',
+  '擦边',
   '福利',
   '里番',
   '成人',

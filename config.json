@@ -71,6 +71,14 @@
       "priority": 8,
       "globalPriority": 8
     },
+    "juliang": {
+      "api": "https://api.juliang.live/api/provide/vod",
+      "name": "巨量资源",
+      "category": "general",
+      "region": "both",
+      "priority": 9,
+      "globalPriority": 8
+    },
     "hhzy": {
       "api": "https://hhzyapi.com/api.php/provide/vod",
       "name": "豪华资源",
@@ -316,6 +324,12 @@
       "name": "鲨鱼资源",
       "category": "adult",
       "priority": 14
+    },
+    "heitao": {
+      "api": "https://zy.heitaodj.com/api.php/provide/vod",
+      "name": "黑桃短剧",
+      "category": "adult",
+      "priority": 15
     }
   }
 }

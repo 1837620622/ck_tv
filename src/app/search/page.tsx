@@ -163,7 +163,7 @@ function SearchPageClient() {
     try {
       setIsLoading(true);
       const response = await fetch(
-        `/api/search?q=${encodeURIComponent(query.trim())}&slim=1&v=7`
+        `/api/search?q=${encodeURIComponent(query.trim())}&slim=1&v=8`
       );
       const data = await response.json();
       const results = (data.results || []).filter(
