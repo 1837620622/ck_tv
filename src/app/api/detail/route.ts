@@ -11,8 +11,8 @@ import {
 
 export const runtime = 'edge';
 
-const DETAIL_EDGE_SECONDS = 600;
-const DETAIL_BROWSER_SECONDS = 120;
+const DETAIL_EDGE_SECONDS = 1800;
+const DETAIL_BROWSER_SECONDS = 300;
 
 export async function GET(request: Request) {
   const ctx = (() => {

@@ -20,7 +20,7 @@ interface ApiSearchItem {
 export async function searchFromApi(
   apiSite: ApiSite,
   query: string,
-  options?: { keepAdult?: boolean }
+  options?: { keepAdult?: boolean; timeoutMs?: number }
 ): Promise<SearchResult[]> {
   try {
     const apiBaseUrl = apiSite.api;
@@ -28,9 +28,12 @@ export async function searchFromApi(
       apiBaseUrl + API_CONFIG.search.path + encodeURIComponent(query);
     const apiName = apiSite.name;
 
-    // 添加超时处理
+    // 国内首批查询用更短的超时，避免慢源占住连接。
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2800);
+    const timeoutId = setTimeout(
+      () => controller.abort(),
+      options?.timeoutMs ?? 2800
+    );
 
     const response = await fetch(
       apiUrl,

@@ -26,3 +26,25 @@ export function sourceRank(site: RankedSite, line: LineMode): number {
   }
   return site.priority ?? 100;
 }
+
+// 国内出口先只等最靠前的一批国内源，页面先出来，其余源在后台补进边缘缓存。
+export function lineBudget(line: LineMode) {
+  if (line === 'cn') {
+    return {
+      edgeSeconds: 1800,
+      browserSeconds: 90,
+      freshSeconds: 300,
+      deadlineMs: 900,
+      fastCount: 8,
+      timeoutMs: 1800,
+    };
+  }
+  return {
+    edgeSeconds: 600,
+    browserSeconds: 30,
+    freshSeconds: 120,
+    deadlineMs: 1200,
+    fastCount: 12,
+    timeoutMs: 2200,
+  };
+}

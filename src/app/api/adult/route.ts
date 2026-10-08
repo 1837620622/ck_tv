@@ -17,8 +17,8 @@ import { adultSourceKeys } from '@/lib/yellow';
 
 export const runtime = 'edge';
 
-const ADULT_EDGE_SECONDS = 180;
-const ADULT_BROWSER_SECONDS = 30;
+const ADULT_EDGE_SECONDS = 600;
+const ADULT_BROWSER_SECONDS = 60;
 
 function adultCacheHeaders(state: string) {
   return {
@@ -82,8 +82,10 @@ export async function GET(request: Request) {
         });
       }
       const settled = await settleWithin(
-        adultSites.map((site) => searchFromApi(site, q, { keepAdult: true })),
-        1500,
+        adultSites.map((site) =>
+          searchFromApi(site, q, { keepAdult: true, timeoutMs: 1800 })
+        ),
+        800,
         [] as SearchResult[]
       );
       const flattened = settled.values.flat();

@@ -9,22 +9,20 @@ import {
   readJsonCache,
   writeJsonCache,
 } from '@/lib/edge-cache';
-import { viewerLine } from '@/lib/line';
+import { lineBudget, viewerLine } from '@/lib/line';
 import { settleWithin } from '@/lib/settle';
 import { SearchResult } from '@/lib/types';
 import { isAdultContent, isAdultSource } from '@/lib/yellow';
 
 export const runtime = 'edge';
 
-const SEARCH_EDGE_SECONDS = 600;
-const SEARCH_BROWSER_SECONDS = 30;
-const SEARCH_FRESH_SECONDS = 120;
-// 先把 1.5 秒内返回的源交给页面，剩下的源在后台收齐后写入边缘缓存。
-const SEARCH_DEADLINE_MS = 1500;
-
-function searchCacheHeaders(state: string) {
+function searchCacheHeaders(
+  state: string,
+  edgeSeconds: number,
+  browserSeconds: number
+) {
   return {
-    ...jsonCacheHeaders(SEARCH_EDGE_SECONDS, SEARCH_BROWSER_SECONDS),
+    ...jsonCacheHeaders(edgeSeconds, browserSeconds),
     'x-ck-cache': state,
   };
 }
@@ -59,25 +57,36 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const query = searchParams.get('q')?.trim() || '';
 
+  const line = viewerLine(request);
+  const budget = lineBudget(line);
+
   if (!query) {
     return NextResponse.json(
-      { results: [], line: viewerLine(request) },
-      { headers: searchCacheHeaders('EMPTY') }
+      { results: [], line },
+      {
+        headers: searchCacheHeaders(
+          'EMPTY',
+          budget.edgeSeconds,
+          budget.browserSeconds
+        ),
+      }
     );
   }
 
-  const line = viewerLine(request);
   const slim = searchParams.get('slim') === '1';
   const cacheUrl = `https://cktv-cache.local/search?q=${encodeURIComponent(
     query
-  )}&line=${line}&slim=${slim ? '1' : '0'}&v=6`;
+  )}&line=${line}&slim=${slim ? '1' : '0'}&v=7`;
+
+  const loadSites = async () =>
+    (await getSearchApiSites(line)).filter((site) => !isAdultSource(site));
 
   const refresh = async () => {
-    const apiSites = (await getSearchApiSites(line)).filter(
-      (site) => !isAdultSource(site)
-    );
+    const apiSites = await loadSites();
     const lists = await Promise.all(
-      apiSites.map((site) => searchFromApi(site, query))
+      apiSites.map((site) =>
+        searchFromApi(site, query, { timeoutMs: budget.timeoutMs })
+      )
     );
     const packed = packResults(lists, line, slim);
     if (packed.count > 0) {
@@ -85,8 +94,8 @@ export async function GET(request: Request) {
         ctx,
         cacheUrl,
         packed.body,
-        SEARCH_EDGE_SECONDS,
-        SEARCH_BROWSER_SECONDS
+        budget.edgeSeconds,
+        budget.browserSeconds
       );
     }
   };
@@ -96,59 +105,61 @@ export async function GET(request: Request) {
     if (hit) {
       const age = cacheAgeSeconds(hit);
       const text = await hit.text();
-      if (age >= SEARCH_FRESH_SECONDS) {
+      if (age >= budget.freshSeconds) {
         ctx?.waitUntil(refresh().catch(() => undefined));
       }
       return new NextResponse(text, {
         headers: searchCacheHeaders(
-          age >= SEARCH_FRESH_SECONDS ? 'STALE' : 'HIT'
+          age >= budget.freshSeconds ? 'STALE' : 'HIT',
+          budget.edgeSeconds,
+          budget.browserSeconds
         ),
       });
     }
 
-    const apiSites = (await getSearchApiSites(line)).filter(
-      (site) => !isAdultSource(site)
-    );
+    const apiSites = await loadSites();
+    const fastSites = apiSites.slice(0, budget.fastCount);
+    const restSites = apiSites.slice(budget.fastCount);
     const settled = await settleWithin(
-      apiSites.map((site) => searchFromApi(site, query)),
-      SEARCH_DEADLINE_MS,
+      fastSites.map((site) =>
+        searchFromApi(site, query, { timeoutMs: budget.timeoutMs })
+      ),
+      budget.deadlineMs,
       [] as SearchResult[]
     );
     const packed = packResults(settled.values, line, slim);
 
-    if (settled.complete) {
-      if (packed.count > 0) {
+    const fillCache = async () => {
+      await settled.done;
+      const restLists = await Promise.all(
+        restSites.map((site) =>
+          searchFromApi(site, query, { timeoutMs: budget.timeoutMs })
+        )
+      );
+      const full = packResults([...settled.values, ...restLists], line, slim);
+      if (full.count > 0) {
         writeJsonCache(
           ctx,
           cacheUrl,
-          packed.body,
-          SEARCH_EDGE_SECONDS,
-          SEARCH_BROWSER_SECONDS
+          full.body,
+          budget.edgeSeconds,
+          budget.browserSeconds
         );
       }
-    } else if (ctx) {
-      ctx.waitUntil(
-        settled.done
-          .then(() => {
-            const full = packResults(settled.values, line, slim);
-            if (full.count > 0) {
-              writeJsonCache(
-                ctx,
-                cacheUrl,
-                full.body,
-                SEARCH_EDGE_SECONDS,
-                SEARCH_BROWSER_SECONDS
-              );
-            }
-          })
-          .catch(() => undefined)
-      );
+    };
+
+    if (ctx) {
+      ctx.waitUntil(fillCache().catch(() => undefined));
     } else {
-      void settled.done;
+      void fillCache();
     }
 
     return new NextResponse(packed.body, {
-      headers: searchCacheHeaders(settled.complete ? 'MISS' : 'PARTIAL'),
+      headers: searchCacheHeaders(
+        settled.complete && restSites.length === 0 ? 'MISS' : 'PARTIAL',
+        budget.edgeSeconds,
+        budget.browserSeconds
+      ),
     });
   } catch {
     return NextResponse.json({ error: '搜索失败' }, { status: 500 });
