@@ -100,17 +100,9 @@ export const LIVE_CHANNELS: LiveChannel[] = [
     urls: ['https://news.cgtn.com/resource/live/russian/cgtn-r.m3u8'],
     href: CGTN_PAGE,
   },
-  // 主清单把 pd 标成 1080，分片实际是 360。td 才是 720，这是这两条 CDN 上的最高档。
-  ...cctv('cctv1', 'CCTV-1 综合', 'cctv1', [
-    'https://ldncctvwbcdali.v.myalicdn.com/ldncctvwbcd/cdrmldcctv1_1td.m3u8',
-    'https://ldncctvwbcdtxy.liveplay.myqcloud.com/ldncctvwbcd/cdrmldcctv1_1_td.m3u8',
-    'https://ldncctvwbcdali.v.myalicdn.com/ldncctvwbcd/cdrmldcctv1_1ud.m3u8',
-  ]),
-  ...cctv('cctv13', 'CCTV-13 新闻', 'cctv13', [
-    'https://ldncctvwbcdali.v.myalicdn.com/ldncctvwbcd/cdrmldcctv13_1td.m3u8',
-    'https://ldncctvwbcdtxy.liveplay.myqcloud.com/ldncctvwbcd/cdrmldcctv13_1_td.m3u8',
-    'https://ldncctvwbcdali.v.myalicdn.com/ldncctvwbcd/cdrmldcctv13_1ud.m3u8',
-  ]),
+  // cdrm 清单头写着 720，分片解出来是灰场，浏览器也不接受 avc1.640128。不当成画面。
+  ...cctv('cctv1', 'CCTV-1 综合', 'cctv1'),
+  ...cctv('cctv13', 'CCTV-13 新闻', 'cctv13'),
   ...satellite('hunan', '湖南卫视'),
   ...satellite('zhejiang', '浙江卫视'),
   ...satellite('dongfang', '东方卫视'),

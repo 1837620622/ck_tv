@@ -6,7 +6,7 @@ import Artplayer from 'artplayer';
 import Hls from 'hls.js';
 import { Heart } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, useEffect, useRef, useState } from 'react';
+import { Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import {
   deleteFavorite,
@@ -22,6 +22,7 @@ import {
   subscribeToDataUpdates,
 } from '@/lib/db.client';
 import { pickPlayable } from '@/lib/match-title';
+import { releaseMedia, silenceOtherMedia } from '@/lib/release-media';
 import { SearchResult } from '@/lib/types';
 import { processImageUrl } from '@/lib/utils';
 
@@ -206,6 +207,8 @@ function PlayPageClient() {
   const lastSaveTimeRef = useRef<number>(0);
 
   const artPlayerRef = useRef<any>(null);
+  // 离开页面时 DOM ref 已经空了，播放中的节点要另外留住。
+  const playingNodeRef = useRef<HTMLVideoElement | null>(null);
   const artRef = useRef<HTMLDivElement | null>(null);
   const availableSourcesRef = useRef<SearchResult[]>([]);
   const failedSourceKeysRef = useRef<Set<string>>(new Set());
@@ -1472,7 +1475,13 @@ function PlayPageClient() {
       });
 
       // 监听播放器事件
+      playingNodeRef.current =
+        (artPlayerRef.current?.video as HTMLVideoElement) || null;
       artPlayerRef.current.on('ready', () => {
+        playingNodeRef.current =
+          (artPlayerRef.current?.video as HTMLVideoElement) ||
+          playingNodeRef.current;
+        silenceOtherMedia(artPlayerRef.current?.video as HTMLVideoElement);
         setError(null);
 
         // 根据用户设置初始化字幕显示状态
@@ -1624,12 +1633,30 @@ function PlayPageClient() {
     }
   }, [Artplayer, Hls, videoUrl, loading, blockAdEnabled]);
 
-  // 当组件卸载时清理定时器
-  useEffect(() => {
+  // 离开播放页就停。画中画还在时先留着，退出画中画再拆。
+  useLayoutEffect(() => {
     return () => {
       if (saveIntervalRef.current) {
         clearInterval(saveIntervalRef.current);
       }
+      const player = artPlayerRef.current;
+      const video =
+        playingNodeRef.current ||
+        (player?.video as HTMLVideoElement | undefined);
+      playingNodeRef.current = null;
+      artPlayerRef.current = null;
+      releaseMedia(video, () => {
+        try {
+          video?.hls?.destroy();
+        } catch {
+          // 这条 HLS 已经拆过。
+        }
+        try {
+          player?.destroy();
+        } catch {
+          // 页面已经把容器卸掉。
+        }
+      });
     };
   }, []);
 
