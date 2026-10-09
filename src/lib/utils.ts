@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any,no-console */
 
-import Hls from 'hls.js';
+import { playlistHeight, qualityText } from '@/lib/playlist';
 
 /**
  * 获取图片代理 URL 设置
@@ -123,183 +123,30 @@ export function cleanHtmlTags(text: string): string {
 }
 
 /**
- * 从m3u8地址获取视频质量等级和网络信息
- * @param m3u8Url m3u8播放列表的URL
- * @returns Promise<{quality: string, loadSpeed: string, pingTime: number}> 视频质量等级和网络信息
+ * 只读取 m3u8 清单，测量往返并解析清晰度。不创建播放器，不下载正片。
  */
 export async function getVideoResolutionFromM3u8(m3u8Url: string): Promise<{
-  quality: string; // 如720p、1080p等
-  loadSpeed: string; // 自动转换为KB/s或MB/s
-  pingTime: number; // 网络延迟（毫秒）
+  quality: string;
+  loadSpeed: string;
+  pingTime: number;
 }> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 4000);
+  const started = performance.now();
   try {
-    return new Promise((resolve, reject) => {
-      const video = document.createElement('video');
-      video.muted = true;
-      video.preload = 'metadata';
-
-      let pingTime = 0;
-      let actualLoadSpeed = '未知';
-      let hasSpeedCalculated = false;
-      let hasMetadataLoaded = false;
-      let fragmentStartTime = 0;
-      let isSettled = false;
-
-      // 轻量配置探测
-      const hls = new Hls({
-        debug: false,
-        enableWorker: true,
-        manifestLoadingTimeOut: 6000,
-        levelLoadingTimeOut: 6000,
-        fragLoadingTimeOut: 7000,
-        fragLoadingMaxRetry: 2,
-        manifestLoadingMaxRetry: 2,
-        levelLoadingMaxRetry: 2,
-        maxBufferLength: 2,
-        maxMaxBufferLength: 4,
-      });
-
-      const cleanup = () => {
-        try {
-          hls.destroy();
-          video.remove();
-        } catch {
-          /* ignore */
-        }
-      };
-
-      // 宽裕的超时处理（7秒，兼容国内外网络延迟）
-      const timeout = setTimeout(() => {
-        if (isSettled) return;
-        isSettled = true;
-        // 如果已经获得部分数据，则尽量兜底返回有效结果
-        if (hasSpeedCalculated || actualLoadSpeed !== '未知' || pingTime > 0) {
-          cleanup();
-          resolve({
-            quality: '1080p',
-            loadSpeed:
-              actualLoadSpeed !== '未知' ? actualLoadSpeed : '2.5 MB/s',
-            pingTime: pingTime > 0 ? pingTime : 120,
-          });
-        } else {
-          cleanup();
-          reject(new Error('Timeout loading video metadata'));
-        }
-      }, 7000);
-
-      video.onerror = () => {
-        if (isSettled) return;
-        isSettled = true;
-        clearTimeout(timeout);
-        cleanup();
-        reject(new Error('Failed to load video metadata'));
-      };
-
-      const checkAndResolve = () => {
-        if (
-          !isSettled &&
-          (hasMetadataLoaded || video.videoWidth > 0) &&
-          (hasSpeedCalculated || actualLoadSpeed !== '未知')
-        ) {
-          isSettled = true;
-          clearTimeout(timeout);
-          const width = video.videoWidth || (hls.levels?.[0]?.width ?? 1920);
-          cleanup();
-
-          const quality =
-            width >= 3840
-              ? '4K'
-              : width >= 2560
-              ? '2K'
-              : width >= 1920
-              ? '1080p'
-              : width >= 1280
-              ? '720p'
-              : width >= 854
-              ? '480p'
-              : 'SD';
-
-          resolve({
-            quality,
-            loadSpeed: actualLoadSpeed,
-            pingTime: pingTime > 0 ? Math.round(pingTime) : 80,
-          });
-        }
-      };
-
-      // 监听清单加载完成，测量精准的真实往返延迟(TTFB)
-      hls.on(Hls.Events.MANIFEST_LOADED, (_event: any, data: any) => {
-        if (data?.stats) {
-          const stats = data.stats;
-          const ttfb = stats.tfirst
-            ? stats.tfirst - stats.trequest
-            : stats.tload - stats.trequest;
-          if (ttfb > 0) {
-            pingTime = Math.max(10, Math.round(ttfb));
-          }
-        }
-        if (data?.levels && data.levels.length > 0) {
-          const lvl = data.levels[0];
-          if (lvl.width && lvl.width > 0) {
-            hasMetadataLoaded = true;
-            if (hasSpeedCalculated) {
-              checkAndResolve();
-            }
-          }
-        }
-      });
-
-      // 监听片段加载开始
-      hls.on(Hls.Events.FRAG_LOADING, () => {
-        fragmentStartTime = performance.now();
-      });
-
-      // 监听片段加载完成，使用精准的切片大小与传输时间计算真实下载速率
-      hls.on(Hls.Events.FRAG_LOADED, (_event: any, data: any) => {
-        if (!hasSpeedCalculated && data?.payload) {
-          const size = data.payload.byteLength || 0;
-          const stats = data.frag?.stats || data.stats;
-          const duration =
-            stats && stats.tload && stats.tfirst
-              ? (stats.tload - stats.tfirst) / 1000
-              : (performance.now() - fragmentStartTime) / 1000;
-
-          if (size > 0 && duration > 0) {
-            const speedKBps = size / 1024 / Math.max(duration, 0.05);
-
-            if (speedKBps >= 1024) {
-              actualLoadSpeed = `${(speedKBps / 1024).toFixed(1)} MB/s`;
-            } else {
-              actualLoadSpeed = `${speedKBps.toFixed(1)} KB/s`;
-            }
-            hasSpeedCalculated = true;
-            checkAndResolve();
-          }
-        }
-      });
-
-      hls.loadSource(m3u8Url);
-      hls.attachMedia(video);
-
-      hls.on(Hls.Events.ERROR, (_event: any, data: any) => {
-        if (data.fatal && !isSettled) {
-          isSettled = true;
-          clearTimeout(timeout);
-          cleanup();
-          reject(new Error(`HLS播放失败: ${data.type}`));
-        }
-      });
-
-      video.onloadedmetadata = () => {
-        hasMetadataLoaded = true;
-        checkAndResolve();
-      };
+    const response = await fetch(m3u8Url, {
+      signal: controller.signal,
+      cache: 'no-store',
     });
-  } catch (error) {
-    throw new Error(
-      `Error getting video resolution: ${
-        error instanceof Error ? error.message : String(error)
-      }`
-    );
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const body = await response.text();
+    if (!body.includes('#EXTM3U')) throw new Error('不是 m3u8 清单');
+    return {
+      quality: qualityText(playlistHeight(body)) || '未知',
+      loadSpeed: '未下载正片',
+      pingTime: Math.max(1, Math.round(performance.now() - started)),
+    };
+  } finally {
+    clearTimeout(timer);
   }
 }

@@ -38,10 +38,39 @@ export async function GET(request: Request) {
 
   if (action === 'detail') {
     const id = searchParams.get('id') || '';
+    const detailCacheUrl = `https://cktv-cache.local/huangguo-detail?id=${encodeURIComponent(
+      id
+    )}&v=1`;
+    const detailHit = await readJsonCache(detailCacheUrl);
+    if (detailHit) {
+      return new NextResponse(await detailHit.text(), {
+        headers: {
+          ...jsonCacheHeaders(EDGE_SECONDS, BROWSER_SECONDS),
+          'content-type': 'application/json; charset=utf-8',
+          'x-ck-cache': 'HIT',
+        },
+      });
+    }
     try {
       const detail = await detailHuangguo(id);
-      return NextResponse.json(detail, {
-        headers: jsonCacheHeaders(EDGE_SECONDS, BROWSER_SECONDS),
+      const body = JSON.stringify(detail);
+      if (detail.episodes.length > 0) {
+        writeJsonCache(
+          ctx,
+          detailCacheUrl,
+          body,
+          EDGE_SECONDS,
+          BROWSER_SECONDS
+        );
+      }
+      return new NextResponse(body, {
+        headers: {
+          ...(detail.episodes.length > 0
+            ? jsonCacheHeaders(EDGE_SECONDS, BROWSER_SECONDS)
+            : { 'Cache-Control': 'no-store' }),
+          'content-type': 'application/json; charset=utf-8',
+          'x-ck-cache': 'MISS',
+        },
       });
     } catch (error) {
       return NextResponse.json(
@@ -74,9 +103,16 @@ export async function GET(request: Request) {
       ...payload,
       categories: HUANGGUO_CATEGORIES,
     });
-    if (payload.list.length > 0) {
-      writeJsonCache(ctx, cacheUrl, body, EDGE_SECONDS, BROWSER_SECONDS);
+    if (payload.list.length === 0) {
+      return new NextResponse(body, {
+        headers: {
+          'content-type': 'application/json; charset=utf-8',
+          'Cache-Control': 'no-store',
+          'x-ck-cache': 'EMPTY',
+        },
+      });
     }
+    writeJsonCache(ctx, cacheUrl, body, EDGE_SECONDS, BROWSER_SECONDS);
     return new NextResponse(body, {
       headers: {
         ...jsonCacheHeaders(EDGE_SECONDS, BROWSER_SECONDS),

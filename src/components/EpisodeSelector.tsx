@@ -9,6 +9,7 @@ import React, {
   useState,
 } from 'react';
 
+import { playlistHeight, qualityText } from '@/lib/playlist';
 import { SearchResult } from '@/lib/types';
 import { processImageUrl } from '@/lib/utils';
 
@@ -16,32 +17,86 @@ function sourceKey(source: SearchResult): string {
   return `${source.source}:${source.id}`;
 }
 
-// 只拉 m3u8 清单，不下载正片。测不到（跨域失败）就保持原来的线路顺序。
-async function probeManifest(
-  url: string,
-  parent: AbortSignal
-): Promise<number | null> {
+type LineProbe = {
+  ms: number;
+  height: number;
+  state: 'ok' | 'cors' | 'dead';
+};
+
+function nativeHls(): boolean {
+  return (
+    document
+      .createElement('video')
+      .canPlayType('application/vnd.apple.mpegurl') !== ''
+  );
+}
+
+// 只请求 m3u8 清单。能读到正文就解析清晰度；跨域时改用 no-cors 记往返，再让边缘确认是不是清单。
+async function probeLine(url: string, parent: AbortSignal): Promise<LineProbe> {
   const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), 2200);
+  const timer = window.setTimeout(() => controller.abort(), 3500);
   const stop = () => controller.abort();
   parent.addEventListener('abort', stop);
   const started = performance.now();
   try {
-    const response = await fetch(url, {
-      signal: controller.signal,
-      cache: 'no-store',
-      mode: 'cors',
-    });
-    if (!response.ok) return null;
-    const text = await response.text();
-    if (!text.includes('#EXTM3U')) return null;
-    return Math.max(1, Math.round(performance.now() - started));
+    try {
+      const response = await fetch(url, {
+        signal: controller.signal,
+        cache: 'no-store',
+        mode: 'cors',
+      });
+      if (!response.ok) return { ms: 0, height: 0, state: 'dead' };
+      const text = await response.text();
+      if (!text.includes('#EXTM3U')) return { ms: 0, height: 0, state: 'dead' };
+      return {
+        ms: Math.max(1, Math.round(performance.now() - started)),
+        height: playlistHeight(text),
+        state: 'ok',
+      };
+    } catch {
+      const again = performance.now();
+      await fetch(url, {
+        signal: controller.signal,
+        cache: 'no-store',
+        mode: 'no-cors',
+      });
+      const ms = Math.max(1, Math.round(performance.now() - again));
+      let height = 0;
+      try {
+        const checked = await fetch(
+          `/api/line-check?u=${encodeURIComponent(url)}`,
+          { signal: controller.signal, cache: 'no-store' }
+        );
+        if (checked.ok) {
+          const data = (await checked.json()) as {
+            ok?: boolean;
+            height?: number;
+          };
+          if (data.ok) height = Number(data.height) || 0;
+        }
+      } catch {
+        // 边缘探不到时保留本机已经量到的往返。
+      }
+      return { ms, height, state: 'cors' };
+    }
   } catch {
-    return null;
+    return { ms: 0, height: 0, state: 'dead' };
   } finally {
     window.clearTimeout(timer);
     parent.removeEventListener('abort', stop);
   }
+}
+
+function probeLabel(probe: LineProbe | undefined, playing: boolean): string {
+  if (!probe) return playing ? '正在播放' : '测速中';
+  const quality = qualityText(probe.height);
+  if (probe.state === 'dead') return '源头不通';
+  const speed = probe.ms > 0 ? `${probe.ms} ms` : '';
+  if (probe.state === 'cors') {
+    return [quality, '跨域', speed].filter(Boolean).join(' · ');
+  }
+  if (playing) return ['正在播放', quality, speed].filter(Boolean).join(' · ');
+  return [quality, speed].filter(Boolean).join(' · ') || '可播';
 }
 
 interface EpisodeSelectorProps {
@@ -95,20 +150,21 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
 
   // 是否倒序显示
   const [descending, setDescending] = useState<boolean>(false);
-  const [latencyMs, setLatencyMs] = useState<Record<string, number>>({});
+  const [latencyMs, setLatencyMs] = useState<Record<string, LineProbe>>({});
+  const canNativeHls = useMemo(() => nativeHls(), []);
 
   useEffect(() => {
     if (availableSources.length === 0) return;
     const parent = new AbortController();
     const timer = window.setTimeout(() => {
       const jobs: { key: string; url: string }[] = [];
-      const missed: Record<string, number> = {};
+      const missed: Record<string, LineProbe> = {};
       availableSources.forEach((source) => {
         const url = source.episodes?.find((item) => item.includes('.m3u8'));
         const key = sourceKey(source);
-        // 分享页地址测不出清单延迟，直接标未测到，避免一直停在测速中。
+        // 分享页没有清单，标成源头不通，避免一直停在测速中。
         if (url) jobs.push({ key, url });
-        else missed[key] = -1;
+        else missed[key] = { ms: 0, height: 0, state: 'dead' };
       });
       if (Object.keys(missed).length > 0) {
         setLatencyMs((current) => ({ ...current, ...missed }));
@@ -118,18 +174,24 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
         while (cursor < jobs.length && !parent.signal.aborted) {
           const job = jobs[cursor];
           cursor += 1;
-          const latency = await probeManifest(job.url, parent.signal);
+          const probe = await probeLine(job.url, parent.signal);
           if (parent.signal.aborted) continue;
-          const value = latency ?? -1;
-          setLatencyMs((current) =>
-            current[job.key] === value
-              ? current
-              : { ...current, [job.key]: value }
-          );
+          setLatencyMs((current) => {
+            const previous = current[job.key];
+            if (
+              previous &&
+              previous.state === probe.state &&
+              previous.ms === probe.ms &&
+              previous.height === probe.height
+            ) {
+              return current;
+            }
+            return { ...current, [job.key]: probe };
+          });
         }
       };
-      void Promise.all([worker(), worker()]);
-    }, 1200);
+      void Promise.all([worker(), worker(), worker(), worker()]);
+    }, 400);
     return () => {
       window.clearTimeout(timer);
       parent.abort();
@@ -333,12 +395,11 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                 <button
                   key={episodeNumber}
                   onClick={() => handleEpisodeClick(episodeNumber - 1)}
-                  className={`h-10 flex items-center justify-center text-sm font-medium rounded-md transition-all duration-200 
-                    ${
-                      isActive
-                        ? 'bg-green-500 text-white shadow-lg shadow-green-500/25 dark:bg-green-600'
-                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300 hover:scale-105 dark:bg-white/10 dark:text-gray-300 dark:hover:bg-white/20'
-                    }`.trim()}
+                  className={`flex h-10 items-center justify-center border text-sm ${
+                    isActive
+                      ? 'border-green-600 bg-green-600 text-white'
+                      : 'border-gray-300 bg-white text-gray-700 hover:border-green-600 dark:border-gray-600 dark:bg-gray-950 dark:text-gray-200'
+                  }`}
                 >
                   {episodeNumber}
                 </button>
@@ -390,19 +451,16 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
               <div className='flex-1 overflow-y-auto space-y-1.5 pb-20'>
                 {[...availableSources]
                   .sort((a, b) => {
-                    const rankA = a.source_rank ?? 999;
-                    const rankB = b.source_rank ?? 999;
-                    const readLatency = (item: SearchResult) => {
-                      const value = latencyMs[sourceKey(item)];
-                      return value && value > 0 ? value : 480;
+                    const bucket = (item: SearchResult) => {
+                      const probe = latencyMs[sourceKey(item)];
+                      if (!probe || probe.state === 'ok') return 0;
+                      if (probe.state === 'cors' && !canNativeHls) return 1;
+                      if (probe.state === 'dead') return 2;
+                      return 0;
                     };
-                    const latencyA = readLatency(a);
-                    const latencyB = readLatency(b);
-                    // 配置顺序仍是基准。清单延迟大约每差一个名次抵 180ms，测不到不降级。
-                    const scoreA = latencyA + (rankA - 1) * 180;
-                    const scoreB = latencyB + (rankB - 1) * 180;
-                    if (scoreA !== scoreB) return scoreA - scoreB;
-                    return rankA - rankB;
+                    const gap = bucket(a) - bucket(b);
+                    if (gap !== 0) return gap;
+                    return (a.source_rank ?? 999) - (b.source_rank ?? 999);
                   })
                   .map((source, index) => {
                     const isCurrentSource =
@@ -439,13 +497,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                               {source.source_name}
                             </span>
                             <span className='shrink-0 text-xs text-gray-500 dark:text-gray-400'>
-                              {isCurrentSource
-                                ? '正在播放'
-                                : latency == null
-                                ? '测速中'
-                                : latency > 0
-                                ? `${latency} ms`
-                                : '未测到'}
+                              {probeLabel(latency, isCurrentSource)}
                             </span>
                           </div>
                           <div className='mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400'>

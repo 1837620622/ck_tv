@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { DoubanItem } from '@/lib/types';
 
+import { choiceClass } from '@/components/ChoiceRow';
 import PagePager from '@/components/PagePager';
 import VideoCard from '@/components/VideoCard';
 
@@ -90,11 +91,7 @@ export default function CatalogPanel({
               setKind(item.id);
               setPage(1);
             }}
-            className={`shrink-0 px-3 py-1.5 text-xs ${
-              kind === item.id
-                ? 'bg-green-600 text-white'
-                : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200'
-            }`}
+            className={choiceClass(kind === item.id, true)}
           >
             {item.label}
           </button>

@@ -68,6 +68,24 @@ export async function readJsonCache(
   }
 }
 
+// 封面、海报这类二进制也走同一套 Cache API。调用方自己带好 Content-Type 和 Cache-Control。
+export function writeCached(
+  ctx: WaitUntilCtx | undefined,
+  cacheUrl: string,
+  response: Response
+) {
+  const cache = cacheStorage();
+  if (!cache) return;
+  const task = cache
+    .put(new Request(cacheUrl, { method: 'GET' }), response)
+    .catch(() => undefined);
+  if (ctx) {
+    ctx.waitUntil(task);
+    return;
+  }
+  void task;
+}
+
 export function writeJsonCache(
   ctx: WaitUntilCtx | undefined,
   cacheUrl: string,

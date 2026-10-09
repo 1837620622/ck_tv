@@ -279,15 +279,22 @@ export async function GET(request: Request) {
       sources: adultSites.map((s) => ({ key: s.key, name: s.name })),
     };
     const body = JSON.stringify(payload);
-    if (formattedList.length > 0) {
-      writeJsonCache(
-        ctx,
-        listCacheUrl,
-        body,
-        ADULT_EDGE_SECONDS,
-        ADULT_BROWSER_SECONDS
-      );
+    if (formattedList.length === 0) {
+      return new NextResponse(body, {
+        headers: {
+          'content-type': 'application/json; charset=utf-8',
+          'Cache-Control': 'no-store',
+          'x-ck-cache': 'EMPTY',
+        },
+      });
     }
+    writeJsonCache(
+      ctx,
+      listCacheUrl,
+      body,
+      ADULT_EDGE_SECONDS,
+      ADULT_BROWSER_SECONDS
+    );
     return new NextResponse(body, {
       headers: {
         ...adultCacheHeaders('MISS'),

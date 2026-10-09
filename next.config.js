@@ -24,6 +24,20 @@ const nextConfig = {
     ],
   },
 
+  async headers() {
+    const cache = [
+      {
+        key: 'Cache-Control',
+        value: 'public, max-age=86400, s-maxage=604800',
+      },
+    ];
+    return [
+      { source: '/logo.png', headers: cache },
+      { source: '/favicon.ico', headers: cache },
+      { source: '/icons/:file', headers: cache },
+    ];
+  },
+
   webpack(config) {
     // Grab the existing rule that handles SVG imports
     const fileLoaderRule = config.module.rules.find((rule) =>

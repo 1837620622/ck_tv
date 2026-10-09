@@ -1,7 +1,7 @@
 /* eslint-disable react-hooks/exhaustive-deps, @typescript-eslint/no-explicit-any */
 'use client';
 
-import { ChevronUp, Search, X } from 'lucide-react';
+import { ChevronUp, Search } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -395,31 +395,35 @@ function SearchPageClient() {
                   </button>
                 )}
               </h2>
-              <div className='flex flex-wrap gap-2'>
+              <div className='flex flex-wrap gap-1.5'>
                 {searchHistory.map((item) => (
-                  <div key={item} className='relative group'>
+                  <div
+                    key={item}
+                    className='flex items-stretch border border-gray-300 dark:border-gray-600'
+                  >
                     <button
+                      type='button'
                       onClick={() => {
                         setSearchQuery(item);
                         router.push(
                           `/search?q=${encodeURIComponent(item.trim())}`
                         );
                       }}
-                      className='px-4 py-2 bg-gray-500/10 hover:bg-gray-300 rounded-full text-sm text-gray-700 transition-colors duration-200 dark:bg-gray-700/50 dark:hover:bg-gray-600 dark:text-gray-300'
+                      className='px-3 py-1.5 text-sm text-gray-700 hover:text-green-700 dark:text-gray-200'
                     >
                       {item}
                     </button>
-                    {/* 删除按钮 */}
                     <button
+                      type='button'
                       aria-label='删除搜索历史'
                       onClick={(e) => {
                         e.stopPropagation();
                         e.preventDefault();
-                        deleteSearchHistory(item); // 事件监听会自动更新界面
+                        deleteSearchHistory(item);
                       }}
-                      className='absolute -top-1 -right-1 w-4 h-4 opacity-0 group-hover:opacity-100 bg-gray-400 hover:bg-red-500 text-white rounded-full flex items-center justify-center text-[10px] transition-colors'
+                      className='border-l border-gray-300 px-2 text-xs text-gray-500 hover:text-red-600 dark:border-gray-600'
                     >
-                      <X className='w-3 h-3' />
+                      删除
                     </button>
                   </div>
                 ))}

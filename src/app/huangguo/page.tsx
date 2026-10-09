@@ -9,6 +9,7 @@ import { HUANGGUO_CATEGORIES } from '@/lib/huangguo';
 import { isUnderageLabel } from '@/lib/yellow';
 
 import AgeGate, { AgeNotice, readAgeGate } from '@/components/AgeGate';
+import { choiceClass } from '@/components/ChoiceRow';
 import PageLayout from '@/components/PageLayout';
 import PagePager from '@/components/PagePager';
 import VideoCard from '@/components/VideoCard';
@@ -192,11 +193,7 @@ function HuangguoClient() {
                     setCategory(item.id);
                     setPage(1);
                   }}
-                  className={`shrink-0 px-3 py-1.5 text-xs ${
-                    category === item.id
-                      ? 'bg-green-600 text-white'
-                      : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200'
-                  }`}
+                  className={choiceClass(category === item.id, true)}
                 >
                   {item.name}
                 </button>

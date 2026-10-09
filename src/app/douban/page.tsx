@@ -10,6 +10,7 @@ import { getDoubanCategories, getDoubanList } from '@/lib/douban.client';
 import { DoubanItem, DoubanResult } from '@/lib/types';
 
 import CatalogPanel from '@/components/CatalogPanel';
+import ChoiceRow from '@/components/ChoiceRow';
 import DoubanCardSkeleton from '@/components/DoubanCardSkeleton';
 import DoubanCustomSelector from '@/components/DoubanCustomSelector';
 import DoubanSelector from '@/components/DoubanSelector';
@@ -421,26 +422,15 @@ function DoubanPageClient() {
             </p>
           </div>
 
-          <div className='flex gap-1 overflow-x-auto text-sm'>
-            {[
-              { id: '', label: '豆瓣' },
-              { id: 'bangumi', label: '番组计划' },
-              { id: 'bilibili', label: '哔哩哔哩' },
-            ].map((item) => (
-              <button
-                key={item.id || 'douban'}
-                type='button'
-                onClick={() => openEngine(item.id)}
-                className={`shrink-0 px-3 py-1.5 ${
-                  catalogEngine === item.id
-                    ? 'bg-green-600 text-white'
-                    : 'text-gray-700 hover:text-green-700 dark:text-gray-300 dark:hover:text-green-400'
-                }`}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
+          <ChoiceRow
+            options={[
+              { value: '', label: '豆瓣' },
+              { value: 'bangumi', label: '番组计划' },
+              { value: 'bilibili', label: '哔哩哔哩' },
+            ]}
+            value={catalogEngine}
+            onChange={openEngine}
+          />
 
           {/* 选择器组件 */}
           {catalogEngine ? null : type !== 'custom' ? (

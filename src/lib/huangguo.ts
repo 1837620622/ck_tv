@@ -79,8 +79,17 @@ async function getJson(url: string, timeoutMs = 12000): Promise<unknown> {
     const response = await fetch(url, {
       headers: HEADERS,
       signal: controller.signal,
-      cache: 'no-store',
-    });
+      // 列表和详情 JSON 进 Cloudflare 子请求缓存。播放地址不走这里。
+      cf: {
+        cacheEverything: true,
+        cacheTtl: 900,
+        cacheTtlByStatus: {
+          '200-299': 900,
+          '400-499': 30,
+          '500-599': 0,
+        },
+      },
+    } as RequestInit);
     if (!response.ok) {
       throw new Error(`黄果请求失败 ${response.status}`);
     }

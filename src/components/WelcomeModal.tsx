@@ -59,7 +59,7 @@ export const WelcomeModal: React.FC = () => {
         <div className='space-y-2 text-xs text-gray-600 dark:text-gray-300 leading-relaxed'>
           <p className='flex items-start gap-1.5'>
             <Shield className='w-3.5 h-3.5 text-green-500 shrink-0 mt-0.5' />
-            <span>已完成线路优化与测速增强，全网视频源加速流畅播放。</span>
+            <span>线路按配置顺序起播。测速只看播放清单，不预下载正片。</span>
           </p>
           <p className='text-gray-400 dark:text-gray-500 text-[11px]'>
             本站资源均来自公开互联网接口，仅供学习与技术交流。

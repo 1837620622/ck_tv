@@ -1,3 +1,7 @@
+import { getOptionalRequestContext } from '@cloudflare/next-on-pages';
+
+import { readJsonCache, writeCached } from '@/lib/edge-cache';
+
 export const runtime = 'edge';
 
 const FALLBACK_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 600" width="100%" height="100%">
@@ -166,8 +170,18 @@ async function fetchPublicImage(
       headers,
       signal,
       redirect: 'manual',
-      cache: 'no-store',
-    });
+      // 只缓存最终图片。重定向不进缓存，避免把临时跳转钉住。
+      cf: {
+        cacheEverything: true,
+        cacheTtl: 604800,
+        cacheTtlByStatus: {
+          '200-299': 604800,
+          '300-399': 0,
+          '400-499': 60,
+          '500-599': 0,
+        },
+      },
+    } as RequestInit);
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get('location');
       if (!location) return null;
@@ -193,6 +207,16 @@ export async function GET(request: Request) {
   const target = safeImageUrl(imageUrl);
   if (!target) {
     return fallback();
+  }
+
+  const cacheUrl = `https://cktv-cache.local/img?u=${encodeURIComponent(
+    target.toString()
+  )}`;
+  const hit = await readJsonCache(cacheUrl);
+  if (hit) {
+    const headers = new Headers(hit.headers);
+    headers.set('x-ck-cache', 'HIT');
+    return new Response(hit.body, { status: 200, headers });
   }
 
   try {
@@ -240,11 +264,25 @@ export async function GET(request: Request) {
     );
     resHeaders.set('CDN-Cache-Control', 'public, s-maxage=15720000');
     resHeaders.set('Vercel-CDN-Cache-Control', 'public, s-maxage=15720000');
+    resHeaders.set('x-ck-cache', 'MISS');
 
-    return new Response(imageResponse.body, {
+    const length = Number(imageResponse.headers.get('content-length') || '0');
+    const out = new Response(imageResponse.body, {
       status: 200,
       headers: resHeaders,
     });
+    // 未知长度或 2MB 以内的海报放进 Cache API。更大的文件只靠上面的子请求缓存。
+    if (length === 0 || length < 2_000_000) {
+      const ctx = (() => {
+        try {
+          return getOptionalRequestContext()?.ctx;
+        } catch {
+          return undefined;
+        }
+      })();
+      writeCached(ctx, cacheUrl, out.clone());
+    }
+    return out;
   } catch (_error) {
     return fallback();
   }

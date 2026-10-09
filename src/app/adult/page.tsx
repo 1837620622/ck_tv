@@ -9,6 +9,7 @@ import { SearchResult } from '@/lib/types';
 import { isUnderageLabel } from '@/lib/yellow';
 
 import AgeGate, { AgeNotice, readAgeGate } from '@/components/AgeGate';
+import { choiceClass } from '@/components/ChoiceRow';
 import PageLayout from '@/components/PageLayout';
 import PagePager from '@/components/PagePager';
 import VideoCard from '@/components/VideoCard';
@@ -257,11 +258,7 @@ function AdultPageClient() {
                     key={src.key}
                     type='button'
                     onClick={() => handleSourceChange(src.key)}
-                    className={`shrink-0 px-3 py-1.5 text-xs ${
-                      active
-                        ? 'bg-green-600 text-white'
-                        : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200'
-                    }`}
+                    className={choiceClass(active, true)}
                   >
                     {src.name}
                   </button>
@@ -275,11 +272,7 @@ function AdultPageClient() {
               <button
                 type='button'
                 onClick={() => handleCategoryChange('')}
-                className={`px-3 py-1 text-xs ${
-                  activeCategory === ''
-                    ? 'bg-green-600 text-white'
-                    : 'text-gray-600 dark:text-gray-300'
-                }`}
+                className={choiceClass(activeCategory === '', true)}
               >
                 全部
               </button>
@@ -291,11 +284,7 @@ function AdultPageClient() {
                     key={catId}
                     type='button'
                     onClick={() => handleCategoryChange(catId)}
-                    className={`px-3 py-1 text-xs ${
-                      active
-                        ? 'bg-green-600 text-white'
-                        : 'text-gray-600 dark:text-gray-300'
-                    }`}
+                    className={choiceClass(active, true)}
                   >
                     {cat.type_name}
                   </button>
