@@ -67,7 +67,7 @@ function LivePageClient() {
         let settled = false;
         let hls: Hls | null = null;
         let timer = 0;
-        let unlistenFail = () => undefined;
+        let unlistenFail: () => void = () => undefined;
         const done = (ok: boolean) => {
           if (settled) return;
           settled = true;
@@ -114,7 +114,9 @@ function LivePageClient() {
               if (armed) done(false);
             };
             node.addEventListener('error', onFail);
-            unlistenFail = () => node.removeEventListener('error', onFail);
+            unlistenFail = () => {
+              node.removeEventListener('error', onFail);
+            };
             node.src = url;
             window.setTimeout(() => {
               armed = true;
