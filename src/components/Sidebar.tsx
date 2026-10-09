@@ -12,6 +12,7 @@ import {
   Library,
   Menu,
   MonitorPlay,
+  Radio,
   Search,
   Sparkles,
   Star,
@@ -176,6 +177,11 @@ const Sidebar = ({ onToggle, activePath = '/' }: SidebarProps) => {
       href: '/douban?src=bilibili',
     },
     {
+      icon: Radio,
+      label: '直播',
+      href: '/live',
+    },
+    {
       icon: Heart,
       label: '收藏',
       href: '/?tab=favorites',
@@ -301,7 +307,9 @@ const Sidebar = ({ onToggle, activePath = '/' }: SidebarProps) => {
                     (item.href === '/adult' &&
                       decodedActive.startsWith('/adult')) ||
                     (item.href === '/huangguo' &&
-                      decodedActive.startsWith('/huangguo'));
+                      decodedActive.startsWith('/huangguo')) ||
+                    (item.href === '/live' &&
+                      decodedActive.startsWith('/live'));
                   // 番组和哔哩带 src，不能再按豆瓣 type 去高亮动漫。
                   if (srcMatch === 'bangumi' || srcMatch === 'bilibili') {
                     isActive = decodedItemHref.includes(`src=${srcMatch}`);

@@ -34,6 +34,7 @@ const homeEntries = [
   { label: '纪录片', href: '/douban?type=tv&sub=tv_documentary' },
   { label: '番组', href: '/douban?src=bangumi' },
   { label: '哔哩', href: '/douban?src=bilibili' },
+  { label: '直播', href: '/live' },
 ];
 
 function SectionTitle({ title, href }: { title: string; href?: string }) {

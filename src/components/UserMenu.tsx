@@ -442,14 +442,9 @@ export const UserMenu: React.FC = () => {
         <div className='space-y-6'>
           {/* 默认聚合搜索结果 */}
           <div className='flex items-center justify-between'>
-            <div>
-              <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300'>
-                默认聚合搜索结果
-              </h4>
-              <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>
-                搜索时默认按标题和年份聚合显示结果
-              </p>
-            </div>
+            <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300'>
+              默认聚合搜索结果
+            </h4>
             <label className='flex items-center cursor-pointer'>
               <div className='relative'>
                 <input
@@ -466,14 +461,9 @@ export const UserMenu: React.FC = () => {
 
           {/* 优选和测速 */}
           <div className='flex items-center justify-between'>
-            <div>
-              <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300'>
-                启用优选和测速
-              </h4>
-              <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>
-                如出现播放器劫持问题可关闭
-              </p>
-            </div>
+            <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300'>
+              启用优选和测速
+            </h4>
             <label className='flex items-center cursor-pointer'>
               <div className='relative'>
                 <input
@@ -493,14 +483,9 @@ export const UserMenu: React.FC = () => {
 
           {/* 豆瓣代理开关 */}
           <div className='flex items-center justify-between'>
-            <div>
-              <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300'>
-                启用豆瓣代理
-              </h4>
-              <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>
-                启用后，豆瓣数据将通过代理服务器获取
-              </p>
-            </div>
+            <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300'>
+              启用豆瓣代理
+            </h4>
             <label className='flex items-center cursor-pointer'>
               <div className='relative'>
                 <input
@@ -517,14 +502,9 @@ export const UserMenu: React.FC = () => {
 
           {/* 豆瓣代理地址设置 */}
           <div className='space-y-3'>
-            <div>
-              <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300'>
-                豆瓣代理地址
-              </h4>
-              <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>
-                仅在启用豆瓣代理时生效，留空则使用服务器 API
-              </p>
-            </div>
+            <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300'>
+              豆瓣代理地址
+            </h4>
             <input
               type='text'
               className={`w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors ${
@@ -544,14 +524,9 @@ export const UserMenu: React.FC = () => {
 
           {/* 图片代理开关 */}
           <div className='flex items-center justify-between'>
-            <div>
-              <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300'>
-                启用图片代理
-              </h4>
-              <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>
-                启用后，所有图片加载将通过代理服务器
-              </p>
-            </div>
+            <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300'>
+              启用图片代理
+            </h4>
             <label className='flex items-center cursor-pointer'>
               <div className='relative'>
                 <input
@@ -568,14 +543,9 @@ export const UserMenu: React.FC = () => {
 
           {/* 图片代理地址设置 */}
           <div className='space-y-3'>
-            <div>
-              <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300'>
-                图片代理地址
-              </h4>
-              <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>
-                仅在启用图片代理时生效
-              </p>
-            </div>
+            <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300'>
+              图片代理地址
+            </h4>
             <input
               type='text'
               className={`w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors ${
@@ -589,13 +559,6 @@ export const UserMenu: React.FC = () => {
               disabled={!enableImageProxy}
             />
           </div>
-        </div>
-
-        {/* 底部说明 */}
-        <div className='mt-6 pt-4 border-t border-gray-200 dark:border-gray-700'>
-          <p className='text-xs text-gray-500 dark:text-gray-400 text-center'>
-            这些设置保存在本地浏览器中
-          </p>
         </div>
       </div>
     </>
@@ -682,13 +645,6 @@ export const UserMenu: React.FC = () => {
           >
             {passwordLoading ? '修改中...' : '确认修改'}
           </button>
-        </div>
-
-        {/* 底部说明 */}
-        <div className='mt-4 pt-4 border-t border-gray-200 dark:border-gray-700'>
-          <p className='text-xs text-gray-500 dark:text-gray-400 text-center'>
-            修改密码后需要重新登录
-          </p>
         </div>
       </div>
     </>

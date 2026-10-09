@@ -8,6 +8,7 @@ import {
   Film,
   Flame,
   Home,
+  Radio,
   Search,
   Sparkles,
   Star,
@@ -49,6 +50,7 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
       label: '纪录片',
       href: '/douban?type=tv&sub=tv_documentary',
     },
+    { icon: Radio, label: '直播', href: '/live' },
     { icon: Flame, label: '18+专区', href: '/adult' },
     { icon: Clapperboard, label: 'AI黄果', href: '/huangguo' },
   ]);
@@ -100,6 +102,7 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
     if (href === '/huangguo' && decodedActive.startsWith('/huangguo')) {
       return true;
     }
+    if (href === '/live' && decodedActive.startsWith('/live')) return true;
     if (srcMatch === 'bangumi' || srcMatch === 'bilibili') {
       return decodedItemHref.includes(`src=${srcMatch}`);
     }

@@ -73,7 +73,7 @@ export default function TVCastModal({
   const handleBrowserCast = useCallback(async () => {
     const video = document.querySelector('video');
     if (!video) {
-      setCastStatus('请先播放视频');
+      setCastStatus('请先播放');
       return;
     }
     if (video.remote) {
@@ -111,19 +111,17 @@ export default function TVCastModal({
       } catch (err: unknown) {
         const e = err as Error;
         setIsConnecting(false);
-        if (e.name === 'NotFoundError')
-          setCastStatus('未找到投屏设备，请确保设备在同一网络');
+        if (e.name === 'NotFoundError') setCastStatus('没找到设备');
         else if (e.name === 'NotSupportedError')
           setCastStatus('当前浏览器不支持投屏功能');
-        else if (e.name === 'InvalidStateError')
-          setCastStatus('请先播放视频再进行投屏');
+        else if (e.name === 'InvalidStateError') setCastStatus('请先播放');
         else if (e.name === 'AbortError' || e.message?.includes('dismissed'))
           setCastStatus('已取消设备选择');
         else if (e.name === 'NotAllowedError') setCastStatus('已取消设备选择');
         else setCastStatus('投屏失败: ' + e.message);
       }
     } else {
-      setCastStatus('当前浏览器不支持投屏，请使用扫码或复制链接方式');
+      setCastStatus('不支持投屏');
     }
   }, []);
 
@@ -221,11 +219,7 @@ export default function TVCastModal({
                   </span>
                 </button>
                 <button
-                  onClick={() =>
-                    setCastStatus(
-                      'DLNA 投屏：请在电视上安装乐播投屏或 AirScreen，然后复制视频链接投屏'
-                    )
-                  }
+                  onClick={() => setActiveTab('link')}
                   className='flex flex-col items-center gap-2 p-4 rounded-xl border bg-gray-800/50 border-gray-700 sm:hover:border-purple-500 sm:hover:bg-purple-500/10 active:border-purple-500 active:bg-purple-500/10 text-gray-300 transition-all'
                 >
                   <svg
@@ -239,17 +233,8 @@ export default function TVCastModal({
                 </button>
                 <button
                   onClick={() => {
-                    if (platform.isMac) {
-                      setCastStatus(
-                        'Mac 请使用：菜单栏「控制中心」→「屏幕镜像」→ 选择电视'
-                      );
-                    } else if (platform.isIOS) {
-                      handleBrowserCast();
-                    } else {
-                      setCastStatus(
-                        'AirPlay 仅支持苹果设备（iPhone/iPad/Mac）'
-                      );
-                    }
+                    if (platform.isIOS) handleBrowserCast();
+                    else setActiveTab('link');
                   }}
                   className='flex flex-col items-center gap-2 p-4 rounded-xl border bg-gray-800/50 border-gray-700 sm:hover:border-gray-500 sm:hover:bg-gray-500/10 active:border-gray-500 active:bg-gray-500/10 text-gray-300 transition-all'
                 >
@@ -282,63 +267,10 @@ export default function TVCastModal({
                   <span className='text-sm font-medium'>复制视频链接</span>
                 </button>
               </div>
-              {/* 平台说明 */}
-              <div className='bg-gray-800/50 rounded-xl p-4 text-xs text-gray-400 space-y-1.5'>
-                {platform.isMac ? (
-                  <>
-                    <p className='text-orange-400 font-medium'>
-                      📺 Mac 投屏到电视：
-                    </p>
-                    <p>
-                      • <span className='text-green-400'>Chromecast:</span> 需要
-                      Chrome + Chromecast 设备
-                    </p>
-                    <p>
-                      • <span className='text-green-400'>屏幕镜像:</span>{' '}
-                      菜单栏「控制中心」→「屏幕镜像」
-                    </p>
-                    <p>
-                      • <span className='text-green-400'>智能电视:</span>{' '}
-                      复制链接用电视浏览器打开
-                    </p>
-                  </>
-                ) : platform.isIOS ? (
-                  <>
-                    <p className='text-blue-400 font-medium'>📱 iOS 投屏：</p>
-                    <p>
-                      • <span className='text-green-400'>AirPlay:</span> 点击
-                      Chromecast 按钮可选择 AirPlay 设备
-                    </p>
-                    <p>
-                      • <span className='text-green-400'>其他设备:</span>{' '}
-                      使用扫码或复制链接
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <p className='text-blue-400 font-medium'>📺 投屏说明：</p>
-                    <p>
-                      • <span className='text-green-400'>Chromecast:</span>{' '}
-                      Chrome 浏览器 + Chromecast 设备
-                    </p>
-                    <p>
-                      • <span className='text-green-400'>DLNA:</span>{' '}
-                      需要电视安装投屏 App（乐播投屏）
-                    </p>
-                    <p>
-                      • <span className='text-green-400'>智能电视:</span>{' '}
-                      使用扫码或复制链接
-                    </p>
-                  </>
-                )}
-              </div>
             </div>
           )}
           {activeTab === 'qrcode' && (
             <div className='space-y-4'>
-              <p className='text-sm text-gray-400 text-center'>
-                用电视浏览器扫码观看
-              </p>
               <div className='flex justify-center'>
                 <div className='bg-white p-4 rounded-2xl'>
                   <QRCodeSVG value={pageUrl} size={180} level='M' />
@@ -348,9 +280,6 @@ export default function TVCastModal({
           )}
           {activeTab === 'link' && (
             <div className='space-y-4'>
-              <p className='text-sm text-gray-400 text-center'>
-                复制链接到电视浏览器打开
-              </p>
               <div className='space-y-2'>
                 <label className='text-xs text-gray-500'>页面链接</label>
                 <div className='flex gap-2'>
@@ -393,11 +322,6 @@ export default function TVCastModal({
             {castStatus}
           </div>
         )}
-        <div className='px-5 pb-5'>
-          <p className='text-center text-xs text-gray-500'>
-            确保手机和电视在同一 WiFi 网络
-          </p>
-        </div>
       </div>
     </div>
   );

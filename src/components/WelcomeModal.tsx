@@ -1,6 +1,6 @@
 'use client';
 
-import { Heart, Shield, Sparkles, X } from 'lucide-react';
+import { Heart, Sparkles, X } from 'lucide-react';
 import Image from 'next/image';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -56,15 +56,9 @@ export const WelcomeModal: React.FC = () => {
         </div>
 
         {/* 说明内容 */}
-        <div className='space-y-2 text-xs text-gray-600 dark:text-gray-300 leading-relaxed'>
-          <p className='flex items-start gap-1.5'>
-            <Shield className='w-3.5 h-3.5 text-green-500 shrink-0 mt-0.5' />
-            <span>线路按配置顺序起播。测速只看播放清单，不预下载正片。</span>
-          </p>
-          <p className='text-gray-400 dark:text-gray-500 text-[11px]'>
-            本站资源均来自公开互联网接口，仅供学习与技术交流。
-          </p>
-        </div>
+        <p className='text-[11px] leading-relaxed text-gray-400 dark:text-gray-500'>
+          免责声明：本站资源均来自公开互联网接口，仅供学习与技术交流。本站不存储、不制作。
+        </p>
 
         {/* 底部操作与赞赏按钮 */}
         <div className='mt-3 pt-2.5 border-t border-gray-100 dark:border-gray-800 flex items-center justify-between'>

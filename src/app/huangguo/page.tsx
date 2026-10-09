@@ -134,9 +134,6 @@ function HuangguoClient() {
                 <h1 className='text-xl font-semibold text-gray-900 dark:text-gray-100'>
                   AI黄果
                 </h1>
-                <p className='mt-0.5 text-xs text-gray-500 dark:text-gray-400'>
-                  AI 短剧单独成栏，不进全站搜索
-                </p>
                 <AgeNotice />
               </div>
             </div>

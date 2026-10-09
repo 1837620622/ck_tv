@@ -218,9 +218,6 @@ function AdultPageClient() {
                 <h1 className='text-xl font-semibold text-gray-900 dark:text-gray-100'>
                   18+ 专区
                 </h1>
-                <p className='mt-0.5 text-xs text-gray-500 dark:text-gray-400'>
-                  只在本栏目浏览和搜索，不会出现在全站搜索里
-                </p>
                 <AgeNotice />
               </div>
             </div>

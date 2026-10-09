@@ -93,7 +93,7 @@ function probeLabel(probe: LineProbe | undefined, playing: boolean): string {
   if (probe.state === 'dead') return '源头不通';
   const speed = probe.ms > 0 ? `${probe.ms} ms` : '';
   if (probe.state === 'cors') {
-    return [quality, '跨域', speed].filter(Boolean).join(' · ');
+    return [quality, speed].filter(Boolean).join(' · ') || '可播';
   }
   if (playing) return ['正在播放', quality, speed].filter(Boolean).join(' · ');
   return [quality, speed].filter(Boolean).join(' · ') || '可播';
