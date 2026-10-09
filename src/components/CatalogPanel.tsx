@@ -59,7 +59,7 @@ export default function CatalogPanel({
         const response = await fetch(
           `/api/catalog?engine=${engine}&kind=${encodeURIComponent(
             kind
-          )}&page=${page}`,
+          )}&page=${page}&v=3`,
           { cache: 'no-store', signal: controller.signal }
         );
         const data = await response.json();

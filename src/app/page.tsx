@@ -157,7 +157,9 @@ async function loadCatalogRow(
 ): Promise<DoubanItem[]> {
   try {
     const response = await fetch(
-      `/api/catalog?engine=${engine}&kind=${encodeURIComponent(kind)}&page=1`,
+      `/api/catalog?engine=${engine}&kind=${encodeURIComponent(
+        kind
+      )}&page=1&v=3`,
       { cache: 'no-store' }
     );
     if (!response.ok) return [];

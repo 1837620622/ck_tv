@@ -99,7 +99,7 @@ async function loadBangumi(kind: string, page: number) {
 }
 
 const DOUBAN_KIND: Record<string, { type: string; tag: string }> = {
-  bangumi: { type: 'tv', tag: '动漫' },
+  bangumi: { type: 'tv', tag: '日本动画' },
   guochuang: { type: 'tv', tag: '国产剧' },
   movie: { type: 'movie', tag: '热门' },
   tv: { type: 'tv', tag: '热门' },
@@ -120,9 +120,9 @@ async function loadDoubanFallback(kind: string, page: number) {
   const data = (await fetchJson(
     `https://movie.douban.com/j/search_subjects?type=${
       picked.type
-    }&tag=${encodeURIComponent(
-      picked.tag
-    )}&sort=recommend&page_limit=${PAGE_SIZE}&page_start=${start}`,
+    }&tag=${encodeURIComponent(picked.tag)}&sort=${
+      picked.tag === '日本动画' ? 'rank' : 'recommend'
+    }&page_limit=${PAGE_SIZE}&page_start=${start}`,
     {
       Accept: 'application/json',
       Referer: 'https://movie.douban.com/',
@@ -189,7 +189,7 @@ export async function GET(request: Request) {
   const page = asPage(searchParams.get('page'));
   const cacheUrl = `https://cktv-cache.local/catalog?engine=${engine}&kind=${encodeURIComponent(
     kind
-  )}&page=${page}&v=1`;
+  )}&page=${page}&v=3`;
   const hit = await readJsonCache(cacheUrl);
   if (hit) {
     return new NextResponse(await hit.text(), {
@@ -209,15 +209,34 @@ export async function GET(request: Request) {
           : await loadBangumi(kind, page);
     } catch (error) {
       if (engine !== 'bilibili') throw error;
-      payload = await loadDoubanFallback(kind, page);
+      // 哔哩榜单从 Cloudflare 出口常返回 412，先记成空列表再走回退
+      payload = { list: [] as DoubanItem[], page, pagecount: 1 };
     }
     if (engine === 'bilibili' && payload.list.length === 0) {
-      payload = await loadDoubanFallback(kind, page);
+      try {
+        payload = await loadDoubanFallback(kind, page);
+      } catch {
+        payload = { list: [] as DoubanItem[], page, pagecount: 1 };
+      }
+    }
+    // 豆瓣标签在机房出口也可能是空的；番剧再退到 Bangumi，线上已确认能出片
+    if (
+      engine === 'bilibili' &&
+      payload.list.length === 0 &&
+      (kind === 'bangumi' || kind === 'anime')
+    ) {
+      payload = await loadBangumi('anime', page);
     }
     const body = JSON.stringify(payload);
-    if (payload.list.length > 0) {
-      writeJsonCache(ctx, cacheUrl, body, EDGE_SECONDS, BROWSER_SECONDS);
+    if (payload.list.length === 0) {
+      return new NextResponse(body, {
+        headers: {
+          'content-type': 'application/json; charset=utf-8',
+          'Cache-Control': 'no-store',
+        },
+      });
     }
+    writeJsonCache(ctx, cacheUrl, body, EDGE_SECONDS, BROWSER_SECONDS);
     return new NextResponse(body, {
       headers: {
         ...jsonCacheHeaders(EDGE_SECONDS, BROWSER_SECONDS),
