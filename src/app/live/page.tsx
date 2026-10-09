@@ -2,7 +2,7 @@
 
 import Hls from 'hls.js';
 import { Radio } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 
 import { LIVE_CHANNELS, LIVE_GROUPS, LiveChannel, LiveGroup } from '@/lib/live';
 import { qualityText } from '@/lib/playlist';
@@ -13,7 +13,7 @@ import PageLayout from '@/components/PageLayout';
 
 type Phase = 'idle' | 'loading' | 'ready' | 'error';
 
-export default function LivePage() {
+function LivePageClient() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
   const tokenRef = useRef(0);
@@ -312,5 +312,13 @@ export default function LivePage() {
         )}
       </div>
     </PageLayout>
+  );
+}
+
+export default function LivePage() {
+  return (
+    <Suspense>
+      <LivePageClient />
+    </Suspense>
   );
 }
