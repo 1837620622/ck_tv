@@ -9,6 +9,7 @@ import React, {
   useState,
 } from 'react';
 
+import { repairTitle } from '@/lib/match-title';
 import { playlistHeight, qualityText } from '@/lib/playlist';
 import { SearchResult } from '@/lib/types';
 import { processImageUrl } from '@/lib/utils';
@@ -22,14 +23,6 @@ type LineProbe = {
   height: number;
   state: 'ok' | 'cors' | 'dead';
 };
-
-function nativeHls(): boolean {
-  return (
-    document
-      .createElement('video')
-      .canPlayType('application/vnd.apple.mpegurl') !== ''
-  );
-}
 
 // 只请求 m3u8 清单。能读到正文就解析清晰度；跨域时改用 no-cors 记往返，再让边缘确认是不是清单。
 async function probeLine(url: string, parent: AbortSignal): Promise<LineProbe> {
@@ -65,7 +58,7 @@ async function probeLine(url: string, parent: AbortSignal): Promise<LineProbe> {
       try {
         const checked = await fetch(
           `/api/line-check?u=${encodeURIComponent(url)}`,
-          { signal: controller.signal, cache: 'no-store' }
+          { signal: controller.signal }
         );
         if (checked.ok) {
           const data = (await checked.json()) as {
@@ -151,7 +144,10 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
   // 是否倒序显示
   const [descending, setDescending] = useState<boolean>(false);
   const [latencyMs, setLatencyMs] = useState<Record<string, LineProbe>>({});
-  const canNativeHls = useMemo(() => nativeHls(), []);
+  const probedRef = useRef<Set<string>>(new Set());
+  const sourceSignature = availableSources
+    .map((source) => sourceKey(source))
+    .join('|');
 
   useEffect(() => {
     if (availableSources.length === 0) return;
@@ -159,13 +155,17 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
     const timer = window.setTimeout(() => {
       const jobs: { key: string; url: string }[] = [];
       const missed: Record<string, LineProbe> = {};
+      const queued = new Set<string>();
       availableSources.forEach((source) => {
-        const url = source.episodes?.find((item) => item.includes('.m3u8'));
         const key = sourceKey(source);
+        if (probedRef.current.has(key) || queued.has(key)) return;
+        queued.add(key);
+        const url = source.episodes?.find((item) => item.includes('.m3u8'));
         // 分享页没有清单，标成源头不通，避免一直停在测速中。
         if (url) jobs.push({ key, url });
         else missed[key] = { ms: 0, height: 0, state: 'dead' };
       });
+      Object.keys(missed).forEach((key) => probedRef.current.add(key));
       if (Object.keys(missed).length > 0) {
         setLatencyMs((current) => ({ ...current, ...missed }));
       }
@@ -176,6 +176,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
           cursor += 1;
           const probe = await probeLine(job.url, parent.signal);
           if (parent.signal.aborted) continue;
+          probedRef.current.add(job.key);
           setLatencyMs((current) => {
             const previous = current[job.key];
             if (
@@ -190,13 +191,16 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
           });
         }
       };
-      void Promise.all([worker(), worker(), worker(), worker()]);
+      // 两条一起测。四条同时拉清单会把换线时的带宽占满。
+      void Promise.all([worker(), worker()]);
     }, 400);
     return () => {
       window.clearTimeout(timer);
       parent.abort();
     };
-  }, [availableSources]);
+    // sourceSignature 变了才补测新线路，同一条不重复下清单。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sourceSignature]);
 
   // 根据 descending 状态计算实际显示的分页索引
   const displayPage = useMemo(() => {
@@ -450,18 +454,9 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
             availableSources.length > 0 && (
               <div className='flex-1 overflow-y-auto space-y-1.5 pb-20'>
                 {[...availableSources]
-                  .sort((a, b) => {
-                    const bucket = (item: SearchResult) => {
-                      const probe = latencyMs[sourceKey(item)];
-                      if (!probe || probe.state === 'ok') return 0;
-                      if (probe.state === 'cors' && !canNativeHls) return 1;
-                      if (probe.state === 'dead') return 2;
-                      return 0;
-                    };
-                    const gap = bucket(a) - bucket(b);
-                    if (gap !== 0) return gap;
-                    return (a.source_rank ?? 999) - (b.source_rank ?? 999);
-                  })
+                  .sort(
+                    (a, b) => (a.source_rank ?? 999) - (b.source_rank ?? 999)
+                  )
                   .map((source, index) => {
                     const isCurrentSource =
                       source.source?.toString() === currentSource?.toString() &&
@@ -502,7 +497,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                           </div>
                           <div className='mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400'>
                             {episodeCount > 1 ? `${episodeCount} 集 · ` : ''}
-                            {source.title}
+                            {repairTitle(source.title)}
                           </div>
                         </div>
                         {source.poster && (

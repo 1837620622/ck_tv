@@ -1,5 +1,6 @@
 import { API_CONFIG, ApiSite, getConfig } from '@/lib/config';
 import { edgeFetchInit } from '@/lib/edge-cache';
+import { repairTitle } from '@/lib/match-title';
 import { SearchResult } from '@/lib/types';
 import { cleanHtmlTags } from '@/lib/utils';
 import { isAdultContent } from '@/lib/yellow';
@@ -68,7 +69,7 @@ export async function searchFromApi(
 
       return {
         id: item.vod_id.toString(),
-        title: item.vod_name.trim().replace(/\s+/g, ' '),
+        title: repairTitle(item.vod_name),
         poster: item.vod_pic,
         episodes,
         source: apiSite.key,
@@ -136,7 +137,7 @@ export async function searchFromApi(
 
               return {
                 id: item.vod_id.toString(),
-                title: item.vod_name.trim().replace(/\s+/g, ' '),
+                title: repairTitle(item.vod_name),
                 poster: item.vod_pic,
                 episodes,
                 source: apiSite.key,
@@ -263,7 +264,7 @@ export async function getDetailFromApi(
 
   return {
     id: id.toString(),
-    title: videoDetail.vod_name,
+    title: repairTitle(videoDetail.vod_name),
     poster: videoDetail.vod_pic,
     episodes,
     source: apiSite.key,
@@ -320,7 +321,7 @@ async function handleSpecialSourceDetail(
 
   // 提取标题
   const titleMatch = html.match(/<h1[^>]*>([^<]+)<\/h1>/);
-  const titleText = titleMatch ? titleMatch[1].trim() : '';
+  const titleText = titleMatch ? repairTitle(titleMatch[1]) : '';
 
   // 提取描述
   const descMatch = html.match(

@@ -10,6 +10,7 @@ import {
   readJsonCache,
   writeJsonCache,
 } from '@/lib/edge-cache';
+import { repairTitle } from '@/lib/match-title';
 import { settleWithin } from '@/lib/settle';
 import { SearchResult } from '@/lib/types';
 import { cleanHtmlTags } from '@/lib/utils';
@@ -251,7 +252,7 @@ export async function GET(request: Request) {
       .map((item: any) => {
         return {
           id: item.vod_id?.toString() || '',
-          title: (item.vod_name || '').trim(),
+          title: repairTitle(item.vod_name || ''),
           poster: cleanPoster(item.vod_pic),
           episodes: item.vod_play_url ? extractPlayUrls(item.vod_play_url) : [],
           source: currentSite.key,

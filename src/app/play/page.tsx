@@ -21,7 +21,7 @@ import {
   saveSkipConfig,
   subscribeToDataUpdates,
 } from '@/lib/db.client';
-import { pickPlayable } from '@/lib/match-title';
+import { pickPlayable, repairTitle } from '@/lib/match-title';
 import { releaseMedia, silenceOtherMedia } from '@/lib/release-media';
 import { SearchResult } from '@/lib/types';
 import { processImageUrl } from '@/lib/utils';
@@ -134,14 +134,6 @@ function PlayPageClient() {
   const [searchTitle] = useState(searchParams.get('stitle') || '');
   const [searchType] = useState(searchParams.get('stype') || '');
 
-  // 是否需要优选
-  const [needPrefer, setNeedPrefer] = useState(
-    searchParams.get('prefer') === 'true'
-  );
-  const needPreferRef = useRef(needPrefer);
-  useEffect(() => {
-    needPreferRef.current = needPrefer;
-  }, [needPrefer]);
   // 集数相关
   const [currentEpisodeIndex, setCurrentEpisodeIndex] = useState(0);
 
@@ -213,6 +205,8 @@ function PlayPageClient() {
   const availableSourcesRef = useRef<SearchResult[]>([]);
   const failedSourceKeysRef = useRef<Set<string>>(new Set());
   const sourceSwitchingRef = useRef(false);
+  // 地址里已经带了源，或用户点过线路，就停在这一条，不再自动跳到排序第一的源。
+  const userChoseRef = useRef(false);
   const failOverRef = useRef<() => void>(() => undefined);
   const handleSourceChangeRef = useRef<
     (source: string, id: string, title: string) => void
@@ -493,7 +487,7 @@ function PlayPageClient() {
           throw new Error('搜索失败');
         }
         const data = await response.json();
-        const wantedTitle = searchTitle || videoTitleRef.current;
+        const wantedTitle = query.trim() || videoTitleRef.current;
         const matchList = (list: SearchResult[]) =>
           pickPlayable(
             list || [],
@@ -576,19 +570,21 @@ function PlayPageClient() {
       setLoadingMessage('正在加载');
 
       // 已经点了具体片源时，先拉这一条详情就开播，其它线路在后台补。
-      // 详情没有地址时改走片名搜索，不再直接报没找到。
+      // prefer 只补同一部的其它线路，不把点中的源换成排序靠前的另一条。
       let sourcesInfo: SearchResult[] = [];
-      if (currentSource && currentId && !needPreferRef.current) {
+      if (currentSource && currentId) {
+        userChoseRef.current = true;
         const quick = await fetchSourceDetail(currentSource, currentId);
         const quickDetail = quick[0];
         if (quickDetail?.episodes?.length) {
           sourcesInfo = [quickDetail];
-          void fetchSourcesData(searchTitle || videoTitle, true).then(
+          void fetchSourcesData(videoTitle || searchTitle, true).then(
             (results) => {
               if (results.length === 0) return;
               const hasCurrent = results.some(
                 (source) =>
-                  source.source === currentSource && source.id === currentId
+                  String(source.source) === String(currentSource) &&
+                  String(source.id) === String(currentId)
               );
               setAvailableSources(
                 hasCurrent ? results : [quickDetail, ...results]
@@ -598,7 +594,7 @@ function PlayPageClient() {
         }
       }
       if (sourcesInfo.length === 0) {
-        sourcesInfo = await fetchSourcesData(searchTitle || videoTitle);
+        sourcesInfo = await fetchSourcesData(videoTitle || searchTitle);
       }
       if (sourcesInfo.length === 0) {
         setError('片库里暂时没有这一部');
@@ -608,24 +604,23 @@ function PlayPageClient() {
 
       let detailData: SearchResult = sourcesInfo[0];
       const pinned =
-        currentSource && currentId && !needPreferRef.current
+        currentSource && currentId
           ? sourcesInfo.find(
               (source) =>
-                source.source === currentSource &&
-                source.id === currentId &&
+                String(source.source) === String(currentSource) &&
+                String(source.id) === String(currentId) &&
                 source.episodes?.length
             )
           : undefined;
-      // 指定源能播就用它，否则按 1、2、3、4 的线路顺序起播。
+      // 点中的源能播就用它。没有指定源时才按线路顺序起播。
       detailData = pinned || pickOrderedSource(sourcesInfo);
 
       console.log(detailData.source, detailData.id);
 
-      setNeedPrefer(false);
       setCurrentSource(detailData.source);
       setCurrentId(detailData.id);
       setVideoYear(detailData.year);
-      setVideoTitle(detailData.title || videoTitleRef.current);
+      setVideoTitle(repairTitle(detailData.title || videoTitleRef.current));
       setVideoCover(detailData.poster);
       setDetail(detailData);
       if (currentEpisodeIndex >= detailData.episodes.length) {
@@ -704,6 +699,7 @@ function PlayPageClient() {
     newId: string,
     newTitle: string
   ) => {
+    userChoseRef.current = true;
     try {
       // 显示换源加载状态
       setVideoLoadingStage('sourceChanging');
@@ -740,9 +736,12 @@ function PlayPageClient() {
       }
 
       const newDetail = availableSources.find(
-        (source) => source.source === newSource && source.id === newId
+        (source) =>
+          String(source.source) === String(newSource) &&
+          String(source.id) === String(newId)
       );
       if (!newDetail) {
+        setIsVideoLoading(false);
         setError('未找到匹配结果');
         return;
       }
@@ -772,7 +771,7 @@ function PlayPageClient() {
       newUrl.searchParams.set('year', newDetail.year);
       window.history.replaceState({}, '', newUrl.toString());
 
-      setVideoTitle(newDetail.title || newTitle);
+      setVideoTitle(repairTitle(newDetail.title || newTitle));
       setVideoYear(newDetail.year);
       setVideoCover(newDetail.poster);
       setCurrentSource(newSource);
@@ -787,6 +786,7 @@ function PlayPageClient() {
   };
   handleSourceChangeRef.current = handleSourceChange;
   failOverRef.current = () => {
+    if (userChoseRef.current) return;
     if (sourceSwitchingRef.current) return;
     if ((artPlayerRef.current?.currentTime || 0) > 1) return;
     const currentKey = `${currentSourceRef.current}:${currentIdRef.current}`;
@@ -1122,19 +1122,20 @@ function PlayPageClient() {
       typeof window !== 'undefined' &&
       typeof (window as any).webkitConvertPointFromNodeToPage === 'function';
 
-    // 非WebKit浏览器且播放器已存在，使用switch方法切换
+    // 非 WebKit 走播放器的 switch 赋值，它内部会调用 switchUrl。先拆掉旧的 hls，避免旧清单的报错把线路打回默认源。
     if (!isWebkit && artPlayerRef.current) {
-      artPlayerRef.current.switch = videoUrl;
-      artPlayerRef.current.title = `${videoTitle} - 第${
-        currentEpisodeIndex + 1
-      }集`;
-      artPlayerRef.current.poster = videoCover;
-      if (artPlayerRef.current?.video) {
-        ensureVideoSource(
-          artPlayerRef.current.video as HTMLVideoElement,
-          videoUrl
-        );
+      const art = artPlayerRef.current;
+      const video = art.video as HTMLVideoElement & {
+        hls?: { destroy: () => void };
+      };
+      if (video?.hls && art.url !== videoUrl) {
+        video.hls.destroy();
+        video.hls = undefined;
       }
+      art.switch = videoUrl;
+      art.title = `${videoTitle} - 第${currentEpisodeIndex + 1}集`;
+      art.poster = videoCover;
+      if (video) ensureVideoSource(video, videoUrl);
       return;
     }
 
@@ -1222,11 +1223,12 @@ function PlayPageClient() {
               abrBandWidthUpFactor: 0.7,
 
               /* 先攒够可播缓冲，再限制上限，避免手机硬解 4K 把线路打满 */
-              maxBufferLength: 30,
-              maxMaxBufferLength: 60,
-              backBufferLength: 20,
-              maxBufferSize: 60 * 1000 * 1000,
-              startFragPrefetch: true,
+              // 换线会丢掉还没看的缓冲，少囤一些，也少预拉下一档。
+              maxBufferLength: 18,
+              maxMaxBufferLength: 36,
+              backBufferLength: 8,
+              maxBufferSize: 24 * 1000 * 1000,
+              startFragPrefetch: false,
 
               maxBufferHole: 0.5,
               highBufferWatchdogPeriod: 2,

@@ -12,6 +12,13 @@ import {
   getSearchHistory,
   subscribeToDataUpdates,
 } from '@/lib/db.client';
+import {
+  compactTitle,
+  repairTitle,
+  titleParts,
+  titleRank,
+  workKey,
+} from '@/lib/match-title';
 import { SearchResult } from '@/lib/types';
 import { isAdultContent } from '@/lib/yellow';
 
@@ -50,25 +57,75 @@ function SearchPageClient() {
   const aggregatedResults = useMemo(() => {
     const map = new Map<string, SearchResult[]>();
     searchResults.forEach((item) => {
-      // 使用 title + year + type 作为键，year 必然存在，但依然兜底 'unknown'
-      const key = `${item.title.replaceAll(' ', '')}-${
-        item.year || 'unknown'
-      }-${(item.episode_count ?? item.episodes.length) === 1 ? 'movie' : 'tv'}`;
+      const episodes = item.episode_count ?? item.episodes?.length ?? 0;
+      const key = workKey(item.title, item.year, episodes);
       const arr = map.get(key) || [];
       arr.push(item);
       map.set(key, arr);
     });
-    return Array.from(map.entries()).sort((a, b) => {
+    // 同一部只有一个明确年份时，把缺年份的并进去，避免预告拆成多张卡。
+    const grouped = new Map<string, SearchResult[]>();
+    const byIdentity = new Map<string, string[]>();
+    map.forEach((items, key) => {
+      const identity = key.slice(0, key.lastIndexOf('|'));
+      const list = byIdentity.get(identity) || [];
+      list.push(key);
+      byIdentity.set(identity, list);
+    });
+    byIdentity.forEach((keys) => {
+      const dated = keys.filter((key) => key.slice(key.lastIndexOf('|') + 1));
+      const undated = keys.filter(
+        (key) => !key.slice(key.lastIndexOf('|') + 1)
+      );
+      if (dated.length === 1 && undated.length > 0) {
+        const merged = dated
+          .concat(undated)
+          .flatMap((key) => map.get(key) || []);
+        grouped.set(dated[0], merged);
+        return;
+      }
+      keys.forEach((key) => {
+        const items = map.get(key);
+        if (items) grouped.set(key, items);
+      });
+    });
+    // 同一年份、修好后片名相同的电影和剧集写法并成一张卡。
+    const byLabel = new Map<string, SearchResult[]>();
+    grouped.forEach((items) => {
+      const title = repairTitle(items[0]?.title || '');
+      const year =
+        items.find((item) => /^\d{4}$/.test(item.year || ''))?.year || '';
+      const label = `${compactTitle(title)}|${year}`;
+      const bucket = byLabel.get(label) || [];
+      bucket.push(...items);
+      byLabel.set(label, bucket);
+    });
+    byLabel.forEach((items, key) => {
+      items.sort(
+        (a, b) =>
+          titleRank(a.title, searchQuery) - titleRank(b.title, searchQuery)
+      );
+      byLabel.set(key, items);
+    });
+    return Array.from(byLabel.entries()).sort((a, b) => {
       // 优先排序：标题与搜索词完全一致的排在前面
-      const aExactMatch = a[1][0].title
-        .replaceAll(' ', '')
-        .includes(searchQuery.trim().replaceAll(' ', ''));
-      const bExactMatch = b[1][0].title
-        .replaceAll(' ', '')
-        .includes(searchQuery.trim().replaceAll(' ', ''));
+      const wanted = searchQuery.trim();
+      const rankSide = (title: string) => {
+        const part = titleParts(title);
+        if (
+          part.base &&
+          part.base === titleParts(wanted).base &&
+          !part.trailer
+        ) {
+          return 0;
+        }
+        if (part.base && part.base === titleParts(wanted).base) return 1;
+        return 2;
+      };
+      const aExactMatch = rankSide(a[1][0].title);
+      const bExactMatch = rankSide(b[1][0].title);
 
-      if (aExactMatch && !bExactMatch) return -1;
-      if (!aExactMatch && bExactMatch) return 1;
+      if (aExactMatch !== bExactMatch) return aExactMatch - bExactMatch;
 
       // 年份排序
       if (a[1][0].year === b[1][0].year) {
@@ -90,7 +147,7 @@ function SearchPageClient() {
         }
       }
     });
-  }, [searchResults]);
+  }, [searchResults, searchQuery]);
 
   useEffect(() => {
     // 无搜索参数时聚焦搜索框
@@ -191,9 +248,12 @@ function SearchPageClient() {
       const response = await fetch(searchUrl, { cache: 'no-store' });
       const data = await response.json();
       if (seq !== searchSeq.current) return;
-      const results = (data.results || []).filter(
-        (result: SearchResult) => !isAdultContent(result)
-      );
+      const results = (data.results || [])
+        .filter((result: SearchResult) => !isAdultContent(result))
+        .map((result: SearchResult) => ({
+          ...result,
+          title: repairTitle(result.title),
+        }));
       setSearchResults(sortResults(results, query));
       setShowResults(true);
       // 首包只有排序靠前的片源。等边缘把其余源写入缓存后再拉一次完整结果。
@@ -204,9 +264,12 @@ function SearchPageClient() {
             const again = await fetch(searchUrl, { cache: 'no-store' });
             const againData = await again.json();
             if (seq !== searchSeq.current) return;
-            const more = (againData.results || []).filter(
-              (result: SearchResult) => !isAdultContent(result)
-            );
+            const more = (againData.results || [])
+              .filter((result: SearchResult) => !isAdultContent(result))
+              .map((result: SearchResult) => ({
+                ...result,
+                title: repairTitle(result.title),
+              }));
             if (more.length > results.length) {
               setSearchResults(sortResults(more, query));
             }
@@ -217,9 +280,12 @@ function SearchPageClient() {
                   const third = await fetch(searchUrl, { cache: 'no-store' });
                   const thirdData = await third.json();
                   if (seq !== searchSeq.current) return;
-                  const full = (thirdData.results || []).filter(
-                    (result: SearchResult) => !isAdultContent(result)
-                  );
+                  const full = (thirdData.results || [])
+                    .filter((result: SearchResult) => !isAdultContent(result))
+                    .map((result: SearchResult) => ({
+                      ...result,
+                      title: repairTitle(result.title),
+                    }));
                   if (full.length > more.length) {
                     setSearchResults(sortResults(full, query));
                   }

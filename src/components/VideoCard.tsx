@@ -11,6 +11,7 @@ import {
   saveFavorite,
   subscribeToDataUpdates,
 } from '@/lib/db.client';
+import { repairTitle } from '@/lib/match-title';
 import { SearchResult } from '@/lib/types';
 import { processImageUrl } from '@/lib/utils';
 
@@ -95,7 +96,7 @@ export default function VideoCard({
     };
   }, [isAggregate, items]);
 
-  const actualTitle = aggregateData?.first.title ?? title;
+  const actualTitle = repairTitle(aggregateData?.first.title ?? title);
   const actualPoster = aggregateData?.first.poster ?? poster;
   const actualSource = aggregateData?.first.source ?? source;
   const actualId = aggregateData?.first.id ?? id;
