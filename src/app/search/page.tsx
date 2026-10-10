@@ -242,7 +242,7 @@ function SearchPageClient() {
     const seq = ++searchSeq.current;
     const searchUrl = `/api/search?q=${encodeURIComponent(
       query.trim()
-    )}&slim=1&v=10`;
+    )}&slim=1&v=11`;
     try {
       setIsLoading(true);
       const response = await fetch(searchUrl, { cache: 'no-store' });

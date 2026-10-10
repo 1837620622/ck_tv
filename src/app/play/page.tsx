@@ -481,7 +481,7 @@ function PlayPageClient() {
       try {
         const searchUrl = `/api/search?q=${encodeURIComponent(
           query.trim()
-        )}&v=10`;
+        )}&v=11`;
         const response = await fetch(searchUrl, { cache: 'no-store' });
         if (!response.ok) {
           throw new Error('搜索失败');
