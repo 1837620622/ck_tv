@@ -154,8 +154,9 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
     .map((source) => sourceKey(source))
     .join('|');
 
+  // 只在打开换源标签时才测线路。播放中测清单会和正片抢带宽，直接导致缓冲。
   useEffect(() => {
-    if (availableSources.length === 0) return;
+    if (activeTab !== 'sources' || availableSources.length === 0) return;
     const parent = new AbortController();
     const timer = window.setTimeout(() => {
       const jobs: { key: string; url: string }[] = [];
@@ -205,7 +206,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
     };
     // sourceSignature 变了才补测新线路，同一条不重复下清单。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sourceSignature]);
+  }, [sourceSignature, activeTab]);
 
   // 根据 descending 状态计算实际显示的分页索引
   const displayPage = useMemo(() => {

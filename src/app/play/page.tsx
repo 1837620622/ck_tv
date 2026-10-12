@@ -21,6 +21,7 @@ import {
   saveSkipConfig,
   subscribeToDataUpdates,
 } from '@/lib/db.client';
+import { filterAdBreaks } from '@/lib/m3u8-ads';
 import { pickPlayable, repairTitle } from '@/lib/match-title';
 import { releaseMedia, silenceOtherMedia } from '@/lib/release-media';
 import { SearchResult } from '@/lib/types';
@@ -316,45 +317,6 @@ function PlayPageClient() {
     }
   };
 
-  // 去广告相关函数
-  function filterAdsFromM3U8(m3u8Content: string): string {
-    if (!m3u8Content) return '';
-
-    // 只去掉两段不连续标记中间的短插播。单独的不连续标记要留给正片换音轨，删掉会卡。
-    const lines = m3u8Content.split('\n');
-    const filteredLines = [];
-    const isBreak = (line: string) => line.trim() === '#EXT-X-DISCONTINUITY';
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      if (!isBreak(line)) {
-        filteredLines.push(line);
-        continue;
-      }
-      // 序号标签也包含这串字，必须整行相等，否则会把正片删掉。
-      let cursor = i + 1;
-      let duration = 0;
-      let sawInfo = false;
-      while (cursor < lines.length && !isBreak(lines[cursor])) {
-        const row = lines[cursor].trim();
-        if (row.startsWith('#EXTINF:')) {
-          const value = Number((row.match(/#EXTINF:([\d.]+)/) || [])[1]);
-          if (Number.isFinite(value)) duration += value;
-          sawInfo = true;
-        }
-        cursor += 1;
-      }
-      const closed = cursor < lines.length && isBreak(lines[cursor]);
-      if (sawInfo && closed && duration > 0 && duration <= 15) {
-        i = cursor;
-        continue;
-      }
-      filteredLines.push(line);
-    }
-
-    return filteredLines.join('\n');
-  }
-
   // 跳过片头片尾配置相关函数
   const handleSkipConfigChange = async (newConfig: {
     enable: boolean;
@@ -475,7 +437,13 @@ function PlayPageClient() {
             // 如果是m3u8文件，处理内容以移除广告分段
             if (response.data && typeof response.data === 'string') {
               // 过滤掉广告段 - 实现更精确的广告过滤逻辑
-              response.data = filterAdsFromM3U8(response.data);
+              const filtered = filterAdBreaks(response.data);
+              response.data = filtered.text;
+              // 过滤生效时给出提示，让用户看得见跳过了什么
+              if (filtered.removedSegments > 0 && artPlayerRef.current) {
+                const seconds = Math.round(filtered.removedSeconds);
+                artPlayerRef.current.notice.show = `已跳过插播约 ${seconds} 秒`;
+              }
             }
             return onSuccess(response, stats, context, null);
           };
@@ -1275,7 +1243,8 @@ function PlayPageClient() {
               maxMaxBufferLength: 60,
               backBufferLength: 8,
               maxBufferSize: 24 * 1000 * 1000,
-              startFragPrefetch: false,
+              // 首片与 MSE 初始化并行拉取，起播少等一个往返
+              startFragPrefetch: true,
 
               maxBufferHole: 0.5,
               highBufferWatchdogPeriod: 2,
