@@ -377,7 +377,8 @@ export default function VideoCard({
 
         {/* 操作按钮 */}
         {(config.showHeart || config.showCheckCircle) && (
-          <div className='absolute bottom-3 right-3 flex gap-3 opacity-0 translate-y-2 transition-all duration-300 ease-in-out sm:group-hover:opacity-100 sm:group-hover:translate-y-0'>
+          // 没有悬停能力的设备（手机、平板）上始终显示，否则收藏和删除按钮永远看不到
+          <div className='absolute bottom-3 right-3 flex gap-3 opacity-0 translate-y-2 transition-all duration-300 ease-in-out sm:group-hover:opacity-100 sm:group-hover:translate-y-0 [@media(hover:none)]:translate-y-0 [@media(hover:none)]:opacity-100'>
             {config.showCheckCircle && (
               <CheckCircle
                 onClick={handleDeleteRecord}

@@ -2,23 +2,15 @@
 
 'use client';
 
-import { KeyRound, LogOut, Settings, User, X } from 'lucide-react';
+import { LogOut, Settings, User, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { getAuthInfoFromBrowserCookie } from '@/lib/auth';
 import { checkForUpdates, CURRENT_VERSION, UpdateStatus } from '@/lib/version';
-
-interface AuthInfo {
-  username?: string;
-  role?: 'owner' | 'admin' | 'user';
-}
 
 export const UserMenu: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
-  const [authInfo, setAuthInfo] = useState<AuthInfo | null>(null);
   const [storageType, setStorageType] = useState<string>('localstorage');
   const [mounted, setMounted] = useState(false);
 
@@ -29,13 +21,6 @@ export const UserMenu: React.FC = () => {
   const [enableOptimization, setEnableOptimization] = useState(true);
   const [enableImageProxy, setEnableImageProxy] = useState(false);
   const [enableDoubanProxy, setEnableDoubanProxy] = useState(false);
-
-  // 修改密码相关状态
-  const [oldPassword, setOldPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [passwordLoading, setPasswordLoading] = useState(false);
-  const [passwordError, setPasswordError] = useState('');
 
   // 版本检查相关状态
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
@@ -52,9 +37,6 @@ export const UserMenu: React.FC = () => {
   // 获取认证信息和存储类型
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const auth = getAuthInfoFromBrowserCookie();
-      setAuthInfo(auth);
-
       const type =
         (window as any).RUNTIME_CONFIG?.STORAGE_TYPE || 'localstorage';
       setStorageType(type);
@@ -147,74 +129,6 @@ export const UserMenu: React.FC = () => {
     window.location.href = '/';
   };
 
-  const handleChangePassword = () => {
-    setIsOpen(false);
-    setIsChangePasswordOpen(true);
-    setOldPassword('');
-    setNewPassword('');
-    setConfirmPassword('');
-    setPasswordError('');
-  };
-
-  const handleCloseChangePassword = () => {
-    setIsChangePasswordOpen(false);
-    setOldPassword('');
-    setNewPassword('');
-    setConfirmPassword('');
-    setOldPassword('');
-    setPasswordError('');
-  };
-
-  const handleSubmitChangePassword = async () => {
-    setPasswordError('');
-
-    if (!oldPassword) {
-      setPasswordError('请输入当前密码');
-      return;
-    }
-
-    // 验证密码
-    if (!newPassword) {
-      setPasswordError('新密码不得为空');
-      return;
-    }
-
-    if (newPassword !== confirmPassword) {
-      setPasswordError('两次输入的密码不一致');
-      return;
-    }
-
-    setPasswordLoading(true);
-
-    try {
-      const response = await fetch('/api/change-password', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          oldPassword,
-          newPassword,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        setPasswordError(data.error || '修改密码失败');
-        return;
-      }
-
-      // 修改成功，关闭弹窗并登出
-      setIsChangePasswordOpen(false);
-      await handleLogout();
-    } catch (error) {
-      setPasswordError('网络错误，请稍后重试');
-    } finally {
-      setPasswordLoading(false);
-    }
-  };
-
   const handleSettings = () => {
     setIsOpen(false);
     setIsSettingsOpen(true);
@@ -295,24 +209,6 @@ export const UserMenu: React.FC = () => {
     }
   };
 
-  // 检查是否显示修改密码按钮
-  const showChangePassword =
-    authInfo?.role !== 'owner' && storageType !== 'localstorage';
-
-  // 角色中文映射
-  const getRoleText = (role?: string) => {
-    switch (role) {
-      case 'owner':
-        return '站长';
-      case 'admin':
-        return '管理员';
-      case 'user':
-        return '用户';
-      default:
-        return '';
-    }
-  };
-
   // 菜单面板内容
   const menuPanel = (
     <>
@@ -324,25 +220,15 @@ export const UserMenu: React.FC = () => {
 
       {/* 菜单面板 */}
       <div className='fixed top-14 right-4 w-56 bg-white dark:bg-gray-900 rounded-lg shadow-xl z-[1001] border border-gray-200/50 dark:border-gray-700/50 overflow-hidden select-none'>
-        {/* 用户信息区域 */}
+        {/* 站点信息区域 */}
         <div className='px-3 py-2.5 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-gray-50 to-gray-100/50 dark:from-gray-800 dark:to-gray-800/50'>
-          <div className='space-y-1'>
-            <div className='flex items-center justify-between'>
-              <span className='text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
-                当前用户
-              </span>
-              <span className='inline-flex items-center bg-green-100 px-1.5 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900/30 dark:text-green-300'>
-                {getRoleText(authInfo?.role || 'user')}
-              </span>
-            </div>
-            <div className='flex items-center justify-between'>
-              <div className='font-semibold text-gray-900 dark:text-gray-100 text-sm truncate'>
-                {authInfo?.username || 'default'}
-              </div>
-              <div className='text-[10px] text-gray-400 dark:text-gray-500'>
-                数据存储：
-                {storageType === 'localstorage' ? '本地' : storageType}
-              </div>
+          <div className='flex items-center justify-between'>
+            <span className='text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+              站点
+            </span>
+            <div className='text-[10px] text-gray-400 dark:text-gray-500'>
+              数据存储：
+              {storageType === 'localstorage' ? '本地' : storageType}
             </div>
           </div>
         </div>
@@ -357,17 +243,6 @@ export const UserMenu: React.FC = () => {
             <Settings className='w-4 h-4 text-gray-500 dark:text-gray-400' />
             <span className='font-medium'>设置</span>
           </button>
-
-          {/* 修改密码按钮 */}
-          {showChangePassword && (
-            <button
-              onClick={handleChangePassword}
-              className='w-full px-3 py-2 text-left flex items-center gap-2.5 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-sm'
-            >
-              <KeyRound className='w-4 h-4 text-gray-500 dark:text-gray-400' />
-              <span className='font-medium'>修改密码</span>
-            </button>
-          )}
 
           {/* 分割线 */}
           <div className='my-1 border-t border-gray-200 dark:border-gray-700'></div>
@@ -574,113 +449,6 @@ export const UserMenu: React.FC = () => {
     </>
   );
 
-  // 修改密码面板内容
-  const changePasswordPanel = (
-    <>
-      {/* 背景遮罩 */}
-      <div
-        className='fixed inset-0 bg-black/50 backdrop-blur-sm z-[1000]'
-        onClick={handleCloseChangePassword}
-      />
-
-      {/* 修改密码面板 */}
-      <div className='fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white dark:bg-gray-900 rounded-xl shadow-xl z-[1001] p-6'>
-        {/* 标题栏 */}
-        <div className='flex items-center justify-between mb-6'>
-          <h3 className='text-xl font-bold text-gray-800 dark:text-gray-200'>
-            修改密码
-          </h3>
-          <button
-            onClick={handleCloseChangePassword}
-            className='w-8 h-8 p-1 rounded-full flex items-center justify-center text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors'
-            aria-label='Close'
-          >
-            <X className='w-full h-full' />
-          </button>
-        </div>
-
-        {/* 表单 */}
-        <div className='space-y-4'>
-          {/* 当前密码输入：改密必须先验证旧密码 */}
-          <div>
-            <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2'>
-              当前密码
-            </label>
-            <input
-              type='password'
-              autoComplete='current-password'
-              className='w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-colors bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400'
-              placeholder='请输入当前密码'
-              value={oldPassword}
-              onChange={(e) => setOldPassword(e.target.value)}
-              disabled={passwordLoading}
-            />
-          </div>
-
-          {/* 新密码输入 */}
-          <div>
-            <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2'>
-              新密码
-            </label>
-            <input
-              type='password'
-              className='w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-colors bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400'
-              placeholder='请输入新密码'
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              disabled={passwordLoading}
-            />
-          </div>
-
-          {/* 确认密码输入 */}
-          <div>
-            <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2'>
-              确认密码
-            </label>
-            <input
-              type='password'
-              className='w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition-colors bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400'
-              placeholder='请再次输入新密码'
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              disabled={passwordLoading}
-            />
-          </div>
-
-          {/* 错误信息 */}
-          {passwordError && (
-            <div className='text-red-500 text-sm bg-red-50 dark:bg-red-900/20 p-3 rounded-md border border-red-200 dark:border-red-800'>
-              {passwordError}
-            </div>
-          )}
-        </div>
-
-        {/* 操作按钮 */}
-        <div className='flex gap-3 mt-6 pt-4 border-t border-gray-200 dark:border-gray-700'>
-          <button
-            onClick={handleCloseChangePassword}
-            className='flex-1 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-md transition-colors'
-            disabled={passwordLoading}
-          >
-            取消
-          </button>
-          <button
-            onClick={handleSubmitChangePassword}
-            className='flex-1 px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-600 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
-            disabled={
-              passwordLoading ||
-              !oldPassword ||
-              !newPassword ||
-              !confirmPassword
-            }
-          >
-            {passwordLoading ? '修改中...' : '确认修改'}
-          </button>
-        </div>
-      </div>
-    </>
-  );
-
   // 赞赏码弹窗
   const donatePanel = (
     <>
@@ -763,11 +531,6 @@ export const UserMenu: React.FC = () => {
 
       {/* 使用 Portal 将设置面板渲染到 document.body */}
       {isSettingsOpen && mounted && createPortal(settingsPanel, document.body)}
-
-      {/* 使用 Portal 将修改密码面板渲染到 document.body */}
-      {isChangePasswordOpen &&
-        mounted &&
-        createPortal(changePasswordPanel, document.body)}
 
       {/* 使用 Portal 将赞赏码弹窗渲染到 document.body */}
       {isDonateOpen && mounted && createPortal(donatePanel, document.body)}

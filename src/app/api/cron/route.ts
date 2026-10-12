@@ -3,6 +3,7 @@
 import { getOptionalRequestContext } from '@cloudflare/next-on-pages';
 import { NextRequest, NextResponse } from 'next/server';
 
+import { LOCAL_AUTH_SUBJECT } from '@/lib/auth';
 import { safeEqual } from '@/lib/crypto';
 import { db } from '@/lib/db';
 import { fetchVideoDetail } from '@/lib/fetchVideoDetail';
@@ -62,10 +63,8 @@ async function refreshRecordAndFavorites() {
   }
 
   try {
-    const users = await db.getAllUsers();
-    if (process.env.USERNAME && !users.includes(process.env.USERNAME)) {
-      users.push(process.env.USERNAME);
-    }
+    // 站点只有一个分区，个人数据都在这里
+    const users = [LOCAL_AUTH_SUBJECT];
     // 函数级缓存：key 为 `${source}+${id}`，值为 Promise<VideoDetail | null>
     const detailCache = new Map<string, Promise<SearchResult | null>>();
 

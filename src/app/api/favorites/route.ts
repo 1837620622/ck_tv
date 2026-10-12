@@ -2,8 +2,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
-import { getAuthInfoFromCookie } from '@/lib/auth';
-import { db } from '@/lib/db';
+import { getAuthInfoFromCookie, LOCAL_AUTH_SUBJECT } from '@/lib/auth';
+import { db, hasServerStorage } from '@/lib/db';
 import { Favorite } from '@/lib/types';
 
 export const runtime = 'edge';
@@ -18,8 +18,14 @@ export const runtime = 'edge';
 export async function GET(request: NextRequest) {
   try {
     // 从 cookie 获取用户信息
+    if (!hasServerStorage()) {
+      return NextResponse.json(
+        { error: '本地存储模式不提供服务端数据接口' },
+        { status: 400 }
+      );
+    }
     const authInfo = getAuthInfoFromCookie(request);
-    if (!authInfo || !authInfo.username) {
+    if (!authInfo) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -35,12 +41,12 @@ export async function GET(request: NextRequest) {
           { status: 400 }
         );
       }
-      const fav = await db.getFavorite(authInfo.username, source, id);
+      const fav = await db.getFavorite(LOCAL_AUTH_SUBJECT, source, id);
       return NextResponse.json(fav, { status: 200 });
     }
 
     // 查询全部收藏
-    const favorites = await db.getAllFavorites(authInfo.username);
+    const favorites = await db.getAllFavorites(LOCAL_AUTH_SUBJECT);
     return NextResponse.json(favorites, { status: 200 });
   } catch (err) {
     console.error('获取收藏失败', err);
@@ -58,8 +64,14 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     // 从 cookie 获取用户信息
+    if (!hasServerStorage()) {
+      return NextResponse.json(
+        { error: '本地存储模式不提供服务端数据接口' },
+        { status: 400 }
+      );
+    }
     const authInfo = getAuthInfoFromCookie(request);
-    if (!authInfo || !authInfo.username) {
+    if (!authInfo) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -94,7 +106,7 @@ export async function POST(request: NextRequest) {
       save_time: favorite.save_time ?? Date.now(),
     } as Favorite;
 
-    await db.saveFavorite(authInfo.username, source, id, finalFavorite);
+    await db.saveFavorite(LOCAL_AUTH_SUBJECT, source, id, finalFavorite);
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (err) {
@@ -115,12 +127,18 @@ export async function POST(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     // 从 cookie 获取用户信息
+    if (!hasServerStorage()) {
+      return NextResponse.json(
+        { error: '本地存储模式不提供服务端数据接口' },
+        { status: 400 }
+      );
+    }
     const authInfo = getAuthInfoFromCookie(request);
-    if (!authInfo || !authInfo.username) {
+    if (!authInfo) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const username = authInfo.username;
+    const username = LOCAL_AUTH_SUBJECT;
     const { searchParams } = new URL(request.url);
     const key = searchParams.get('key');
 

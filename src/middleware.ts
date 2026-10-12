@@ -13,43 +13,23 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const storageType = process.env.NEXT_PUBLIC_STORAGE_TYPE || 'localstorage';
-  // 如果没有设置密码，直接放行
-  if (storageType === 'localstorage' && !process.env.PASSWORD) {
-    return NextResponse.next();
+  const secret = process.env.PASSWORD || '';
+  if (!secret) {
+    // 未设置口令：只有本地存储模式放行；数据库模式不能在没有口令的情况下公开访问
+    const storageType = process.env.NEXT_PUBLIC_STORAGE_TYPE || 'localstorage';
+    return storageType === 'localstorage'
+      ? NextResponse.next()
+      : handleAuthFailure(request, pathname);
   }
 
-  //if (!process.env.PASSWORD) {
-  // 如果没有设置密码，重定向到警告页面
-  //  const warningUrl = new URL('/warning', request.url);
-  //  return NextResponse.redirect(warningUrl);
-  //}
-
-  // 从cookie获取认证信息
+  // 认证 Cookie 只放对固定标记的签名，不放口令
   const authInfo = getAuthInfoFromCookie(request);
-
   if (!authInfo || !authInfo.signature) {
     return handleAuthFailure(request, pathname);
   }
 
-  const secret = process.env.PASSWORD || '';
-
-  // localstorage 模式：Cookie 里只有对固定标记的签名，不含口令
-  if (storageType === 'localstorage') {
-    const valid = await verifyHmacHex(
-      LOCAL_AUTH_SUBJECT,
-      authInfo.signature,
-      secret
-    );
-    return valid ? NextResponse.next() : handleAuthFailure(request, pathname);
-  }
-
-  // 其他模式：签名对象是用户名
-  if (!authInfo.username) {
-    return handleAuthFailure(request, pathname);
-  }
   const valid = await verifyHmacHex(
-    authInfo.username,
+    LOCAL_AUTH_SUBJECT,
     authInfo.signature,
     secret
   );

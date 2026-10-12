@@ -2,11 +2,6 @@
 
 const encoder = new TextEncoder();
 
-// PBKDF2 迭代次数。Pages Functions 免费档 CPU 预算只有 10ms，
-// 这里取 1 万次（本机约 4ms）。迭代数写在哈希串里，之后调高只影响新口令。
-const PBKDF2_ITERATIONS = 10_000;
-const PBKDF2_PREFIX = 'pbkdf2-sha256';
-
 function toHex(bytes: ArrayBuffer | Uint8Array): string {
   return Array.from(new Uint8Array(bytes))
     .map((b) => b.toString(16).padStart(2, '0'))
@@ -74,56 +69,4 @@ export async function verifyHmacHex(
   } catch {
     return false;
   }
-}
-
-async function pbkdf2(
-  password: string,
-  salt: Uint8Array,
-  iterations: number
-): Promise<ArrayBuffer> {
-  const base = await crypto.subtle.importKey(
-    'raw',
-    encoder.encode(password),
-    'PBKDF2',
-    false,
-    ['deriveBits']
-  );
-  return crypto.subtle.deriveBits(
-    { name: 'PBKDF2', salt, iterations, hash: 'SHA-256' },
-    base,
-    256
-  );
-}
-
-// 生成口令哈希，格式：pbkdf2-sha256$迭代数$盐$哈希
-export async function hashPassword(password: string): Promise<string> {
-  const salt = crypto.getRandomValues(new Uint8Array(16));
-  const hash = await pbkdf2(password, salt, PBKDF2_ITERATIONS);
-  return `${PBKDF2_PREFIX}$${PBKDF2_ITERATIONS}$${toHex(salt)}$${toHex(hash)}`;
-}
-
-// 用户不存在时也跑一次同样耗时的 PBKDF2 并返回 false，
-// 让登录响应时间不泄露某个用户名是否存在。
-export async function burnPasswordCheck(password: string): Promise<false> {
-  await pbkdf2(password, new Uint8Array(16), PBKDF2_ITERATIONS);
-  return false;
-}
-
-// 校验口令。库里还是旧版明文时也能比对，并通过 legacy 告诉调用方该升级成哈希。
-export async function checkPassword(
-  password: string,
-  stored: string
-): Promise<{ ok: boolean; legacy: boolean }> {
-  const parts = stored.split('$');
-  if (parts.length !== 4 || parts[0] !== PBKDF2_PREFIX) {
-    return { ok: safeEqual(password, stored), legacy: true };
-  }
-
-  const iterations = Number(parts[1]);
-  const salt = fromHex(parts[2]);
-  if (!Number.isInteger(iterations) || iterations < 1 || !salt) {
-    return { ok: false, legacy: false };
-  }
-  const actual = toHex(await pbkdf2(password, salt, iterations));
-  return { ok: safeEqual(actual, parts[3]), legacy: false };
 }

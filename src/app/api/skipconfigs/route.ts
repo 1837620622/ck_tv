@@ -2,16 +2,22 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
-import { getAuthInfoFromCookie } from '@/lib/auth';
-import { db } from '@/lib/db';
+import { getAuthInfoFromCookie, LOCAL_AUTH_SUBJECT } from '@/lib/auth';
+import { db, hasServerStorage } from '@/lib/db';
 import { SkipConfig } from '@/lib/types';
 
 export const runtime = 'edge';
 
 export async function GET(request: NextRequest) {
   try {
+    if (!hasServerStorage()) {
+      return NextResponse.json(
+        { error: '本地存储模式不提供服务端数据接口' },
+        { status: 400 }
+      );
+    }
     const authInfo = getAuthInfoFromCookie(request);
-    if (!authInfo || !authInfo.username) {
+    if (!authInfo) {
       return NextResponse.json({ error: '未登录' }, { status: 401 });
     }
 
@@ -21,11 +27,11 @@ export async function GET(request: NextRequest) {
 
     if (source && id) {
       // 获取单个配置
-      const config = await db.getSkipConfig(authInfo.username, source, id);
+      const config = await db.getSkipConfig(LOCAL_AUTH_SUBJECT, source, id);
       return NextResponse.json(config);
     } else {
       // 获取所有配置
-      const configs = await db.getAllSkipConfigs(authInfo.username);
+      const configs = await db.getAllSkipConfigs(LOCAL_AUTH_SUBJECT);
       return NextResponse.json(configs);
     }
   } catch (error) {
@@ -39,8 +45,14 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    if (!hasServerStorage()) {
+      return NextResponse.json(
+        { error: '本地存储模式不提供服务端数据接口' },
+        { status: 400 }
+      );
+    }
     const authInfo = getAuthInfoFromCookie(request);
-    if (!authInfo || !authInfo.username) {
+    if (!authInfo) {
       return NextResponse.json({ error: '未登录' }, { status: 401 });
     }
 
@@ -64,7 +76,7 @@ export async function POST(request: NextRequest) {
       outro_time: Number(config.outro_time) || 0,
     };
 
-    await db.setSkipConfig(authInfo.username, source, id, skipConfig);
+    await db.setSkipConfig(LOCAL_AUTH_SUBJECT, source, id, skipConfig);
 
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -78,8 +90,14 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
+    if (!hasServerStorage()) {
+      return NextResponse.json(
+        { error: '本地存储模式不提供服务端数据接口' },
+        { status: 400 }
+      );
+    }
     const authInfo = getAuthInfoFromCookie(request);
-    if (!authInfo || !authInfo.username) {
+    if (!authInfo) {
       return NextResponse.json({ error: '未登录' }, { status: 401 });
     }
 
@@ -96,7 +114,7 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: '无效的key格式' }, { status: 400 });
     }
 
-    await db.deleteSkipConfig(authInfo.username, source, id);
+    await db.deleteSkipConfig(LOCAL_AUTH_SUBJECT, source, id);
 
     return NextResponse.json({ success: true });
   } catch (error) {

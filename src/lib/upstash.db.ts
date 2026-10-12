@@ -3,7 +3,6 @@
 import { Redis } from '@upstash/redis';
 
 import { AdminConfig } from './admin.types';
-import { burnPasswordCheck, checkPassword, hashPassword } from './crypto';
 import { Favorite, IStorage, PlayRecord, SkipConfig } from './types';
 
 // 用户名参与 KEYS 通配模式时必须转义，否则名字里的 * ? [ 会匹配到别人的数据
@@ -154,68 +153,6 @@ export class UpstashRedisStorage implements IStorage {
     await withRetry(() => this.client.del(this.favKey(userName, key)));
   }
 
-  // ---------- 用户注册 / 登录 ----------
-  private userPwdKey(user: string) {
-    return `u:${user}:pwd`;
-  }
-
-  async verifyUser(userName: string, password: string): Promise<boolean> {
-    const stored = await withRetry(() =>
-      this.client.get(this.userPwdKey(userName))
-    );
-    if (stored === null) return burnPasswordCheck(password);
-    const { ok, legacy } = await checkPassword(password, ensureString(stored));
-    // 旧版明文口令校验通过后顺手改成哈希，失败不影响本次登录
-    if (ok && legacy) {
-      await this.changePassword(userName, password).catch((err) =>
-        console.error('Failed to upgrade password hash:', err)
-      );
-    }
-    return ok;
-  }
-
-  // 修改用户密码
-  async changePassword(userName: string, newPassword: string): Promise<void> {
-    const hashed = await hashPassword(newPassword);
-    await withRetry(() => this.client.set(this.userPwdKey(userName), hashed));
-  }
-
-  // 删除用户及其所有数据
-  async deleteUser(userName: string): Promise<void> {
-    // 删除用户密码
-    await withRetry(() => this.client.del(this.userPwdKey(userName)));
-
-    // 删除搜索历史
-    await withRetry(() => this.client.del(this.shKey(userName)));
-
-    // 删除播放记录
-    const playRecordPattern = `u:${escapeGlob(userName)}:pr:*`;
-    const playRecordKeys = await withRetry(() =>
-      this.client.keys(playRecordPattern)
-    );
-    if (playRecordKeys.length > 0) {
-      await withRetry(() => this.client.del(...playRecordKeys));
-    }
-
-    // 删除收藏夹
-    const favoritePattern = `u:${escapeGlob(userName)}:fav:*`;
-    const favoriteKeys = await withRetry(() =>
-      this.client.keys(favoritePattern)
-    );
-    if (favoriteKeys.length > 0) {
-      await withRetry(() => this.client.del(...favoriteKeys));
-    }
-
-    // 删除跳过片头片尾配置
-    const skipConfigPattern = `u:${escapeGlob(userName)}:skip:*`;
-    const skipConfigKeys = await withRetry(() =>
-      this.client.keys(skipConfigPattern)
-    );
-    if (skipConfigKeys.length > 0) {
-      await withRetry(() => this.client.del(...skipConfigKeys));
-    }
-  }
-
   // ---------- 搜索历史 ----------
   private shKey(user: string) {
     return `u:${user}:sh`; // u:username:sh
@@ -246,17 +183,6 @@ export class UpstashRedisStorage implements IStorage {
     } else {
       await withRetry(() => this.client.del(key));
     }
-  }
-
-  // ---------- 获取全部用户 ----------
-  async getAllUsers(): Promise<string[]> {
-    const keys = await withRetry(() => this.client.keys('u:*:pwd'));
-    return keys
-      .map((k) => {
-        const match = k.match(/^u:(.+?):pwd$/);
-        return match ? ensureString(match[1]) : undefined;
-      })
-      .filter((u): u is string => typeof u === 'string');
   }
 
   // ---------- 管理员配置 ----------

@@ -43,20 +43,10 @@ export interface IStorage {
   getAllFavorites(userName: string): Promise<{ [key: string]: Favorite }>;
   deleteFavorite(userName: string, key: string): Promise<void>;
 
-  // 用户相关
-  verifyUser(userName: string, password: string): Promise<boolean>;
-  // 修改用户密码
-  changePassword(userName: string, newPassword: string): Promise<void>;
-  // 删除用户（包括密码、搜索历史、播放记录、收藏夹）
-  deleteUser(userName: string): Promise<void>;
-
   // 搜索历史相关
   getSearchHistory(userName: string): Promise<string[]>;
   addSearchHistory(userName: string, keyword: string): Promise<void>;
   deleteSearchHistory(userName: string, keyword?: string): Promise<void>;
-
-  // 用户列表
-  getAllUsers(): Promise<string[]>;
 
   // 管理员配置相关
   getAdminConfig(): Promise<AdminConfig | null>;

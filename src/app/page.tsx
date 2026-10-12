@@ -70,10 +70,35 @@ function RowSkeleton() {
   );
 }
 
+// 骨架屏与真实网格共用同一套列数和间距，数据到达时布局不跳动
+const POSTER_GRID_CLASS =
+  'grid min-w-0 grid-cols-3 gap-x-2 gap-y-4 sm:grid-cols-4 sm:gap-x-3 lg:grid-cols-5 xl:grid-cols-6';
+
+function GridSkeleton({ count }: { count: number }) {
+  return (
+    <div className={POSTER_GRID_CLASS}>
+      {Array.from({ length: count }).map((_, index) => (
+        <div
+          key={index}
+          className='aspect-[2/3] rounded-lg bg-gray-200 animate-pulse dark:bg-gray-800'
+        />
+      ))}
+    </div>
+  );
+}
+
+function EmptyNote({ text }: { text: string }) {
+  return (
+    <p className='rounded-lg border border-dashed border-gray-300 py-8 text-center text-sm text-gray-500 dark:border-gray-700 dark:text-gray-400'>
+      {text}
+    </p>
+  );
+}
+
 function PosterGrid({
   items,
   cardType,
-  className = 'grid min-w-0 grid-cols-3 gap-x-2 gap-y-4 sm:grid-cols-4 sm:gap-x-3 lg:grid-cols-5 xl:grid-cols-6',
+  className = POSTER_GRID_CLASS,
 }: {
   items: DoubanItem[];
   cardType?: string;
@@ -383,13 +408,13 @@ function HomeClient() {
                 ))}
                 <Link
                   href='/adult'
-                  className='ml-1 shrink-0 border-l border-gray-200 px-3 py-1.5 text-gray-400 hover:text-gray-600 dark:border-gray-700 dark:hover:text-gray-300'
+                  className='ml-1 shrink-0 border-l border-gray-200 px-3 py-1.5 text-gray-500 hover:text-gray-700 dark:border-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
                 >
                   18+
                 </Link>
                 <Link
                   href='/huangguo'
-                  className='shrink-0 px-3 py-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
+                  className='shrink-0 px-3 py-1.5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
                 >
                   AI黄果
                 </Link>
@@ -403,14 +428,9 @@ function HomeClient() {
                   href='/douban?type=movie&cat=热门'
                 />
                 {loading ? (
-                  <div className='grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5'>
-                    {Array.from({ length: 6 }).map((_, index) => (
-                      <div
-                        key={index}
-                        className='aspect-[2/3] rounded-md bg-gray-200 animate-pulse dark:bg-gray-800'
-                      />
-                    ))}
-                  </div>
+                  <GridSkeleton count={18} />
+                ) : hotMovies.length === 0 ? (
+                  <EmptyNote text='暂时没有热门影片，稍后再试' />
                 ) : (
                   <PosterGrid items={hotMovies.slice(0, 18)} cardType='movie' />
                 )}
@@ -422,28 +442,24 @@ function HomeClient() {
                   href='/douban?type=movie&cat=最新'
                 />
                 {loading ? (
-                  <div className='grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6'>
-                    {Array.from({ length: 6 }).map((_, index) => (
-                      <div
-                        key={index}
-                        className='aspect-[2/3] rounded-md bg-gray-200 animate-pulse dark:bg-gray-800'
-                      />
-                    ))}
-                  </div>
+                  <GridSkeleton count={12} />
                 ) : (
-                  <PosterGrid
-                    items={(() => {
-                      const used = new Set(
-                        hotMovies.slice(0, 13).map((item) => item.id)
-                      );
-                      const fresh = latestMovies.filter(
-                        (item) => !used.has(item.id)
-                      );
-                      const list = fresh.length > 0 ? fresh : latestMovies;
-                      return list.slice(0, 12);
-                    })()}
-                    cardType='movie'
-                  />
+                  (() => {
+                    const used = new Set(
+                      hotMovies.slice(0, 13).map((item) => item.id)
+                    );
+                    const fresh = latestMovies.filter(
+                      (item) => !used.has(item.id)
+                    );
+                    const list = (
+                      fresh.length > 0 ? fresh : latestMovies
+                    ).slice(0, 12);
+                    return list.length === 0 ? (
+                      <EmptyNote text='暂时没有最新上线的影片' />
+                    ) : (
+                      <PosterGrid items={list} cardType='movie' />
+                    );
+                  })()
                 )}
               </section>
 
@@ -491,9 +507,16 @@ function HomeClient() {
   );
 }
 
+// 首屏 HTML 里先给出骨架，避免数据和客户端组件挂载前是一片空白
 export default function Home() {
   return (
-    <Suspense>
+    <Suspense
+      fallback={
+        <div className='px-3 py-4 sm:px-4 sm:py-6 lg:px-8 lg:py-8'>
+          <GridSkeleton count={18} />
+        </div>
+      }
+    >
       <HomeClient />
     </Suspense>
   );

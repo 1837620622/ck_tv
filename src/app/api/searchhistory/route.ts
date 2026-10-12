@@ -2,8 +2,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
-import { getAuthInfoFromCookie } from '@/lib/auth';
-import { db } from '@/lib/db';
+import { getAuthInfoFromCookie, LOCAL_AUTH_SUBJECT } from '@/lib/auth';
+import { db, hasServerStorage } from '@/lib/db';
 
 export const runtime = 'edge';
 
@@ -17,12 +17,18 @@ const HISTORY_LIMIT = 20;
 export async function GET(request: NextRequest) {
   try {
     // 从 cookie 获取用户信息
+    if (!hasServerStorage()) {
+      return NextResponse.json(
+        { error: '本地存储模式不提供服务端数据接口' },
+        { status: 400 }
+      );
+    }
     const authInfo = getAuthInfoFromCookie(request);
-    if (!authInfo || !authInfo.username) {
+    if (!authInfo) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const history = await db.getSearchHistory(authInfo.username);
+    const history = await db.getSearchHistory(LOCAL_AUTH_SUBJECT);
     return NextResponse.json(history, { status: 200 });
   } catch (err) {
     console.error('获取搜索历史失败', err);
@@ -40,8 +46,14 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     // 从 cookie 获取用户信息
+    if (!hasServerStorage()) {
+      return NextResponse.json(
+        { error: '本地存储模式不提供服务端数据接口' },
+        { status: 400 }
+      );
+    }
     const authInfo = getAuthInfoFromCookie(request);
-    if (!authInfo || !authInfo.username) {
+    if (!authInfo) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -55,10 +67,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    await db.addSearchHistory(authInfo.username, keyword);
+    await db.addSearchHistory(LOCAL_AUTH_SUBJECT, keyword);
 
     // 再次获取最新列表，确保客户端与服务端同步
-    const history = await db.getSearchHistory(authInfo.username);
+    const history = await db.getSearchHistory(LOCAL_AUTH_SUBJECT);
     return NextResponse.json(history.slice(0, HISTORY_LIMIT), { status: 200 });
   } catch (err) {
     console.error('添加搜索历史失败', err);
@@ -78,15 +90,21 @@ export async function POST(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     // 从 cookie 获取用户信息
+    if (!hasServerStorage()) {
+      return NextResponse.json(
+        { error: '本地存储模式不提供服务端数据接口' },
+        { status: 400 }
+      );
+    }
     const authInfo = getAuthInfoFromCookie(request);
-    if (!authInfo || !authInfo.username) {
+    if (!authInfo) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const { searchParams } = new URL(request.url);
     const kw = searchParams.get('keyword')?.trim();
 
-    await db.deleteSearchHistory(authInfo.username, kw || undefined);
+    await db.deleteSearchHistory(LOCAL_AUTH_SUBJECT, kw || undefined);
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (err) {

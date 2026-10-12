@@ -34,6 +34,11 @@ function createStorage(): IStorage {
 // 单例存储实例
 let storageInstance: IStorage | null = null;
 
+// 本地存储模式没有服务端存储，个人数据接口据此直接返回 400，而不是访问空对象
+export function hasServerStorage(): boolean {
+  return getStorage() !== null;
+}
+
 export function getStorage(): IStorage {
   if (!storageInstance) {
     storageInstance = createStorage();
@@ -133,11 +138,6 @@ export class DbManager {
     return favorite !== null;
   }
 
-  // ---------- 用户相关 ----------
-  async verifyUser(userName: string, password: string): Promise<boolean> {
-    return this.storage.verifyUser(userName, password);
-  }
-
   // ---------- 搜索历史 ----------
   async getSearchHistory(userName: string): Promise<string[]> {
     return this.storage.getSearchHistory(userName);
@@ -149,14 +149,6 @@ export class DbManager {
 
   async deleteSearchHistory(userName: string, keyword?: string): Promise<void> {
     await this.storage.deleteSearchHistory(userName, keyword);
-  }
-
-  // 获取全部用户名
-  async getAllUsers(): Promise<string[]> {
-    if (typeof (this.storage as any).getAllUsers === 'function') {
-      return (this.storage as any).getAllUsers();
-    }
-    return [];
   }
 
   // ---------- 管理员配置 ----------

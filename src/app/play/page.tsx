@@ -1238,7 +1238,7 @@ function PlayPageClient() {
               abrBandWidthUpFactor: 0.7,
 
               /* 先攒够可播缓冲，再限制上限，避免手机硬解 4K 把线路打满 */
-              // 30 秒缓冲能扛住线路抖动，内存上限由下面的 maxBufferSize 兜底。
+              // 30 秒缓冲能扛住线路抖动。maxBufferSize 与码率一起决定缓冲目标长度，并不是内存上限。
               maxBufferLength: 30,
               maxMaxBufferLength: 60,
               backBufferLength: 8,
@@ -1255,9 +1255,26 @@ function PlayPageClient() {
               manifestLoadingMaxRetry: 2,
               levelLoadingTimeOut: 12000,
               levelLoadingMaxRetry: 2,
-              fragLoadingTimeOut: 8000,
-              fragLoadingMaxRetry: 3,
-              fragLoadingMaxRetryTimeout: 8000,
+              // 旧的 fragLoadingTimeOut 会把整段下载也限制在 8 秒，弱网下几 MB 的片段反复超时、画面卡顿。
+              // 首字节 10 秒、整段 20 秒；超时和出错各重试 3 次，退避上限 8 秒。
+              fragLoadPolicy: {
+                default: {
+                  maxTimeToFirstByteMs: 10_000,
+                  maxLoadTimeMs: 20_000,
+                  timeoutRetry: {
+                    maxNumRetry: 3,
+                    retryDelayMs: 1000,
+                    maxRetryDelayMs: 8000,
+                  },
+                  errorRetry: {
+                    maxNumRetry: 3,
+                    retryDelayMs: 1000,
+                    maxRetryDelayMs: 8000,
+                  },
+                },
+              },
+              // 不播放清单里的 DATERANGE 插播（X-ASSET-LIST 等）。这类广告不经过清单过滤，必须在 hls.js 层关掉。
+              enableInterstitialPlayback: false,
 
               loader: blockAdEnabledRef.current
                 ? CustomHlsJsLoader
@@ -1309,6 +1326,11 @@ function PlayPageClient() {
               clearStallTimer();
             };
 
+            // 片段成功加载说明线路恢复了，续播次数清零，所以上限只统计连续失败
+            hls.on(Hls.Events.FRAG_LOADED, function () {
+              midStreamRetries = 0;
+            });
+
             hls.on(Hls.Events.ERROR, function (event: any, data: any) {
               if (!data?.fatal) return;
               const notStarted = !opened && (video.currentTime || 0) < 0.5;
@@ -1322,8 +1344,9 @@ function PlayPageClient() {
                 failOverRef.current();
                 return;
               }
-              if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-                if (notStarted && networkRetries >= 1) {
+              // 还没出画面的网络错误：换线前只重试一次
+              if (data.type === Hls.ErrorTypes.NETWORK_ERROR && notStarted) {
+                if (networkRetries >= 1) {
                   failOverRef.current();
                   return;
                 }

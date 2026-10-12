@@ -31,7 +31,7 @@ export const WelcomeModal: React.FC = () => {
   if (!mounted || !isOpen) return null;
 
   return createPortal(
-    <div className='fixed bottom-20 md:bottom-6 right-4 sm:right-6 z-[999] max-w-sm w-[calc(100%-2rem)] sm:w-80 transition-all duration-300 animate-in fade-in slide-in-from-bottom-5'>
+    <div className='fixed bottom-20 md:bottom-6 right-4 sm:right-6 z-[999] max-w-sm w-[calc(100%-2rem)] sm:w-80 transition-all duration-300 animate-slide-up'>
       {/* 悬浮卡片 - 不遮挡全屏，不强制倒计时 */}
       <div className='relative overflow-hidden border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-950'>
         <div className='absolute left-0 right-0 top-0 h-1 bg-green-600' />
@@ -56,7 +56,7 @@ export const WelcomeModal: React.FC = () => {
         </div>
 
         {/* 说明内容 */}
-        <p className='text-[11px] leading-relaxed text-gray-400 dark:text-gray-500'>
+        <p className='text-[11px] leading-relaxed text-gray-600 dark:text-gray-400'>
           免责声明：本站资源均来自公开互联网接口，仅供学习与技术交流。本站不存储、不制作。
         </p>
 
@@ -79,7 +79,7 @@ export const WelcomeModal: React.FC = () => {
 
         {/* 可选展开的赞赏码 */}
         {showQr && (
-          <div className='mt-3 pt-3 border-t border-gray-100 dark:border-gray-800 text-center animate-in fade-in duration-200'>
+          <div className='mt-3 pt-3 border-t border-gray-100 dark:border-gray-800 text-center animate-fade-in'>
             <div className='w-36 h-36 mx-auto relative rounded-xl overflow-hidden border border-gray-200 dark:border-gray-700 shadow-sm'>
               <Image
                 src='/ck.jpg'

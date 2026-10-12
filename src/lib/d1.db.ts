@@ -1,7 +1,6 @@
 /* eslint-disable no-console, @typescript-eslint/no-explicit-any, @typescript-eslint/no-non-null-assertion */
 
 import { AdminConfig } from './admin.types';
-import { burnPasswordCheck, checkPassword, hashPassword } from './crypto';
 import { Favorite, IStorage, PlayRecord, SkipConfig } from './types';
 
 // 搜索历史最大条数
@@ -272,67 +271,6 @@ export class D1Storage implements IStorage {
     }
   }
 
-  // 用户相关
-  async verifyUser(userName: string, password: string): Promise<boolean> {
-    try {
-      const db = await this.getDatabase();
-      const result = await db
-        .prepare('SELECT password FROM users WHERE username = ?')
-        .bind(userName)
-        .first<{ password: string }>();
-      if (!result) return burnPasswordCheck(password);
-
-      const { ok, legacy } = await checkPassword(password, result.password);
-      // 旧版明文口令校验通过后顺手改成哈希，失败不影响本次登录
-      if (ok && legacy) {
-        await this.changePassword(userName, password).catch((err) =>
-          console.error('Failed to upgrade password hash:', err)
-        );
-      }
-      return ok;
-    } catch (err) {
-      console.error('Failed to verify user:', err);
-      throw err;
-    }
-  }
-
-  async changePassword(userName: string, newPassword: string): Promise<void> {
-    try {
-      const db = await this.getDatabase();
-      await db
-        .prepare('UPDATE users SET password = ? WHERE username = ?')
-        .bind(await hashPassword(newPassword), userName)
-        .run();
-    } catch (err) {
-      console.error('Failed to change password:', err);
-      throw err;
-    }
-  }
-
-  async deleteUser(userName: string): Promise<void> {
-    try {
-      const db = await this.getDatabase();
-      const statements = [
-        db.prepare('DELETE FROM users WHERE username = ?').bind(userName),
-        db
-          .prepare('DELETE FROM play_records WHERE username = ?')
-          .bind(userName),
-        db.prepare('DELETE FROM favorites WHERE username = ?').bind(userName),
-        db
-          .prepare('DELETE FROM search_history WHERE username = ?')
-          .bind(userName),
-        db
-          .prepare('DELETE FROM skip_configs WHERE username = ?')
-          .bind(userName),
-      ];
-
-      await db.batch(statements);
-    } catch (err) {
-      console.error('Failed to delete user:', err);
-      throw err;
-    }
-  }
-
   // 搜索历史相关
   async getSearchHistory(userName: string): Promise<string[]> {
     try {
@@ -407,21 +345,6 @@ export class D1Storage implements IStorage {
       }
     } catch (err) {
       console.error('Failed to delete search history:', err);
-      throw err;
-    }
-  }
-
-  // 用户列表
-  async getAllUsers(): Promise<string[]> {
-    try {
-      const db = await this.getDatabase();
-      const result = await db
-        .prepare('SELECT username FROM users ORDER BY created_at ASC')
-        .all<{ username: string }>();
-
-      return result.results.map((row) => row.username);
-    } catch (err) {
-      console.error('Failed to get all users:', err);
       throw err;
     }
   }
