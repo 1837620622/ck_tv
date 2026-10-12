@@ -358,7 +358,9 @@ function LivePageClient() {
               {line ? (
                 <span
                   className={
-                    phase === 'error' ? 'text-red-700' : 'text-gray-500'
+                    phase === 'error'
+                      ? 'text-red-600 dark:text-red-400'
+                      : 'text-gray-500 dark:text-gray-400'
                   }
                 >
                   {line}
