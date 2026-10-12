@@ -102,6 +102,13 @@ export async function hashPassword(password: string): Promise<string> {
   return `${PBKDF2_PREFIX}$${PBKDF2_ITERATIONS}$${toHex(salt)}$${toHex(hash)}`;
 }
 
+// 用户不存在时也跑一次同样耗时的 PBKDF2 并返回 false，
+// 让登录响应时间不泄露某个用户名是否存在。
+export async function burnPasswordCheck(password: string): Promise<false> {
+  await pbkdf2(password, new Uint8Array(16), PBKDF2_ITERATIONS);
+  return false;
+}
+
 // 校验口令。库里还是旧版明文时也能比对，并通过 legacy 告诉调用方该升级成哈希。
 export async function checkPassword(
   password: string,

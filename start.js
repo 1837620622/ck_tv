@@ -1,8 +1,15 @@
 #!/usr/bin/env node
 
 /* eslint-disable no-console,@typescript-eslint/no-var-requires */
+const crypto = require('crypto');
 const http = require('http');
 const path = require('path');
+
+// /api/cron 需要 CRON_SECRET。未显式配置时，生成一个只存在于本进程里的随机值：
+// 本脚本和 Next 服务在同一个进程，只有这里的定时调用知道它，外部请求调不动。
+if (!process.env.CRON_SECRET) {
+  process.env.CRON_SECRET = crypto.randomBytes(32).toString('hex');
+}
 
 // 调用 generate-manifest.js 生成 manifest.json
 function generateManifest() {
@@ -63,7 +70,10 @@ function executeCronJob() {
 
   console.log(`Executing cron job: ${cronUrl}`);
 
-  const req = http.get(cronUrl, (res) => {
+  const options = {
+    headers: { Authorization: `Bearer ${process.env.CRON_SECRET}` },
+  };
+  const req = http.get(cronUrl, options, (res) => {
     let data = '';
 
     res.on('data', (chunk) => {

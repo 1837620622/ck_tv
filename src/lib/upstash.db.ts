@@ -3,7 +3,7 @@
 import { Redis } from '@upstash/redis';
 
 import { AdminConfig } from './admin.types';
-import { checkPassword, hashPassword } from './crypto';
+import { burnPasswordCheck, checkPassword, hashPassword } from './crypto';
 import { Favorite, IStorage, PlayRecord, SkipConfig } from './types';
 
 // 搜索历史最大条数
@@ -163,7 +163,7 @@ export class UpstashRedisStorage implements IStorage {
     const stored = await withRetry(() =>
       this.client.get(this.userPwdKey(userName))
     );
-    if (stored === null) return false;
+    if (stored === null) return burnPasswordCheck(password);
     const { ok, legacy } = await checkPassword(password, ensureString(stored));
     // 旧版明文口令校验通过后顺手改成哈希，失败不影响本次登录
     if (ok && legacy) {

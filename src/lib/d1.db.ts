@@ -1,7 +1,7 @@
 /* eslint-disable no-console, @typescript-eslint/no-explicit-any, @typescript-eslint/no-non-null-assertion */
 
 import { AdminConfig } from './admin.types';
-import { checkPassword, hashPassword } from './crypto';
+import { burnPasswordCheck, checkPassword, hashPassword } from './crypto';
 import { Favorite, IStorage, PlayRecord, SkipConfig } from './types';
 
 // 搜索历史最大条数
@@ -293,7 +293,7 @@ export class D1Storage implements IStorage {
         .prepare('SELECT password FROM users WHERE username = ?')
         .bind(userName)
         .first<{ password: string }>();
-      if (!result) return false;
+      if (!result) return burnPasswordCheck(password);
 
       const { ok, legacy } = await checkPassword(password, result.password);
       // 旧版明文口令校验通过后顺手改成哈希，失败不影响本次登录
