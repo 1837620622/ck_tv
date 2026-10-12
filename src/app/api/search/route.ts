@@ -2,7 +2,7 @@ import { getOptionalRequestContext } from '@cloudflare/next-on-pages';
 import { NextResponse } from 'next/server';
 
 import { getSearchApiSites } from '@/lib/config';
-import { searchFromApi } from '@/lib/downstream';
+import { recentlyFailed, searchFromApi } from '@/lib/downstream';
 import {
   cacheAgeSeconds,
   jsonCacheHeaders,
@@ -43,10 +43,12 @@ function startFill(cacheUrl: string, work: () => Promise<void>) {
     resolve = done;
   });
   inflight.set(cacheUrl, task);
-  void work().finally(() => {
-    inflight.delete(cacheUrl);
-    resolve();
-  });
+  void work()
+    .catch(() => undefined)
+    .finally(() => {
+      inflight.delete(cacheUrl);
+      resolve();
+    });
 }
 
 async function writeIfRicher(
@@ -175,8 +177,11 @@ export async function GET(request: Request) {
     }
 
     const apiSites = await loadSites();
-    const fastSites = apiSites.slice(0, budget.fastCount);
-    const restSites = apiSites.slice(budget.fastCount);
+    // 最近失败过的源不占快速名额，改到后台补齐；快速名额仍按 config.json 的顺序取
+    const healthy = apiSites.filter((site) => !recentlyFailed(site.key));
+    const fastSites = healthy.slice(0, budget.fastCount);
+    const fastKeys = new Set(fastSites.map((site) => site.key));
+    const restSites = apiSites.filter((site) => !fastKeys.has(site.key));
     const settled = await settleWithin(
       fastSites.map((site) =>
         searchFromApi(site, query, { timeoutMs: budget.timeoutMs })
@@ -184,7 +189,21 @@ export async function GET(request: Request) {
       budget.deadlineMs,
       [] as SearchResult[]
     );
-    const packed = packResults(settled.values, line, slim);
+    // 结果始终按 config.json 的原始顺序排列，source_rank 不会因为快速名额的变化而改变
+    const collect = (
+      fastValues: SearchResult[][],
+      restValues: SearchResult[][]
+    ) => {
+      const byKey = new Map<string, SearchResult[]>();
+      fastSites.forEach((site, index) =>
+        byKey.set(site.key, fastValues[index] || [])
+      );
+      restSites.forEach((site, index) =>
+        byKey.set(site.key, restValues[index] || [])
+      );
+      return apiSites.map((site) => byKey.get(site.key) || []);
+    };
+    const packed = packResults(collect(settled.values, []), line, slim);
 
     const fillCache = () =>
       startFill(cacheUrl, async () => {
@@ -194,7 +213,11 @@ export async function GET(request: Request) {
             searchFromApi(site, query, { timeoutMs: budget.timeoutMs })
           )
         );
-        const full = packResults([...settled.values, ...restLists], line, slim);
+        const full = packResults(
+          collect(settled.values, restLists),
+          line,
+          slim
+        );
         if (full.count > 0) {
           await writeIfRicher(
             ctx,

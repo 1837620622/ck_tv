@@ -68,6 +68,22 @@ Pages 只经手清单、海报和目录 JSON。`.ts` 分片不进本站，也不
 5. 直播先播写死的 HTTPS 清单。这条失败，再请求 `/api/live?id=&fresh=1` 向央视网页接口要新地址。出画才算成功，只解析到清单不算。播放地址 `Cache-Control: no-store`。
 6. CCTV-1、CCTV-13 使用实际为 720 的 `td` 媒体清单。主清单把 `pd` 标成 1080，分片实测是 360，所以不走那一档，也不按主清单的码率标签去锁最高档。
 
+## 接入片源
+
+片源写在 `config.json` 的 `api_site`，格式是苹果 CMS 的 `api.php/provide/vod`：
+
+```json
+"xxzy": { "name": "某某资源", "api": "https://example.com/api.php/provide/vod" }
+```
+
+新源先加上 `"disabled": true`，搜索和详情都不会请求它。在能访问上游的机器上验证：
+
+```bash
+node scripts/test-apis.js --keyword=凡人
+```
+
+脚本用和搜索一样的请求方式，检查返回的条目里有没有 m3u8 播放地址，并抽一条清单确认是 `#EXTM3U`。通过的源会输出一段可以直接粘贴的配置，去掉 `disabled` 即可启用。
+
 ## 缓存
 
 Pages Function 的响应默认是动态的，`Cache-Control` 不会自动进边缘。聚合 JSON 由代码写入 Cache API，并用 `cf.cacheTtl` 控制回源。

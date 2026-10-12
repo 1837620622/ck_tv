@@ -16,6 +16,8 @@ export interface ApiSite {
   priority?: number;
   globalPriority?: number;
   region?: 'cn' | 'global' | 'both';
+  // 候选源先写 disabled: true，验证可用后再去掉，搜索和详情都不会请求它
+  disabled?: boolean;
 }
 
 function toSourceConfig(key: string, site: ApiSite) {
@@ -34,7 +36,7 @@ function toSourceConfig(key: string, site: ApiSite) {
         : 100,
     region: site.region || 'both',
     from: 'config' as const,
-    disabled: false,
+    disabled: site.disabled === true,
   };
 }
 
@@ -499,7 +501,7 @@ export async function getSearchApiSites(line: LineMode): Promise<ApiSite[]> {
     fileConfig?.api_site ||
       (runtimeConfig as unknown as ConfigFileStruct).api_site ||
       {}
-  );
+  ).filter(([, site]) => !site.disabled);
   const curated = curatedEntries.map(([key, site]) => ({
     ...site,
     key,

@@ -46,6 +46,77 @@ function cacheStorage(): Cache | null {
   return host.caches?.default ?? null;
 }
 
+// Node（Docker）里没有 Cache API。退回到进程内存：条目数、总字节、单条大小都有上限，过期即失效。
+const MEMORY_MAX_ENTRIES = 300;
+const MEMORY_MAX_BYTES = 40 * 1024 * 1024;
+const MEMORY_MAX_ENTRY_BYTES = 1.5 * 1024 * 1024;
+const MEMORY_MAX_TTL_SECONDS = 3600;
+
+type MemoryEntry = {
+  status: number;
+  headers: [string, string][];
+  body: ArrayBuffer;
+  expiresAt: number;
+};
+
+const memoryCache = new Map<string, MemoryEntry>();
+let memoryBytes = 0;
+
+function memoryTtlSeconds(headers: Headers): number {
+  const cacheControl = headers.get('cache-control') || '';
+  const sMaxAge = /s-maxage=(\d+)/.exec(cacheControl);
+  const maxAge = /max-age=(\d+)/.exec(cacheControl);
+  const ttl = sMaxAge ? Number(sMaxAge[1]) : maxAge ? Number(maxAge[1]) : 0;
+  return Math.min(ttl, MEMORY_MAX_TTL_SECONDS);
+}
+
+function memoryDrop(key: string) {
+  const old = memoryCache.get(key);
+  if (!old) return;
+  memoryBytes -= old.body.byteLength;
+  memoryCache.delete(key);
+}
+
+function memoryGet(cacheUrl: string): Response | null {
+  const hit = memoryCache.get(cacheUrl);
+  if (!hit) return null;
+  if (hit.expiresAt <= Date.now()) {
+    memoryDrop(cacheUrl);
+    return null;
+  }
+  return new Response(hit.body.slice(0), {
+    status: hit.status,
+    headers: hit.headers,
+  });
+}
+
+function memoryPut(cacheUrl: string, response: Response) {
+  const ttl = memoryTtlSeconds(response.headers);
+  if (response.status !== 200 || ttl <= 0) return;
+  response
+    .clone()
+    .arrayBuffer()
+    .then((body) => {
+      if (body.byteLength > MEMORY_MAX_ENTRY_BYTES) return;
+      memoryDrop(cacheUrl);
+      while (
+        memoryCache.size > 0 &&
+        (memoryCache.size >= MEMORY_MAX_ENTRIES ||
+          memoryBytes + body.byteLength > MEMORY_MAX_BYTES)
+      ) {
+        memoryDrop(memoryCache.keys().next().value as string);
+      }
+      memoryCache.set(cacheUrl, {
+        status: 200,
+        headers: Array.from(response.headers.entries()),
+        body,
+        expiresAt: Date.now() + ttl * 1000,
+      });
+      memoryBytes += body.byteLength;
+    })
+    .catch(() => undefined);
+}
+
 export function cacheAgeSeconds(response: Response): number {
   const date = response.headers.get('date');
   if (!date) return 0;
@@ -59,7 +130,7 @@ export async function readJsonCache(
   cacheUrl: string
 ): Promise<Response | null> {
   const cache = cacheStorage();
-  if (!cache) return null;
+  if (!cache) return memoryGet(cacheUrl);
   try {
     const hit = await cache.match(new Request(cacheUrl, { method: 'GET' }));
     return hit ?? null;
@@ -75,7 +146,10 @@ export function writeCached(
   response: Response
 ) {
   const cache = cacheStorage();
-  if (!cache) return;
+  if (!cache) {
+    memoryPut(cacheUrl, response);
+    return;
+  }
   const task = cache
     .put(new Request(cacheUrl, { method: 'GET' }), response)
     .catch(() => undefined);
@@ -93,8 +167,7 @@ export function writeJsonCache(
   edgeSeconds: number,
   browserSeconds: number
 ) {
-  const cache = cacheStorage();
-  if (!cache || !body) return;
+  if (!body) return;
   const headers = jsonCacheHeaders(edgeSeconds, browserSeconds);
   const response = new Response(body, {
     status: 200,
@@ -105,6 +178,11 @@ export function writeJsonCache(
       'cdn-cache-control': headers['CDN-Cache-Control'],
     },
   });
+  const cache = cacheStorage();
+  if (!cache) {
+    memoryPut(cacheUrl, response);
+    return;
+  }
   const task = cache
     .put(new Request(cacheUrl, { method: 'GET' }), response)
     .catch(() => undefined);
