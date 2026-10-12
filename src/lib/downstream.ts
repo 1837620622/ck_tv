@@ -76,6 +76,11 @@ function toSearchResult(
   }
 }
 
+interface ApiListPayload {
+  list?: ApiSearchItem[];
+  pagecount?: number;
+}
+
 export async function searchFromApi(
   apiSite: ApiSite,
   query: string,
@@ -88,26 +93,48 @@ export async function searchFromApi(
     API_CONFIG.search.path +
     encodeURIComponent(query) +
     pageSuffix;
-
   // 国内首批查询用更短的超时，避免慢源占住连接。超时同样覆盖读取 body 的时间。
-  const controller = new AbortController();
-  const timeoutId = setTimeout(
-    () => controller.abort(),
-    options?.timeoutMs ?? 2800
-  );
+  const budgetMs = options?.timeoutMs ?? 2800;
+
+  const attempt = async (): Promise<{
+    data: ApiListPayload | null;
+    retryable: boolean;
+  }> => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), budgetMs);
+    try {
+      const response = await fetch(
+        apiUrl,
+        edgeFetchInit(API_CONFIG.search.headers, controller.signal, 1800)
+      );
+      if (!response.ok) {
+        return {
+          data: null,
+          retryable: response.status >= 500 || response.status === 429,
+        };
+      }
+      return { data: await response.json(), retryable: false };
+    } catch {
+      // 连接被重置、返回的不是 JSON 多半是瞬时的；超时不再重试
+      return { data: null, retryable: !controller.signal.aborted };
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
   try {
-    const response = await fetch(
-      apiUrl,
-      edgeFetchInit(API_CONFIG.search.headers, controller.signal, 1800)
-    );
-    if (!response.ok) {
+    let outcome = await attempt();
+    if (!outcome.data && outcome.retryable) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      outcome = await attempt();
+    }
+    const data = outcome.data;
+    if (!data) {
       noteSite(apiSite.key, false);
       return [];
     }
-
-    const data = await response.json();
     noteSite(apiSite.key, true);
-    if (!data || !Array.isArray(data.list) || data.list.length === 0) {
+    if (!Array.isArray(data.list) || data.list.length === 0) {
       return [];
     }
 
@@ -124,8 +151,6 @@ export async function searchFromApi(
   } catch {
     noteSite(apiSite.key, false);
     return [];
-  } finally {
-    clearTimeout(timeoutId);
   }
 }
 
@@ -181,60 +206,70 @@ export async function getDetailFromApi(
   }
 
   const detailUrl = `${apiSite.api}${API_CONFIG.detail.path}${id}`;
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10000);
-  try {
-    const response = await fetch(
-      detailUrl,
-      edgeFetchInit(API_CONFIG.detail.headers, controller.signal, 600)
-    );
-    if (!response.ok) {
-      throw new Error(`详情请求失败: ${response.status}`);
+  let data: ApiListPayload | null = null;
+  let lastError: unknown = null;
+  for (const timeoutMs of [6000, 4000]) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(
+        detailUrl,
+        edgeFetchInit(API_CONFIG.detail.headers, controller.signal, 600)
+      );
+      if (!response.ok) {
+        lastError = new Error(`详情请求失败: ${response.status}`);
+        if (response.status < 500) break;
+        continue;
+      }
+      data = await response.json();
+      lastError = null;
+      break;
+    } catch (error) {
+      lastError = error;
+      if (controller.signal.aborted) break;
+    } finally {
+      clearTimeout(timer);
     }
-
-    const data = await response.json();
-
-    if (
-      !data ||
-      !data.list ||
-      !Array.isArray(data.list) ||
-      data.list.length === 0
-    ) {
-      throw new Error('获取到的详情内容无效');
-    }
-
-    const videoDetail = data.list[0];
-    let episodes: string[] = videoDetail.vod_play_url
-      ? extractPlayUrls(String(videoDetail.vod_play_url))
-      : [];
-
-    // 如果播放源为空，则尝试从内容中解析 m3u8
-    if (episodes.length === 0 && videoDetail.vod_content) {
-      const matches = String(videoDetail.vod_content).match(M3U8_PATTERN) || [];
-      episodes = matches.map((link: string) => link.replace(/^\$/, ''));
-    }
-
-    const yearText =
-      videoDetail.vod_year === undefined || videoDetail.vod_year === null
-        ? ''
-        : String(videoDetail.vod_year);
-    return {
-      id: id.toString(),
-      title: repairTitle(String(videoDetail.vod_name ?? '')),
-      poster: String(videoDetail.vod_pic ?? ''),
-      episodes,
-      source: apiSite.key,
-      source_name: apiSite.name,
-      class: videoDetail.vod_class,
-      year: yearText ? yearText.match(/\d{4}/)?.[0] || '' : 'unknown',
-      desc: cleanHtmlTags(String(videoDetail.vod_content ?? '')),
-      type_name: videoDetail.type_name,
-      douban_id: videoDetail.vod_douban_id,
-    };
-  } finally {
-    clearTimeout(timeoutId);
   }
+  if (lastError) throw lastError;
+
+  if (
+    !data ||
+    !data.list ||
+    !Array.isArray(data.list) ||
+    data.list.length === 0
+  ) {
+    throw new Error('获取到的详情内容无效');
+  }
+
+  const videoDetail = data.list[0];
+  let episodes: string[] = videoDetail.vod_play_url
+    ? extractPlayUrls(String(videoDetail.vod_play_url))
+    : [];
+
+  // 如果播放源为空，则尝试从内容中解析 m3u8
+  if (episodes.length === 0 && videoDetail.vod_content) {
+    const matches = String(videoDetail.vod_content).match(M3U8_PATTERN) || [];
+    episodes = matches.map((link: string) => link.replace(/^\$/, ''));
+  }
+
+  const yearText =
+    videoDetail.vod_year === undefined || videoDetail.vod_year === null
+      ? ''
+      : String(videoDetail.vod_year);
+  return {
+    id: id.toString(),
+    title: repairTitle(String(videoDetail.vod_name ?? '')),
+    poster: String(videoDetail.vod_pic ?? ''),
+    episodes,
+    source: apiSite.key,
+    source_name: apiSite.name,
+    class: videoDetail.vod_class,
+    year: yearText ? yearText.match(/\d{4}/)?.[0] || '' : 'unknown',
+    desc: cleanHtmlTags(String(videoDetail.vod_content ?? '')),
+    type_name: videoDetail.type_name,
+    douban_id: videoDetail.vod_douban_id,
+  };
 }
 
 async function handleSpecialSourceDetail(
