@@ -56,7 +56,6 @@ export default async function RootLayout({
   let announcement =
     process.env.ANNOUNCEMENT ||
     'KK:本网站仅提供影视信息搜索服务，所有内容均来自第三方网站。本站不存储任何视频资源，不对任何内容的准确性、合法性、完整性负责。';
-  let enableRegister = process.env.NEXT_PUBLIC_ENABLE_REGISTER === 'true';
   let imageProxy = process.env.NEXT_PUBLIC_IMAGE_PROXY || '';
   let doubanProxy = process.env.NEXT_PUBLIC_DOUBAN_PROXY || '';
   let disableYellowFilter =
@@ -74,7 +73,6 @@ export default async function RootLayout({
     const config = await getConfig();
     siteName = config.SiteConfig.SiteName;
     announcement = config.SiteConfig.Announcement;
-    enableRegister = config.UserConfig.AllowRegister;
     imageProxy = config.SiteConfig.ImageProxy;
     doubanProxy = config.SiteConfig.DoubanProxy;
     disableYellowFilter = config.SiteConfig.DisableYellowFilter;
@@ -90,7 +88,6 @@ export default async function RootLayout({
   // 将运行时配置注入到全局 window 对象，供客户端在运行时读取
   const runtimeConfig = {
     STORAGE_TYPE: process.env.NEXT_PUBLIC_STORAGE_TYPE || 'localstorage',
-    ENABLE_REGISTER: enableRegister,
     IMAGE_PROXY: imageProxy,
     DOUBAN_PROXY: doubanProxy,
     DISABLE_YELLOW_FILTER: disableYellowFilter,

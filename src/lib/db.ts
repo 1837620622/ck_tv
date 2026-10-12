@@ -134,17 +134,8 @@ export class DbManager {
   }
 
   // ---------- 用户相关 ----------
-  async registerUser(userName: string, password: string): Promise<void> {
-    await this.storage.registerUser(userName, password);
-  }
-
   async verifyUser(userName: string, password: string): Promise<boolean> {
     return this.storage.verifyUser(userName, password);
-  }
-
-  // 检查用户是否已存在
-  async checkUserExist(userName: string): Promise<boolean> {
-    return this.storage.checkUserExist(userName);
   }
 
   // ---------- 搜索历史 ----------

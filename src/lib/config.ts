@@ -227,7 +227,6 @@ async function initConfig() {
               process.env.NEXT_PUBLIC_DISABLE_YELLOW_FILTER === 'true',
           },
           UserConfig: {
-            AllowRegister: process.env.NEXT_PUBLIC_ENABLE_REGISTER === 'true',
             Users: allUsers as any,
           },
           SourceConfig: apiSiteEntries.map(([key, site]) =>
@@ -270,7 +269,6 @@ async function initConfig() {
           process.env.NEXT_PUBLIC_DISABLE_YELLOW_FILTER === 'true',
       },
       UserConfig: {
-        AllowRegister: process.env.NEXT_PUBLIC_ENABLE_REGISTER === 'true',
         Users: [],
       },
       SourceConfig: Object.entries(fileConfig.api_site).map(([key, site]) =>
@@ -312,8 +310,6 @@ export async function getConfig(): Promise<AdminConfig> {
     adminConfig.SiteConfig.Announcement =
       process.env.ANNOUNCEMENT ||
       '本网站仅提供影视信息搜索服务，所有内容均来自第三方网站。本站不存储任何视频资源，不对任何内容的准确性、合法性、完整性负责。';
-    adminConfig.UserConfig.AllowRegister =
-      process.env.NEXT_PUBLIC_ENABLE_REGISTER === 'true';
     adminConfig.SiteConfig.ImageProxy =
       process.env.NEXT_PUBLIC_IMAGE_PROXY || '';
     adminConfig.SiteConfig.DoubanProxy =
@@ -455,7 +451,6 @@ export async function resetConfig() {
         process.env.NEXT_PUBLIC_DISABLE_YELLOW_FILTER === 'true',
     },
     UserConfig: {
-      AllowRegister: process.env.NEXT_PUBLIC_ENABLE_REGISTER === 'true',
       Users: allUsers as any,
     },
     SourceConfig: apiSiteEntries.map(([key, site]) =>

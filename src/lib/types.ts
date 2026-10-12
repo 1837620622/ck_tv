@@ -44,10 +44,7 @@ export interface IStorage {
   deleteFavorite(userName: string, key: string): Promise<void>;
 
   // 用户相关
-  registerUser(userName: string, password: string): Promise<void>;
   verifyUser(userName: string, password: string): Promise<boolean>;
-  // 检查用户是否存在（无需密码）
-  checkUserExist(userName: string): Promise<boolean>;
   // 修改用户密码
   changePassword(userName: string, newPassword: string): Promise<void>;
   // 删除用户（包括密码、搜索历史、播放记录、收藏夹）

@@ -160,7 +160,6 @@ function LoginPageClient() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [shouldAskUsername, setShouldAskUsername] = useState(false);
-  const [enableRegister, setEnableRegister] = useState(false);
   const { siteName } = useSite();
 
   // 在客户端挂载后设置配置
@@ -168,9 +167,6 @@ function LoginPageClient() {
     if (typeof window !== 'undefined') {
       const storageType = (window as any).RUNTIME_CONFIG?.STORAGE_TYPE;
       setShouldAskUsername(storageType && storageType !== 'localstorage');
-      setEnableRegister(
-        Boolean((window as any).RUNTIME_CONFIG?.ENABLE_REGISTER)
-      );
     }
   }, []);
 
@@ -195,32 +191,6 @@ function LoginPageClient() {
         router.replace(safeNextPath(searchParams.get('redirect')));
       } else if (res.status === 401) {
         setError('密码错误');
-      } else {
-        const data = await res.json().catch(() => ({}));
-        setError(data.error ?? '服务器错误');
-      }
-    } catch (error) {
-      setError('网络错误，请稍后重试');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // 处理注册逻辑
-  const handleRegister = async () => {
-    setError(null);
-    if (!password || !username) return;
-
-    try {
-      setLoading(true);
-      const res = await fetch('/api/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
-      });
-
-      if (res.ok) {
-        router.replace(safeNextPath(searchParams.get('redirect')));
       } else {
         const data = await res.json().catch(() => ({}));
         setError(data.error ?? '服务器错误');
@@ -278,38 +248,13 @@ function LoginPageClient() {
             <p className='text-sm text-red-600 dark:text-red-400'>{error}</p>
           )}
 
-          {/* 登录 / 注册按钮 */}
-          {shouldAskUsername && enableRegister ? (
-            <div className='flex gap-4'>
-              <button
-                type='button'
-                onClick={handleRegister}
-                disabled={!password || !username || loading}
-                className='flex-1 inline-flex justify-center rounded-lg bg-blue-600 py-3 text-base font-semibold text-white shadow-lg transition-all duration-200 hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50'
-              >
-                {loading ? '注册中...' : '注册'}
-              </button>
-              <button
-                type='submit'
-                disabled={
-                  !password || loading || (shouldAskUsername && !username)
-                }
-                className='flex-1 inline-flex justify-center rounded-lg bg-green-600 py-3 text-base font-semibold text-white shadow-lg transition-all duration-200 hover:from-green-600 hover:to-blue-600 disabled:cursor-not-allowed disabled:opacity-50'
-              >
-                {loading ? '登录中...' : '登录'}
-              </button>
-            </div>
-          ) : (
-            <button
-              type='submit'
-              disabled={
-                !password || loading || (shouldAskUsername && !username)
-              }
-              className='inline-flex w-full justify-center rounded-lg bg-green-600 py-3 text-base font-semibold text-white shadow-lg transition-all duration-200 hover:from-green-600 hover:to-blue-600 disabled:cursor-not-allowed disabled:opacity-50'
-            >
-              {loading ? '登录中...' : '登录'}
-            </button>
-          )}
+          <button
+            type='submit'
+            disabled={!password || loading || (shouldAskUsername && !username)}
+            className='inline-flex w-full justify-center rounded-lg bg-green-600 py-3 text-base font-semibold text-white shadow-lg transition-all duration-200 hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50'
+          >
+            {loading ? '登录中...' : '登录'}
+          </button>
         </form>
       </div>
 

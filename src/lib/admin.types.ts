@@ -9,7 +9,6 @@ export interface AdminConfig {
     DisableYellowFilter: boolean;
   };
   UserConfig: {
-    AllowRegister: boolean;
     Users: {
       username: string;
       role: 'user' | 'admin' | 'owner';

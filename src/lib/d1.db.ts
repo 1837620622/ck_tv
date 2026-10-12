@@ -273,19 +273,6 @@ export class D1Storage implements IStorage {
   }
 
   // 用户相关
-  async registerUser(userName: string, password: string): Promise<void> {
-    try {
-      const db = await this.getDatabase();
-      await db
-        .prepare('INSERT INTO users (username, password) VALUES (?, ?)')
-        .bind(userName, await hashPassword(password))
-        .run();
-    } catch (err) {
-      console.error('Failed to register user:', err);
-      throw err;
-    }
-  }
-
   async verifyUser(userName: string, password: string): Promise<boolean> {
     try {
       const db = await this.getDatabase();
@@ -305,21 +292,6 @@ export class D1Storage implements IStorage {
       return ok;
     } catch (err) {
       console.error('Failed to verify user:', err);
-      throw err;
-    }
-  }
-
-  async checkUserExist(userName: string): Promise<boolean> {
-    try {
-      const db = await this.getDatabase();
-      const result = await db
-        .prepare('SELECT 1 FROM users WHERE username = ?')
-        .bind(userName)
-        .first();
-
-      return result !== null;
-    } catch (err) {
-      console.error('Failed to check user existence:', err);
       throw err;
     }
   }

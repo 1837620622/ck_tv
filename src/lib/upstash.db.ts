@@ -154,11 +154,6 @@ export class UpstashRedisStorage implements IStorage {
     return `u:${user}:pwd`;
   }
 
-  async registerUser(userName: string, password: string): Promise<void> {
-    const hashed = await hashPassword(password);
-    await withRetry(() => this.client.set(this.userPwdKey(userName), hashed));
-  }
-
   async verifyUser(userName: string, password: string): Promise<boolean> {
     const stored = await withRetry(() =>
       this.client.get(this.userPwdKey(userName))
@@ -172,15 +167,6 @@ export class UpstashRedisStorage implements IStorage {
       );
     }
     return ok;
-  }
-
-  // 检查用户是否存在
-  async checkUserExist(userName: string): Promise<boolean> {
-    // 使用 EXISTS 判断 key 是否存在
-    const exists = await withRetry(() =>
-      this.client.exists(this.userPwdKey(userName))
-    );
-    return exists === 1;
   }
 
   // 修改用户密码
