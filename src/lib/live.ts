@@ -1,3 +1,5 @@
+import { LIVE_IPTV_CANDIDATES } from './live-iptv';
+
 // 直播栏目只收录公开地址。urls 按顺序兜底，前面失败再试下一条。
 // code 是央视网页 html5 接口的频道号，播放时现取，不把会过期的地址写死。
 
@@ -25,7 +27,7 @@ const CCTV_PAGE = 'https://tv.cctv.com/live/';
 const CGTN_PAGE = 'https://www.cgtn.com/';
 const YANGSHI = 'https://www.yangshipin.cn/';
 
-export const LIVE_CHANNELS: LiveChannel[] = [
+const CURATED_CHANNELS: LiveChannel[] = [
   {
     id: 'cctvplus1',
     name: 'CCTV+ 1',
@@ -244,6 +246,21 @@ export const LIVE_CHANNELS: LiveChannel[] = [
     kind: 'link',
     href: YANGSHI,
   },
+];
+
+// 精选频道排在前面；scripts/import-live-iptv.js 导入的候选源接在后面，
+// 页面会先经过 /api/live/health 检查，检查不通过的默认隐藏。
+export const LIVE_CHANNELS: LiveChannel[] = [
+  ...CURATED_CHANNELS,
+  ...LIVE_IPTV_CANDIDATES.map(
+    (item): LiveChannel => ({
+      id: item.id,
+      name: item.name,
+      group: item.group,
+      kind: 'video',
+      urls: [item.url],
+    })
+  ),
 ];
 
 function local(id: string, name: string, url: string): LiveChannel[] {

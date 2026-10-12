@@ -5,7 +5,9 @@ import { Radio } from 'lucide-react';
 import {
   Suspense,
   useCallback,
+  useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -33,6 +35,12 @@ function LivePageClient() {
   const [line, setLine] = useState('');
   const [picture, setPicture] = useState('');
   const [delay, setDelay] = useState<number | null>(null);
+  // 频道健康检查结果：/api/live/health 在部署环境里检查过的清单可达性和跨域许可
+  const [health, setHealth] = useState<
+    Record<string, { ok: boolean; reason?: string }>
+  >({});
+  const [keyword, setKeyword] = useState('');
+  const checkedRef = useRef(new Set<string>());
 
   const playChannel = useCallback((channel: LiveChannel) => {
     const token = ++tokenRef.current;
@@ -309,7 +317,48 @@ function LivePageClient() {
     releaseMedia(node, () => hls?.destroy());
   };
 
-  const visible = LIVE_CHANNELS.filter((item) => item.group === group);
+  const visible = useMemo(
+    () => LIVE_CHANNELS.filter((item) => item.group === group),
+    [group]
+  );
+
+  // 切到哪一组就检测哪一组里还没检测过的频道，每批最多 25 条
+  useEffect(() => {
+    const pending = visible
+      .filter(
+        (item) => item.kind !== 'link' && !checkedRef.current.has(item.id)
+      )
+      .map((item) => item.id);
+    if (pending.length === 0) return;
+    pending.forEach((id) => checkedRef.current.add(id));
+    const run = async () => {
+      for (let i = 0; i < pending.length; i += 25) {
+        const batch = pending.slice(i, i + 25);
+        try {
+          const res = await fetch(
+            `/api/live/health?ids=${encodeURIComponent(batch.join(','))}`,
+            { cache: 'no-store' }
+          );
+          const data = await res.json();
+          setHealth((prev) => ({ ...prev, ...(data.results || {}) }));
+        } catch {
+          // 检测失败就保持未知状态，频道照常显示
+        }
+      }
+    };
+    void run();
+  }, [visible]);
+
+  // 按名字搜索；检测不通过的排到后面但不隐藏（检测在境外节点跑，国内用户可能正常）
+  const shown = useMemo(() => {
+    const needle = keyword.trim().toLowerCase();
+    const rank = (id: string) => (health[id] && !health[id].ok ? 1 : 0);
+    return visible
+      .filter((item) => !needle || item.name.toLowerCase().includes(needle))
+      .sort((a, b) => rank(a.id) - rank(b.id));
+  }, [visible, keyword, health]);
+  const checkedCount = visible.filter((item) => health[item.id]).length;
+  const okCount = visible.filter((item) => health[item.id]?.ok).length;
 
   return (
     <PageLayout activePath='/live'>
@@ -404,17 +453,37 @@ function LivePageClient() {
                 </a>
               ) : null}
             </div>
+            <div className='mb-2 flex flex-wrap items-center gap-2'>
+              <input
+                type='search'
+                value={keyword}
+                onChange={(e) => setKeyword(e.target.value)}
+                placeholder='搜索频道'
+                className='w-44 rounded-md border border-gray-300 bg-white px-2.5 py-1 text-sm text-gray-900 placeholder:text-gray-400 focus:border-green-500 focus:outline-none dark:border-gray-700 dark:bg-zinc-900 dark:text-gray-100'
+              />
+              <span className='text-xs text-gray-500'>
+                共 {shown.length} 个频道
+                {checkedCount > 0 ? `，检测通过 ${okCount} 个` : ''}
+              </span>
+            </div>
             <div className='flex flex-wrap gap-1.5'>
-              {visible.map((item) => (
-                <button
-                  key={item.id}
-                  type='button'
-                  className={choiceClass(current?.id === item.id, true)}
-                  onClick={() => playChannel(item)}
-                >
-                  {item.name}
-                </button>
-              ))}
+              {shown.map((item) => {
+                const state = health[item.id];
+                const dim = state && !state.ok;
+                return (
+                  <button
+                    key={item.id}
+                    type='button'
+                    title={dim ? `检测异常：${state.reason}` : undefined}
+                    className={`${choiceClass(current?.id === item.id, true)}${
+                      dim ? ' opacity-60' : ''
+                    }`}
+                    onClick={() => playChannel(item)}
+                  >
+                    {item.name}
+                  </button>
+                );
+              })}
             </div>
           </>
         )}
