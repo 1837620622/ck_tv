@@ -246,6 +246,78 @@
       "region": "both",
       "priority": 29,
       "globalPriority": 29
+    },
+    "wolong": {
+      "api": "https://wolongzyw.com/api.php/provide/vod",
+      "name": "卧龙资源",
+      "category": "general",
+      "region": "both",
+      "disabled": true,
+      "priority": 30,
+      "globalPriority": 30
+    },
+    "dbzy": {
+      "api": "https://dbzy.tv/api.php/provide/vod",
+      "name": "豆瓣资源",
+      "category": "general",
+      "region": "both",
+      "disabled": true,
+      "priority": 31,
+      "globalPriority": 31
+    },
+    "mdzy2": {
+      "api": "https://www.mdzyapi.com/api.php/provide/vod",
+      "name": "魔都资源2",
+      "category": "general",
+      "region": "both",
+      "disabled": true,
+      "priority": 32,
+      "globalPriority": 32
+    },
+    "wwzy": {
+      "api": "https://wwzy.tv/api.php/provide/vod",
+      "name": "旺旺短剧",
+      "category": "general",
+      "region": "both",
+      "disabled": true,
+      "priority": 33,
+      "globalPriority": 33
+    },
+    "yinghua2": {
+      "api": "https://m3u8.apiyhzy.com/api.php/provide/vod",
+      "name": "樱花资源2",
+      "category": "general",
+      "region": "both",
+      "disabled": true,
+      "priority": 34,
+      "globalPriority": 34
+    },
+    "jinyingzy": {
+      "api": "https://jinyingzy.com/api.php/provide/vod",
+      "name": "金鹰资源2",
+      "category": "general",
+      "region": "both",
+      "disabled": true,
+      "priority": 35,
+      "globalPriority": 35
+    },
+    "ffzytv": {
+      "api": "https://www.ffzy.tv/api.php/provide/vod",
+      "name": "非凡资源2",
+      "category": "general",
+      "region": "both",
+      "disabled": true,
+      "priority": 36,
+      "globalPriority": 36
+    },
+    "wujinme": {
+      "api": "https://api.wujinapi.me/api.php/provide/vod",
+      "name": "无尽资源2",
+      "category": "general",
+      "region": "both",
+      "disabled": true,
+      "priority": 37,
+      "globalPriority": 37
     }
   },
   "adult_api_site": {
