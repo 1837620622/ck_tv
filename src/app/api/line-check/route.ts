@@ -7,48 +7,13 @@ import {
   writeJsonCache,
 } from '@/lib/edge-cache';
 import { playlistHeight } from '@/lib/playlist';
+import { fetchPublic, publicHttpUrl } from '@/lib/safe-url';
 
 export const runtime = 'edge';
 
 const EDGE_SECONDS = 60;
 const BROWSER_SECONDS = 30;
 const MAX_BYTES = 200_000;
-
-function safePlayUrl(raw: string): URL | null {
-  let url: URL;
-  try {
-    url = new URL(raw);
-  } catch {
-    return null;
-  }
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
-  if (url.username || url.password) return null;
-  const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, '');
-  if (
-    host === 'localhost' ||
-    host.endsWith('.local') ||
-    host.endsWith('.internal') ||
-    host === 'metadata.google.internal'
-  ) {
-    return null;
-  }
-  const ipv4 = host.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
-  if (ipv4) {
-    const parts = ipv4.slice(1).map((part) => Number(part));
-    const [a, b] = parts;
-    const blocked =
-      a === 10 ||
-      a === 127 ||
-      a === 0 ||
-      a >= 224 ||
-      (a === 192 && b === 168) ||
-      (a === 172 && b >= 16 && b <= 31) ||
-      (a === 169 && b === 254);
-    if (blocked || parts.some((part) => part > 255)) return null;
-  }
-  if (host.includes(':')) return null;
-  return url;
-}
 
 async function readLimited(response: Response): Promise<string> {
   const reader = response.body?.getReader();
@@ -81,7 +46,9 @@ export async function GET(request: Request) {
       return undefined;
     }
   })();
-  const target = safePlayUrl(new URL(request.url).searchParams.get('u') || '');
+  const target = publicHttpUrl(
+    new URL(request.url).searchParams.get('u') || ''
+  );
   if (!target) {
     return NextResponse.json(
       { ok: false, height: 0, edgeMs: 0 },
@@ -107,43 +74,23 @@ export async function GET(request: Request) {
   const timer = setTimeout(() => controller.abort(), 4000);
   const started = Date.now();
   try {
-    let current = target;
-    let response: Response | null = null;
-    for (let hop = 0; hop < 3; hop += 1) {
-      response = await fetch(current.toString(), {
-        signal: controller.signal,
-        redirect: 'manual',
-        headers: {
-          Accept: 'application/vnd.apple.mpegurl,application/x-mpegURL,*/*',
+    const response = await fetchPublic(target, {
+      signal: controller.signal,
+      headers: {
+        Accept: 'application/vnd.apple.mpegurl,application/x-mpegURL,*/*',
+      },
+      cf: {
+        cacheEverything: true,
+        cacheTtl: EDGE_SECONDS,
+        cacheTtlByStatus: {
+          '200-299': EDGE_SECONDS,
+          '300-399': 0,
+          '400-499': 15,
+          '500-599': 0,
         },
-        cf: {
-          cacheEverything: true,
-          cacheTtl: EDGE_SECONDS,
-          cacheTtlByStatus: {
-            '200-299': EDGE_SECONDS,
-            '300-399': 0,
-            '400-499': 15,
-            '500-599': 0,
-          },
-        },
-      } as RequestInit);
-      if (response.status < 300 || response.status >= 400) break;
-      const next = safePlayUrl(
-        new URL(response.headers.get('location') || '', current).toString()
-      );
-      if (!next) {
-        response = null;
-        break;
-      }
-      current = next;
-    }
-    if (!response) {
-      return NextResponse.json(
-        { ok: false, height: 0, edgeMs: Date.now() - started },
-        { headers: { 'Cache-Control': 'no-store' } }
-      );
-    }
-    if (!response.ok) {
+      },
+    } as RequestInit);
+    if (!response || !response.ok) {
       return NextResponse.json(
         { ok: false, height: 0, edgeMs: Date.now() - started },
         { headers: { 'Cache-Control': 'no-store' } }

@@ -35,6 +35,12 @@ export async function POST(request: NextRequest) {
     if (!newPassword || typeof newPassword !== 'string') {
       return NextResponse.json({ error: '新密码不得为空' }, { status: 400 });
     }
+    if (newPassword.length > 128) {
+      return NextResponse.json(
+        { error: '密码不能超过 128 个字符' },
+        { status: 400 }
+      );
+    }
 
     const username = authInfo.username;
 
@@ -60,13 +66,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ ok: true });
   } catch (error) {
+    // 不把底层报错回显给客户端，原文只写服务端日志
     console.error('修改密码失败:', error);
-    return NextResponse.json(
-      {
-        error: '修改密码失败',
-        details: (error as Error).message,
-      },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: '修改密码失败' }, { status: 500 });
   }
 }

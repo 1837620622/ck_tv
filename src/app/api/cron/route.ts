@@ -2,6 +2,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
+import { safeEqual } from '@/lib/crypto';
 import { db } from '@/lib/db';
 import { fetchVideoDetail } from '@/lib/fetchVideoDetail';
 import { SearchResult } from '@/lib/types';
@@ -9,7 +10,14 @@ import { SearchResult } from '@/lib/types';
 export const runtime = 'edge';
 
 export async function GET(request: NextRequest) {
-  console.log(request.url);
+  // 这个接口不走登录中间件，且会遍历所有用户并回源拉详情。
+  // 没配 CRON_SECRET 或口令不对就拒绝；Vercel 定时任务会自动带上 Bearer 头。
+  const secret = process.env.CRON_SECRET;
+  const auth = request.headers.get('authorization') || '';
+  if (!secret || !safeEqual(auth, `Bearer ${secret}`)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   try {
     console.log('Cron job triggered:', new Date().toISOString());
 

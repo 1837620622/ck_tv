@@ -15,6 +15,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
+import { fetchPublic, publicHttpUrl } from '@/lib/safe-url';
+
 // Cloudflare Pages 需要 Edge Runtime
 export const runtime = 'edge';
 
@@ -27,6 +29,9 @@ const DAILY_FREE_NEURONS = 10000;
 
 /** Whisper 每分钟消耗的 Neurons */
 const NEURONS_PER_MINUTE = 41.14;
+
+/** 单次最多读取的视频字节数，超出部分直接丢弃，不读进内存 */
+const MAX_DOWNLOAD_BYTES = 5_242_880;
 
 /** 今日已使用 Neurons (简单内存存储，生产环境应使用 KV/D1) */
 let todayUsedNeurons = 0;
@@ -59,26 +64,55 @@ interface SubtitleRequest {
 // -----------------------------------------------------------------------------
 
 /**
+ * 读取流的前 limit 个字节。源站忽略 Range 返回整段文件时，也只读这么多。
+ */
+async function readUpTo(
+  body: ReadableStream<Uint8Array>,
+  limit: number
+): Promise<ArrayBuffer> {
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  while (size < limit) {
+    const { done, value } = await reader.read();
+    if (done || !value) break;
+    const room = limit - size;
+    const slice = value.byteLength > room ? value.subarray(0, room) : value;
+    chunks.push(slice);
+    size += slice.byteLength;
+  }
+  await reader.cancel().catch(() => undefined);
+
+  const out = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return out.buffer as ArrayBuffer;
+}
+
+/**
  * 从视频 URL 提取音频
  * 注意：这需要服务端有 ffmpeg 支持，或使用第三方服务
  */
 async function extractAudioFromVideo(
-  videoUrl: string
+  videoUrl: URL
 ): Promise<ArrayBuffer | null> {
   try {
     // 方案1: 直接下载视频的前几秒（用于测试）
-    const response = await fetch(videoUrl, {
+    const response = await fetchPublic(videoUrl, {
       headers: {
-        Range: 'bytes=0-5242880', // 只下载前 5MB
+        Range: `bytes=0-${MAX_DOWNLOAD_BYTES - 1}`, // 只下载前 5MB
       },
     });
 
-    if (!response.ok) {
-      console.error('下载视频失败:', response.status);
+    if (!response || !response.ok || !response.body) {
+      console.error('下载视频失败:', response?.status);
       return null;
     }
 
-    return await response.arrayBuffer();
+    return await readUpTo(response.body, MAX_DOWNLOAD_BYTES);
   } catch (err) {
     console.error('提取音频失败:', err);
     return null;
@@ -224,6 +258,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '缺少视频 URL' }, { status: 400 });
     }
 
+    // 只接受公网 http(s)，避免被拿来请求内网或任意非网页地址
+    const videoUrl = typeof url === 'string' ? publicHttpUrl(url) : null;
+    if (!videoUrl) {
+      return NextResponse.json({ error: '视频 URL 无效' }, { status: 400 });
+    }
+
     // 0. 预估音频时长并检查配额 (假设 5MB 约 5 分钟)
     const estimatedMinutes = 5;
     const quotaCheck = checkAndUpdateQuota(estimatedMinutes);
@@ -241,7 +281,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 1. 提取音频
-    const audioData = await extractAudioFromVideo(url);
+    const audioData = await extractAudioFromVideo(videoUrl);
     if (!audioData) {
       return NextResponse.json({ error: '无法提取音频' }, { status: 500 });
     }

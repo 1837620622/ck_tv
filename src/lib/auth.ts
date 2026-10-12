@@ -1,5 +1,8 @@
 import { NextRequest } from 'next/server';
 
+// localstorage 模式没有用户名，认证 Cookie 的签名对象用这个固定标记
+export const LOCAL_AUTH_SUBJECT = 'localstorage';
+
 // 从cookie获取认证信息 (服务端使用)
 export function getAuthInfoFromCookie(request: NextRequest): {
   password?: string;

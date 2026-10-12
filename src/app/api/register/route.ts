@@ -1,7 +1,8 @@
-/* eslint-disable no-console,@typescript-eslint/no-explicit-any */
+/* eslint-disable no-console */
 import { NextRequest, NextResponse } from 'next/server';
 
 import { getConfig } from '@/lib/config';
+import { hmacHex } from '@/lib/crypto';
 import { db } from '@/lib/db';
 import { isHttpsRequest } from '@/lib/https';
 
@@ -16,47 +17,15 @@ const STORAGE_TYPE =
     | 'upstash'
     | undefined) || 'localstorage';
 
-// 生成签名
-async function generateSignature(
-  data: string,
-  secret: string
-): Promise<string> {
-  const encoder = new TextEncoder();
-  const keyData = encoder.encode(secret);
-  const messageData = encoder.encode(data);
+const MAX_USERNAME_LENGTH = 32;
+const MAX_PASSWORD_LENGTH = 128;
 
-  // 导入密钥
-  const key = await crypto.subtle.importKey(
-    'raw',
-    keyData,
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign']
-  );
-
-  // 生成签名
-  const signature = await crypto.subtle.sign('HMAC', key, messageData);
-
-  // 转换为十六进制字符串
-  return Array.from(new Uint8Array(signature))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-}
-
-// 生成认证Cookie（带签名）
+// 认证 Cookie 只放用户名和签名，不放口令
 async function generateAuthCookie(username: string): Promise<string> {
-  const authData: any = {
-    role: 'user',
-    username,
-    timestamp: Date.now(),
-  };
-
-  // 使用process.env.PASSWORD作为签名密钥，而不是用户密码
-  const signingKey = process.env.PASSWORD || '';
-  const signature = await generateSignature(username, signingKey);
-  authData.signature = signature;
-
-  return encodeURIComponent(JSON.stringify(authData));
+  const signature = await hmacHex(username, process.env.PASSWORD || '');
+  return encodeURIComponent(
+    JSON.stringify({ role: 'user', username, signature })
+  );
 }
 
 export async function POST(req: NextRequest) {
@@ -82,6 +51,18 @@ export async function POST(req: NextRequest) {
     }
     if (!password || typeof password !== 'string') {
       return NextResponse.json({ error: '密码不能为空' }, { status: 400 });
+    }
+    if (username.length > MAX_USERNAME_LENGTH) {
+      return NextResponse.json(
+        { error: `用户名不能超过 ${MAX_USERNAME_LENGTH} 个字符` },
+        { status: 400 }
+      );
+    }
+    if (password.length > MAX_PASSWORD_LENGTH) {
+      return NextResponse.json(
+        { error: `密码不能超过 ${MAX_PASSWORD_LENGTH} 个字符` },
+        { status: 400 }
+      );
     }
 
     // 检查是否和管理员重复

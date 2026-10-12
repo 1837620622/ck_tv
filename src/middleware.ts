@@ -2,7 +2,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
-import { getAuthInfoFromCookie } from '@/lib/auth';
+import { getAuthInfoFromCookie, LOCAL_AUTH_SUBJECT } from '@/lib/auth';
+import { verifyHmacHex } from '@/lib/crypto';
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -27,78 +28,32 @@ export async function middleware(request: NextRequest) {
   // 从cookie获取认证信息
   const authInfo = getAuthInfoFromCookie(request);
 
-  if (!authInfo) {
+  if (!authInfo || !authInfo.signature) {
     return handleAuthFailure(request, pathname);
   }
 
-  // localstorage模式：在middleware中完成验证
+  const secret = process.env.PASSWORD || '';
+
+  // localstorage 模式：Cookie 里只有对固定标记的签名，不含口令
   if (storageType === 'localstorage') {
-    if (!authInfo.password || authInfo.password !== process.env.PASSWORD) {
-      return handleAuthFailure(request, pathname);
-    }
-    return NextResponse.next();
+    const valid = await verifyHmacHex(
+      LOCAL_AUTH_SUBJECT,
+      authInfo.signature,
+      secret
+    );
+    return valid ? NextResponse.next() : handleAuthFailure(request, pathname);
   }
 
-  // 其他模式：只验证签名
-  // 检查是否有用户名（非localStorage模式下密码不存储在cookie中）
-  if (!authInfo.username || !authInfo.signature) {
+  // 其他模式：签名对象是用户名
+  if (!authInfo.username) {
     return handleAuthFailure(request, pathname);
   }
-
-  // 验证签名（如果存在）
-  if (authInfo.signature) {
-    const isValidSignature = await verifySignature(
-      authInfo.username,
-      authInfo.signature,
-      process.env.PASSWORD || ''
-    );
-
-    // 签名验证通过即可
-    if (isValidSignature) {
-      return NextResponse.next();
-    }
-  }
-
-  // 签名验证失败或不存在签名
-  return handleAuthFailure(request, pathname);
-}
-
-// 验证签名
-async function verifySignature(
-  data: string,
-  signature: string,
-  secret: string
-): Promise<boolean> {
-  const encoder = new TextEncoder();
-  const keyData = encoder.encode(secret);
-  const messageData = encoder.encode(data);
-
-  try {
-    // 导入密钥
-    const key = await crypto.subtle.importKey(
-      'raw',
-      keyData,
-      { name: 'HMAC', hash: 'SHA-256' },
-      false,
-      ['verify']
-    );
-
-    // 将十六进制字符串转换为Uint8Array
-    const signatureBuffer = new Uint8Array(
-      signature.match(/.{1,2}/g)?.map((byte) => parseInt(byte, 16)) || []
-    );
-
-    // 验证签名
-    return await crypto.subtle.verify(
-      'HMAC',
-      key,
-      signatureBuffer,
-      messageData
-    );
-  } catch (error) {
-    console.error('签名验证失败:', error);
-    return false;
-  }
+  const valid = await verifyHmacHex(
+    authInfo.username,
+    authInfo.signature,
+    secret
+  );
+  return valid ? NextResponse.next() : handleAuthFailure(request, pathname);
 }
 
 // 处理认证失败的情况

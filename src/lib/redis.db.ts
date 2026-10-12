@@ -3,6 +3,7 @@
 import { createClient, RedisClientType } from 'redis';
 
 import { AdminConfig } from './admin.types';
+import { checkPassword, hashPassword } from './crypto';
 import { Favorite, IStorage, PlayRecord, SkipConfig } from './types';
 
 // 搜索历史最大条数
@@ -168,8 +169,8 @@ export class RedisStorage implements IStorage {
   }
 
   async registerUser(userName: string, password: string): Promise<void> {
-    // 简单存储明文密码，生产环境应加密
-    await withRetry(() => this.client.set(this.userPwdKey(userName), password));
+    const hashed = await hashPassword(password);
+    await withRetry(() => this.client.set(this.userPwdKey(userName), hashed));
   }
 
   async verifyUser(userName: string, password: string): Promise<boolean> {
@@ -177,8 +178,14 @@ export class RedisStorage implements IStorage {
       this.client.get(this.userPwdKey(userName))
     );
     if (stored === null) return false;
-    // 确保比较时都是字符串类型
-    return ensureString(stored) === password;
+    const { ok, legacy } = await checkPassword(password, ensureString(stored));
+    // 旧版明文口令校验通过后顺手改成哈希，失败不影响本次登录
+    if (ok && legacy) {
+      await this.changePassword(userName, password).catch((err) =>
+        console.error('Failed to upgrade password hash:', err)
+      );
+    }
+    return ok;
   }
 
   // 检查用户是否存在
@@ -192,10 +199,8 @@ export class RedisStorage implements IStorage {
 
   // 修改用户密码
   async changePassword(userName: string, newPassword: string): Promise<void> {
-    // 简单存储明文密码，生产环境应加密
-    await withRetry(() =>
-      this.client.set(this.userPwdKey(userName), newPassword)
-    );
+    const hashed = await hashPassword(newPassword);
+    await withRetry(() => this.client.set(this.userPwdKey(userName), hashed));
   }
 
   // 删除用户及其所有数据

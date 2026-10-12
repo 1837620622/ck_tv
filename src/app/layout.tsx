@@ -96,6 +96,11 @@ export default async function RootLayout({
     DISABLE_YELLOW_FILTER: disableYellowFilter,
     CUSTOM_CATEGORIES: customCategories,
   };
+  // 配置里的字符串可能含 </script>，转义 < 才不会提前闭合脚本标签
+  const runtimeConfigJson = JSON.stringify(runtimeConfig).replace(
+    /</g,
+    '\\u003c'
+  );
 
   return (
     <html lang='zh-CN' suppressHydrationWarning>
@@ -109,7 +114,7 @@ export default async function RootLayout({
         {/* eslint-disable-next-line @next/next/no-sync-scripts */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `window.RUNTIME_CONFIG = ${JSON.stringify(runtimeConfig)};`,
+            __html: `window.RUNTIME_CONFIG = ${runtimeConfigJson};`,
           }}
         />
       </head>
