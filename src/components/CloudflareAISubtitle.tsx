@@ -27,8 +27,8 @@ interface CloudflareAISubtitleProps {
   enabled: boolean;
   /** 视频 URL */
   videoUrl: string;
-  /** 当前播放时间（秒） */
-  currentTime: number;
+  /** 当前播放时间（秒），占位组件暂未使用 */
+  currentTime?: number;
   /** 语言代码（可选） */
   language?: string;
 }

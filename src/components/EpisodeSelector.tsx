@@ -141,6 +141,11 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
   const initialPage = Math.floor((value - 1) / episodesPerPage);
   const [currentPage, setCurrentPage] = useState<number>(initialPage);
 
+  // 播放进度跨到其他分页（自动下一集、快捷键切集）时，分页跟着走；手动翻页不受影响
+  useEffect(() => {
+    setCurrentPage(initialPage);
+  }, [initialPage]);
+
   // 是否倒序显示
   const [descending, setDescending] = useState<boolean>(false);
   const [latencyMs, setLatencyMs] = useState<Record<string, LineProbe>>({});
@@ -257,7 +262,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
         behavior: 'smooth',
       });
     }
-  }, [displayPage, pageCount]);
+  }, [displayPage, pageCount, activeTab]);
 
   // 处理换源tab点击，只在点击时才搜索
   const handleSourceTabClick = () => {

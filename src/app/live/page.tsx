@@ -299,6 +299,16 @@ function LivePageClient() {
     };
   }, [playChannel]);
 
+  // 停止当前播放：切到不播放的分组、或需要释放资源时调用，避免声音还在后台播
+  const stopPlayback = () => {
+    tokenRef.current += 1;
+    window.clearInterval(clockRef.current);
+    const node = nodeRef.current;
+    const hls = hlsRef.current;
+    hlsRef.current = null;
+    releaseMedia(node, () => hls?.destroy());
+  };
+
   const visible = LIVE_CHANNELS.filter((item) => item.group === group);
 
   return (
@@ -316,7 +326,12 @@ function LivePageClient() {
             label='分类'
             options={LIVE_GROUPS}
             value={group}
-            onChange={(value) => setGroup(value as LiveGroup)}
+            onChange={(value) => {
+              const next = value as LiveGroup;
+              // 切到平台分组时视频区会被卸载，先把正在播的流停掉
+              if (next === 'platform') stopPlayback();
+              setGroup(next);
+            }}
           />
         </div>
 
@@ -353,6 +368,9 @@ function LivePageClient() {
             </div>
             <div className='mb-3 flex flex-wrap items-center gap-2 text-sm text-gray-600 dark:text-gray-300'>
               <span>{current?.name || '选一个频道'}</span>
+              {phase === 'loading' ? (
+                <span className='text-gray-500'>加载中…</span>
+              ) : null}
               {picture ? <span>{picture}</span> : null}
               {delay != null ? <span>延迟 {delay} 秒</span> : null}
               {line ? (

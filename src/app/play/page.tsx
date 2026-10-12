@@ -35,6 +35,7 @@ import TVCastModal from '@/components/TVCastModal';
 declare global {
   interface HTMLVideoElement {
     hls?: any;
+    __ckTeardown?: () => void;
   }
 }
 
@@ -115,7 +116,6 @@ function PlayPageClient() {
   });
 
   // 当前播放时间（用于 AI 字幕同步）
-  const [currentPlayTime, setCurrentPlayTime] = useState(0);
 
   // 当前视频 URL（用于 AI 字幕）
   const [currentVideoUrl, setCurrentVideoUrl] = useState('');
@@ -191,8 +191,47 @@ function PlayPageClient() {
   // 换源加载状态
   const [isVideoLoading, setIsVideoLoading] = useState(true);
   const [videoLoadingStage, setVideoLoadingStage] = useState<
-    'initing' | 'sourceChanging'
+    'initing' | 'sourceChanging' | 'stalled'
   >('initing');
+  // 加载超时或中途断流时，蒙层上显示的提示
+  const [loadingHint, setLoadingHint] = useState('');
+
+  // 起播或换线后 15 秒还没出画，改成"换一条线路"的提示，不让蒙层永远挡住控制栏
+  useEffect(() => {
+    if (!isVideoLoading) return;
+    const timer = window.setTimeout(() => {
+      setLoadingHint('线路加载较慢，可以换一条线路');
+      setVideoLoadingStage('stalled');
+    }, 15000);
+    return () => window.clearTimeout(timer);
+  }, [isVideoLoading, videoUrl]);
+
+  // 出错后把还在跑的播放器和 hls 拆掉，避免错误卡片下面还在出声
+  useEffect(() => {
+    if (!error) return;
+    const player = artPlayerRef.current;
+    if (!player) return;
+    player.video?.hls?.destroy();
+    player.destroy();
+    artPlayerRef.current = null;
+  }, [error]);
+
+  // 片源确定后提前与 CDN 建立连接，省掉首个清单请求的 DNS 与 TLS 时间
+  useEffect(() => {
+    if (!videoUrl || typeof document === 'undefined') return;
+    let origin = '';
+    try {
+      origin = new URL(videoUrl).origin;
+    } catch {
+      return;
+    }
+    const link = document.createElement('link');
+    link.rel = 'preconnect';
+    link.href = origin;
+    link.crossOrigin = 'anonymous';
+    document.head.appendChild(link);
+    return () => link.remove();
+  }, [videoUrl]);
 
   // 播放进度保存相关
   const saveIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -249,9 +288,12 @@ function PlayPageClient() {
       return;
     }
     const newUrl = detailData?.episodes[episodeIndex] || '';
-    if (newUrl !== videoUrl) {
-      setVideoUrl(newUrl);
+    if (newUrl === videoUrl) {
+      // 同一条地址已经在播，不会再触发 canplay，这里直接收起加载蒙层
+      if (newUrl) setIsVideoLoading(false);
+      return;
     }
+    setVideoUrl(newUrl);
   };
 
   const ensureVideoSource = (video: HTMLVideoElement | null, url: string) => {
@@ -780,13 +822,9 @@ function PlayPageClient() {
     }
   };
   handleSourceChangeRef.current = handleSourceChange;
-  failOverRef.current = () => {
-    if (userChoseRef.current) return;
-    if (sourceSwitchingRef.current) return;
-    if ((artPlayerRef.current?.currentTime || 0) > 1) return;
-    const currentKey = `${currentSourceRef.current}:${currentIdRef.current}`;
-    failedSourceKeysRef.current.add(currentKey);
-    const next = [...availableSourcesRef.current]
+  // 挑下一条可用线路：有 m3u8、没有失败过、排名最靠前
+  const pickNextSource = () =>
+    [...availableSourcesRef.current]
       .filter((source) =>
         source.episodes?.some((episode) => episode.includes('.m3u8'))
       )
@@ -795,6 +833,24 @@ function PlayPageClient() {
           !failedSourceKeysRef.current.has(`${source.source}:${source.id}`)
       )
       .sort((a, b) => (a.source_rank ?? 999) - (b.source_rank ?? 999))[0];
+
+  // 用户点"换一条线路"：不受 userChoseRef 限制，直接切到下一条
+  const switchLineManually = () => {
+    const currentKey = `${currentSourceRef.current}:${currentIdRef.current}`;
+    failedSourceKeysRef.current.add(currentKey);
+    const next = pickNextSource();
+    if (!next) return;
+    sourceSwitchingRef.current = true;
+    handleSourceChangeRef.current(next.source, next.id, next.title);
+  };
+
+  failOverRef.current = () => {
+    if (userChoseRef.current) return;
+    if (sourceSwitchingRef.current) return;
+    if ((artPlayerRef.current?.currentTime || 0) > 1) return;
+    const currentKey = `${currentSourceRef.current}:${currentIdRef.current}`;
+    failedSourceKeysRef.current.add(currentKey);
+    const next = pickNextSource();
     if (!next) return;
     sourceSwitchingRef.current = true;
     handleSourceChangeRef.current(next.source, next.id, next.title);
@@ -813,10 +869,8 @@ function PlayPageClient() {
   // 处理集数切换
   const handleEpisodeChange = (episodeNumber: number) => {
     if (episodeNumber >= 0 && episodeNumber < totalEpisodes) {
-      // 在更换集数前保存当前播放进度
-      if (artPlayerRef.current && artPlayerRef.current.paused) {
-        saveCurrentPlayProgress();
-      }
+      // 在更换集数前保存当前播放进度（播放中或暂停中都要存）
+      saveCurrentPlayProgress();
       setCurrentEpisodeIndex(episodeNumber);
     }
   };
@@ -825,9 +879,7 @@ function PlayPageClient() {
     const d = detailRef.current;
     const idx = currentEpisodeIndexRef.current;
     if (d && d.episodes && idx > 0) {
-      if (artPlayerRef.current && !artPlayerRef.current.paused) {
-        saveCurrentPlayProgress();
-      }
+      saveCurrentPlayProgress();
       setCurrentEpisodeIndex(idx - 1);
     }
   };
@@ -836,9 +888,7 @@ function PlayPageClient() {
     const d = detailRef.current;
     const idx = currentEpisodeIndexRef.current;
     if (d && d.episodes && idx < d.episodes.length - 1) {
-      if (artPlayerRef.current && !artPlayerRef.current.paused) {
-        saveCurrentPlayProgress();
-      }
+      saveCurrentPlayProgress();
       setCurrentEpisodeIndex(idx + 1);
     }
   };
@@ -848,12 +898,19 @@ function PlayPageClient() {
   // ---------------------------------------------------------------------------
   // 处理全局快捷键
   const handleKeyboardShortcuts = (e: KeyboardEvent) => {
-    // 忽略输入框中的按键事件
+    const target = e.target as HTMLElement;
+    // 忽略输入框、可编辑区域，以及 Ctrl/Cmd 组合键（比如 Ctrl+F 查找）
     if (
-      (e.target as HTMLElement).tagName === 'INPUT' ||
-      (e.target as HTMLElement).tagName === 'TEXTAREA'
+      target.tagName === 'INPUT' ||
+      target.tagName === 'TEXTAREA' ||
+      target.tagName === 'SELECT' ||
+      target.isContentEditable ||
+      e.ctrlKey ||
+      e.metaKey
     )
       return;
+    const focusOnControl =
+      target.tagName === 'BUTTON' || target.tagName === 'A';
 
     // Alt + 左箭头 = 上一集
     if (e.altKey && e.key === 'ArrowLeft') {
@@ -916,8 +973,8 @@ function PlayPageClient() {
       }
     }
 
-    // 空格 = 播放/暂停
-    if (e.key === ' ') {
+    // 空格 = 播放/暂停（焦点在按钮或链接上时交给元素本身）
+    if (e.key === ' ' && !focusOnControl) {
       if (artPlayerRef.current) {
         artPlayerRef.current.toggle();
         e.preventDefault();
@@ -1122,7 +1179,7 @@ function PlayPageClient() {
       }
       art.switch = videoUrl;
       art.title = `${videoTitle} - 第${currentEpisodeIndex + 1}集`;
-      art.poster = videoCover;
+      art.poster = processImageUrl(videoCover);
       if (video) ensureVideoSource(video, videoUrl);
       return;
     }
@@ -1145,7 +1202,7 @@ function PlayPageClient() {
       artPlayerRef.current = new Artplayer({
         container: artRef.current,
         url: videoUrl,
-        poster: videoCover,
+        poster: processImageUrl(videoCover),
         volume: 0.7,
         isLive: false,
         muted: false,
@@ -1196,6 +1253,8 @@ function PlayPageClient() {
               return;
             }
 
+            // 同一个 <video> 会被复用，先拆掉上一轮挂的监听和定时器，避免越切越多
+            video.__ckTeardown?.();
             if (video.hls) {
               video.hls.destroy();
             }
@@ -1211,9 +1270,9 @@ function PlayPageClient() {
               abrBandWidthUpFactor: 0.7,
 
               /* 先攒够可播缓冲，再限制上限，避免手机硬解 4K 把线路打满 */
-              // 换线会丢掉还没看的缓冲，少囤一些，也少预拉下一档。
-              maxBufferLength: 18,
-              maxMaxBufferLength: 36,
+              // 30 秒缓冲能扛住线路抖动，内存上限由下面的 maxBufferSize 兜底。
+              maxBufferLength: 30,
+              maxMaxBufferLength: 60,
               backBufferLength: 8,
               maxBufferSize: 24 * 1000 * 1000,
               startFragPrefetch: false,
@@ -1227,8 +1286,9 @@ function PlayPageClient() {
               manifestLoadingMaxRetry: 2,
               levelLoadingTimeOut: 12000,
               levelLoadingMaxRetry: 2,
-              fragLoadingTimeOut: 12000,
+              fragLoadingTimeOut: 8000,
               fragLoadingMaxRetry: 3,
+              fragLoadingMaxRetryTimeout: 8000,
 
               loader: blockAdEnabledRef.current
                 ? CustomHlsJsLoader
@@ -1243,14 +1303,20 @@ function PlayPageClient() {
 
             let opened = false;
             let networkRetries = 0;
-            const markOpened = () => {
-              opened = true;
-            };
-            video.addEventListener('playing', markOpened);
-
+            let midStreamRetries = 0;
             // 只在卡住超过 1.2 秒、且后面已经有缓冲时轻轻前移，避免每次 waiting 都跳进度
             let stallTimer = 0;
-            video.addEventListener('waiting', () => {
+            const clearStallTimer = () => {
+              if (stallTimer) {
+                window.clearTimeout(stallTimer);
+                stallTimer = 0;
+              }
+            };
+            const onPlaying = () => {
+              opened = true;
+              clearStallTimer();
+            };
+            const onWaiting = () => {
               if (stallTimer) return;
               stallTimer = window.setTimeout(() => {
                 stallTimer = 0;
@@ -1265,13 +1331,14 @@ function PlayPageClient() {
                   }
                 }
               }, 1200);
-            });
-            video.addEventListener('playing', () => {
-              if (stallTimer) {
-                window.clearTimeout(stallTimer);
-                stallTimer = 0;
-              }
-            });
+            };
+            video.addEventListener('playing', onPlaying);
+            video.addEventListener('waiting', onWaiting);
+            video.__ckTeardown = () => {
+              video.removeEventListener('playing', onPlaying);
+              video.removeEventListener('waiting', onWaiting);
+              clearStallTimer();
+            };
 
             hls.on(Hls.Events.ERROR, function (event: any, data: any) {
               if (!data?.fatal) return;
@@ -1299,8 +1366,20 @@ function PlayPageClient() {
                 hls.recoverMediaError();
                 return;
               }
-              if (notStarted) failOverRef.current();
-              else hls.destroy();
+              if (notStarted) {
+                failOverRef.current();
+                return;
+              }
+              // 已经在播：从当前位置续播几次，仍失败就停住并提示换线
+              if (midStreamRetries < 3) {
+                midStreamRetries += 1;
+                hls.startLoad(video.currentTime || undefined);
+                return;
+              }
+              hls.destroy();
+              setLoadingHint('播放中断，可以换一条线路');
+              setVideoLoadingStage('stalled');
+              setIsVideoLoading(true);
             });
           },
         },
@@ -1363,6 +1442,8 @@ function PlayPageClient() {
               const newVal = !blockAdEnabled;
               try {
                 localStorage.setItem('enable_blockad', String(newVal));
+                setVideoLoadingStage('initing');
+                setIsVideoLoading(true);
                 if (artPlayerRef.current) {
                   resumeTimeRef.current = artPlayerRef.current.currentTime;
                   if (
@@ -1597,10 +1678,6 @@ function PlayPageClient() {
           saveCurrentPlayProgress();
           lastSaveTimeRef.current = now;
         }
-        // 更新当前播放时间（用于 AI 字幕同步）
-        if (artPlayerRef.current) {
-          setCurrentPlayTime(artPlayerRef.current.currentTime || 0);
-        }
       });
 
       // 设置当前视频 URL（用于 AI 字幕）
@@ -1787,7 +1864,7 @@ function PlayPageClient() {
                 isEpisodeSelectorCollapsed ? 'col-span-1' : 'md:col-span-3'
               }`}
             >
-              <div className='relative w-full h-[300px] lg:h-full'>
+              <div className='relative aspect-video w-full lg:aspect-auto lg:h-full'>
                 <div
                   ref={artRef}
                   className='bg-black w-full h-full rounded-xl overflow-hidden shadow-lg'
@@ -1797,18 +1874,46 @@ function PlayPageClient() {
                 <CloudflareAISubtitle
                   enabled={aiSubtitleEnabled}
                   videoUrl={currentVideoUrl}
-                  currentTime={currentPlayTime}
                   language='zh'
                 />
 
                 {/* 换源加载蒙层 */}
                 {isVideoLoading && (
-                  <div className='absolute inset-0 z-[500] flex items-center justify-center bg-black/80'>
-                    <p className='text-sm text-white'>
-                      {videoLoadingStage === 'sourceChanging'
-                        ? '切换线路'
-                        : '正在缓冲'}
-                    </p>
+                  <div
+                    role='status'
+                    aria-live='polite'
+                    className='absolute inset-0 z-[500] flex flex-col items-center justify-center gap-3 bg-black/80 px-6 text-center'
+                  >
+                    {videoLoadingStage === 'stalled' ? (
+                      <>
+                        <p className='text-sm text-white'>{loadingHint}</p>
+                        {pickNextSource() ? (
+                          <button
+                            type='button'
+                            onClick={switchLineManually}
+                            className='rounded-full bg-green-600 px-4 py-1.5 text-sm text-white transition-colors hover:bg-green-700'
+                          >
+                            换一条线路
+                          </button>
+                        ) : (
+                          <p className='text-xs text-white/60'>
+                            暂无其他可用线路，可以稍后重试
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <span
+                          aria-hidden='true'
+                          className='h-6 w-6 animate-spin rounded-full border-2 border-white/30 border-t-white'
+                        />
+                        <p className='text-sm text-white'>
+                          {videoLoadingStage === 'sourceChanging'
+                            ? '切换线路'
+                            : '正在缓冲'}
+                        </p>
+                      </>
+                    )}
                   </div>
                 )}
               </div>
