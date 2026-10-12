@@ -1,5 +1,6 @@
 /* eslint-disable no-console */
 
+import { getOptionalRequestContext } from '@cloudflare/next-on-pages';
 import { NextRequest, NextResponse } from 'next/server';
 
 import { safeEqual } from '@/lib/crypto';
@@ -21,7 +22,16 @@ export async function GET(request: NextRequest) {
   try {
     console.log('Cron job triggered:', new Date().toISOString());
 
-    refreshRecordAndFavorites();
+    // 刷新在响应之后继续跑。Cloudflare 上交给 waitUntil，避免返回后被截断；Node 下直接后台执行。
+    const work = refreshRecordAndFavorites();
+    const ctx = (() => {
+      try {
+        return getOptionalRequestContext()?.ctx;
+      } catch {
+        return undefined;
+      }
+    })();
+    if (ctx) ctx.waitUntil(work);
 
     return NextResponse.json({
       success: true,

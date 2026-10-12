@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { LOCAL_AUTH_SUBJECT } from '@/lib/auth';
 import { getConfig } from '@/lib/config';
-import { hmacHex, safeEqual } from '@/lib/crypto';
+import { burnPasswordCheck, hmacHex, safeEqual } from '@/lib/crypto';
 import { db } from '@/lib/db';
 import { isHttpsRequest } from '@/lib/https';
 import {
@@ -143,6 +143,8 @@ export async function POST(req: NextRequest) {
       return response;
     } else if (username === process.env.USERNAME) {
       recordFailure(dbKey);
+      // 站长口令错误也跑一次同样耗时的校验，否则响应更快，能暴露站长用户名
+      await burnPasswordCheck(password);
       return NextResponse.json({ error: '用户名或密码错误' }, { status: 401 });
     }
 
