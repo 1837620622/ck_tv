@@ -6,6 +6,12 @@ import { getConfig } from '@/lib/config';
 import { hmacHex, safeEqual } from '@/lib/crypto';
 import { db } from '@/lib/db';
 import { isHttpsRequest } from '@/lib/https';
+import {
+  clientKey,
+  lockedSeconds,
+  recordFailure,
+  recordSuccess,
+} from '@/lib/throttle';
 
 export const runtime = 'edge';
 
@@ -17,6 +23,14 @@ const STORAGE_TYPE =
     | 'd1'
     | 'upstash'
     | undefined) || 'localstorage';
+
+// 连续输错口令后暂时拒绝，避免在线暴力破解
+function tooManyAttempts(seconds: number) {
+  return NextResponse.json(
+    { error: `尝试次数过多，请 ${Math.ceil(seconds / 60)} 分钟后再试` },
+    { status: 429, headers: { 'Retry-After': String(seconds) } }
+  );
+}
 
 // 认证 Cookie 只放签名，不放口令。本地模式没有用户名，签 LOCAL_AUTH_SUBJECT。
 async function generateAuthCookie(
@@ -55,12 +69,17 @@ export async function POST(req: NextRequest) {
         return response;
       }
 
+      const localKey = clientKey(req, 'local');
+      const localWait = lockedSeconds(localKey);
+      if (localWait > 0) return tooManyAttempts(localWait);
+
       const { password } = await req.json();
       if (typeof password !== 'string') {
         return NextResponse.json({ error: '密码不能为空' }, { status: 400 });
       }
 
       if (!safeEqual(password, envPassword)) {
+        recordFailure(localKey);
         return NextResponse.json(
           { ok: false, error: '密码错误' },
           { status: 401 }
@@ -68,6 +87,7 @@ export async function POST(req: NextRequest) {
       }
 
       // 验证成功，设置认证cookie
+      recordSuccess(localKey);
       const response = NextResponse.json({ ok: true });
       const cookieValue = await generateAuthCookie('user');
       const expires = new Date();
@@ -94,6 +114,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '密码不能为空' }, { status: 400 });
     }
 
+    const dbKey = clientKey(req, username);
+    const dbWait = lockedSeconds(dbKey);
+    if (dbWait > 0) return tooManyAttempts(dbWait);
+
     // 可能是站长，直接读环境变量
     if (
       process.env.USERNAME &&
@@ -102,6 +126,7 @@ export async function POST(req: NextRequest) {
       safeEqual(password, process.env.PASSWORD)
     ) {
       // 验证成功，设置认证cookie
+      recordSuccess(dbKey);
       const response = NextResponse.json({ ok: true });
       const cookieValue = await generateAuthCookie('owner', username);
       const expires = new Date();
@@ -117,6 +142,7 @@ export async function POST(req: NextRequest) {
 
       return response;
     } else if (username === process.env.USERNAME) {
+      recordFailure(dbKey);
       return NextResponse.json({ error: '用户名或密码错误' }, { status: 401 });
     }
 
@@ -127,6 +153,7 @@ export async function POST(req: NextRequest) {
     try {
       const pass = await db.verifyUser(username, password);
       if (!pass) {
+        recordFailure(dbKey);
         return NextResponse.json(
           { error: '用户名或密码错误' },
           { status: 401 }
@@ -139,6 +166,7 @@ export async function POST(req: NextRequest) {
       }
 
       // 验证成功，设置认证cookie
+      recordSuccess(dbKey);
       const response = NextResponse.json({ ok: true });
       const cookieValue = await generateAuthCookie(
         user?.role || 'user',

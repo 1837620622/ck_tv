@@ -205,7 +205,9 @@ export async function getDetailFromApi(
     return handleSpecialSourceDetail(id, apiSite);
   }
 
-  const detailUrl = `${apiSite.api}${API_CONFIG.detail.path}${id}`;
+  const detailUrl = `${apiSite.api}${
+    API_CONFIG.detail.path
+  }${encodeURIComponent(id)}`;
   let data: ApiListPayload | null = null;
   let lastError: unknown = null;
   for (const timeoutMs of [6000, 4000]) {

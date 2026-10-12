@@ -4,6 +4,12 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
 import { getStorage } from '@/lib/db';
+import {
+  clientKey,
+  lockedSeconds,
+  recordFailure,
+  recordSuccess,
+} from '@/lib/throttle';
 import { IStorage } from '@/lib/types';
 
 export const runtime = 'edge';
@@ -23,7 +29,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { newPassword } = body;
+    const { oldPassword, newPassword } = body;
 
     // 获取认证信息
     const authInfo = getAuthInfoFromCookie(request);
@@ -60,6 +66,24 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       );
     }
+
+    // 必须先验证当前密码：偷到 Cookie 的人不能直接改密。连续输错同样会被限制。
+    if (typeof oldPassword !== 'string' || !oldPassword) {
+      return NextResponse.json({ error: '请输入当前密码' }, { status: 400 });
+    }
+    const throttleKey = clientKey(request, username);
+    const wait = lockedSeconds(throttleKey);
+    if (wait > 0) {
+      return NextResponse.json(
+        { error: `尝试次数过多，请 ${Math.ceil(wait / 60)} 分钟后再试` },
+        { status: 429, headers: { 'Retry-After': String(wait) } }
+      );
+    }
+    if (!(await storage.verifyUser(username, oldPassword))) {
+      recordFailure(throttleKey);
+      return NextResponse.json({ error: '当前密码错误' }, { status: 401 });
+    }
+    recordSuccess(throttleKey);
 
     // 修改密码
     await storage.changePassword(username, newPassword);

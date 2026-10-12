@@ -6,6 +6,11 @@ import { AdminConfig } from './admin.types';
 import { burnPasswordCheck, checkPassword, hashPassword } from './crypto';
 import { Favorite, IStorage, PlayRecord, SkipConfig } from './types';
 
+// 用户名参与 KEYS 通配模式时必须转义，否则名字里的 * ? [ 会匹配到别人的数据
+export function escapeGlob(value: string): string {
+  return value.replace(/[*?[\]\\]/g, '\\$&');
+}
+
 // 搜索历史最大条数
 const SEARCH_HISTORY_LIMIT = 20;
 
@@ -99,7 +104,7 @@ export class RedisStorage implements IStorage {
   async getAllPlayRecords(
     userName: string
   ): Promise<Record<string, PlayRecord>> {
-    const pattern = `u:${userName}:pr:*`;
+    const pattern = `u:${escapeGlob(userName)}:pr:*`;
     const keys: string[] = await withRetry(() => this.client.keys(pattern));
     if (keys.length === 0) return {};
     const values = await withRetry(() => this.client.mGet(keys));
@@ -143,7 +148,7 @@ export class RedisStorage implements IStorage {
   }
 
   async getAllFavorites(userName: string): Promise<Record<string, Favorite>> {
-    const pattern = `u:${userName}:fav:*`;
+    const pattern = `u:${escapeGlob(userName)}:fav:*`;
     const keys: string[] = await withRetry(() => this.client.keys(pattern));
     if (keys.length === 0) return {};
     const values = await withRetry(() => this.client.mGet(keys));
@@ -198,7 +203,7 @@ export class RedisStorage implements IStorage {
     await withRetry(() => this.client.del(this.shKey(userName)));
 
     // 删除播放记录
-    const playRecordPattern = `u:${userName}:pr:*`;
+    const playRecordPattern = `u:${escapeGlob(userName)}:pr:*`;
     const playRecordKeys = await withRetry(() =>
       this.client.keys(playRecordPattern)
     );
@@ -207,7 +212,7 @@ export class RedisStorage implements IStorage {
     }
 
     // 删除收藏夹
-    const favoritePattern = `u:${userName}:fav:*`;
+    const favoritePattern = `u:${escapeGlob(userName)}:fav:*`;
     const favoriteKeys = await withRetry(() =>
       this.client.keys(favoritePattern)
     );
@@ -216,7 +221,7 @@ export class RedisStorage implements IStorage {
     }
 
     // 删除跳过片头片尾配置
-    const skipConfigPattern = `u:${userName}:skip:*`;
+    const skipConfigPattern = `u:${escapeGlob(userName)}:skip:*`;
     const skipConfigKeys = await withRetry(() =>
       this.client.keys(skipConfigPattern)
     );
@@ -327,7 +332,7 @@ export class RedisStorage implements IStorage {
   async getAllSkipConfigs(
     userName: string
   ): Promise<{ [key: string]: SkipConfig }> {
-    const pattern = `u:${userName}:skip:*`;
+    const pattern = `u:${escapeGlob(userName)}:skip:*`;
     const keys = await withRetry(() => this.client.keys(pattern));
 
     if (keys.length === 0) {

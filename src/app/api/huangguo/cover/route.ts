@@ -38,7 +38,9 @@ export async function GET(request: Request) {
   }
 
   try {
+    // 不跟随跳转：白名单只校验了第一跳，跳到其他地址就不再受控
     const response = await fetch(target, {
+      redirect: 'manual',
       headers: {
         Accept: 'image/*,*/*',
         Referer: 'https://huangguoai.com/',

@@ -90,14 +90,43 @@ function memoryGet(cacheUrl: string): Response | null {
   });
 }
 
+// 读取响应体，超过上限就取消读取。不把大文件整段装进内存。
+async function readBounded(
+  response: Response,
+  limit: number
+): Promise<ArrayBuffer | null> {
+  const reader = response.body?.getReader();
+  if (!reader) return null;
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  let result = await reader.read();
+  while (!result.done) {
+    size += result.value.byteLength;
+    if (size > limit) {
+      await reader.cancel().catch(() => undefined);
+      return null;
+    }
+    chunks.push(result.value);
+    result = await reader.read();
+  }
+  const out = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return out.buffer as ArrayBuffer;
+}
+
 function memoryPut(cacheUrl: string, response: Response) {
   const ttl = memoryTtlSeconds(response.headers);
   if (response.status !== 200 || ttl <= 0) return;
-  response
-    .clone()
-    .arrayBuffer()
+  // 声明了长度且超过上限的直接不收；长度未知的边读边限
+  const declared = Number(response.headers.get('content-length') || 0);
+  if (declared > MEMORY_MAX_ENTRY_BYTES) return;
+  void readBounded(response.clone(), MEMORY_MAX_ENTRY_BYTES)
     .then((body) => {
-      if (body.byteLength > MEMORY_MAX_ENTRY_BYTES) return;
+      if (!body) return;
       memoryDrop(cacheUrl);
       while (
         memoryCache.size > 0 &&
