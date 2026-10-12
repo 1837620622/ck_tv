@@ -38,9 +38,24 @@ function cueOutDuration(line: string): number {
   return bare ? Number(bare[1]) || 0 : 0;
 }
 
+// AES-128 且没有写 IV 时，解密用的 IV 取自片段的 media sequence 号（RFC 8216）。
+// 删掉中间的片段会让后面每个片段的序号前移，IV 对不上，解出来就是乱码。这种清单原样返回。
+function hasImplicitIv(lines: string[]): boolean {
+  return lines.some((line) => {
+    const tag = line.trim();
+    if (!tag.startsWith('#EXT-X-KEY:')) return false;
+    const method = /METHOD=([A-Z0-9-]+)/.exec(tag)?.[1];
+    if (!method || method === 'NONE') return false;
+    return !/IV=/.test(tag);
+  });
+}
+
 export function filterAdBreaks(playlist: string): AdFilterResult {
   const original = playlist;
   const lines = playlist.split(/\r?\n/);
+  if (hasImplicitIv(lines)) {
+    return { text: original, removedSegments: 0, removedSeconds: 0 };
+  }
   const totalSegments = lines.filter(isSegmentUrl).length;
   const out: string[] = [];
   let removedSegments = 0;

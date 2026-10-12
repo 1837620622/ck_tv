@@ -79,13 +79,18 @@ export async function GET(request: Request) {
     }
   })();
   const { searchParams, origin } = new URL(request.url);
-  // 只接受清单里已有的频道号，不接受外部传入的地址
-  const ids = (searchParams.get('ids') || '')
+  // 只接受清单里已有的频道号，不接受外部传入的地址。
+  // 先过滤、去重、排序再生成缓存键：同一组频道不管顺序如何都命中同一条缓存，无效 id 也不会写入缓存。
+  const requested = (searchParams.get('ids') || '')
     .split(',')
     .map((id) => id.trim())
     .filter(Boolean)
     .slice(0, MAX_IDS);
-  if (ids.length === 0) {
+  const channels = Array.from(new Set(requested))
+    .map((id) => LIVE_CHANNELS.find((item) => item.id === id))
+    .filter((item): item is LiveChannel => Boolean(item))
+    .sort((a, b) => a.id.localeCompare(b.id));
+  if (channels.length === 0) {
     return NextResponse.json(
       { results: {} },
       { status: 400, headers: { 'Cache-Control': 'no-store' } }
@@ -93,7 +98,7 @@ export async function GET(request: Request) {
   }
 
   const cacheUrl = `https://cktv-cache.local/live-health?ids=${encodeURIComponent(
-    ids.join(',')
+    channels.map((channel) => channel.id).join(',')
   )}&v=1`;
   const hit = await readJsonCache(cacheUrl);
   if (hit) {
@@ -106,9 +111,6 @@ export async function GET(request: Request) {
     });
   }
 
-  const channels = ids
-    .map((id) => LIVE_CHANNELS.find((item) => item.id === id))
-    .filter((item): item is LiveChannel => Boolean(item));
   const checks = await Promise.all(
     channels.map(
       async (channel) =>

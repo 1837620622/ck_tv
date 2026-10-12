@@ -6,12 +6,7 @@ import { getConfig } from '@/lib/config';
 import { burnPasswordCheck, hmacHex, safeEqual } from '@/lib/crypto';
 import { db } from '@/lib/db';
 import { isHttpsRequest } from '@/lib/https';
-import {
-  clientKey,
-  lockedSeconds,
-  recordFailure,
-  recordSuccess,
-} from '@/lib/throttle';
+import { beginAttempt, clientKey, recordSuccess } from '@/lib/throttle';
 
 export const runtime = 'edge';
 
@@ -69,8 +64,9 @@ export async function POST(req: NextRequest) {
         return response;
       }
 
+      // 先计数再读取请求体，并发请求不能各自绕过上限
       const localKey = clientKey(req, 'local');
-      const localWait = lockedSeconds(localKey);
+      const localWait = beginAttempt(localKey);
       if (localWait > 0) return tooManyAttempts(localWait);
 
       const { password } = await req.json();
@@ -79,7 +75,6 @@ export async function POST(req: NextRequest) {
       }
 
       if (!safeEqual(password, envPassword)) {
-        recordFailure(localKey);
         return NextResponse.json(
           { ok: false, error: '密码错误' },
           { status: 401 }
@@ -114,8 +109,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '密码不能为空' }, { status: 400 });
     }
 
+    // 校验口令之前先计数：读配置和查库都是异步的，放在它们之后计数会被并发突破
     const dbKey = clientKey(req, username);
-    const dbWait = lockedSeconds(dbKey);
+    const dbWait = beginAttempt(dbKey);
     if (dbWait > 0) return tooManyAttempts(dbWait);
 
     // 可能是站长，直接读环境变量
@@ -142,7 +138,6 @@ export async function POST(req: NextRequest) {
 
       return response;
     } else if (username === process.env.USERNAME) {
-      recordFailure(dbKey);
       // 站长口令错误也跑一次同样耗时的校验，否则响应更快，能暴露站长用户名
       await burnPasswordCheck(password);
       return NextResponse.json({ error: '用户名或密码错误' }, { status: 401 });
@@ -155,7 +150,6 @@ export async function POST(req: NextRequest) {
     try {
       const pass = await db.verifyUser(username, password);
       if (!pass) {
-        recordFailure(dbKey);
         return NextResponse.json(
           { error: '用户名或密码错误' },
           { status: 401 }

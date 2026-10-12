@@ -11,6 +11,41 @@ import {
 export const runtime = 'edge';
 
 const COVER_SECONDS = 604800;
+// 与 decryptHuangguoCover 的上限一致；明文图片也要有上限，否则会把任意大小的对象整个读进内存
+const MAX_COVER_BYTES = 8 * 1024 * 1024;
+
+// 边读边计数，超过上限就取消读取，返回 null
+async function readCapped(
+  response: Response,
+  limit: number
+): Promise<Uint8Array | null> {
+  const declared = Number(response.headers.get('content-length') || 0);
+  if (declared > limit) return null;
+  if (!response.body) return new Uint8Array();
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  let done = false;
+  while (!done) {
+    const read = await reader.read();
+    done = read.done;
+    if (read.value) {
+      size += read.value.byteLength;
+      if (size > limit) {
+        await reader.cancel().catch(() => undefined);
+        return null;
+      }
+      chunks.push(read.value);
+    }
+  }
+  const out = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return out;
+}
 
 export async function GET(request: Request) {
   const target = allowedCoverUrl(
@@ -63,7 +98,13 @@ export async function GET(request: Request) {
         headers: { 'Cache-Control': 'no-store' },
       });
     }
-    const bytes = new Uint8Array(await response.arrayBuffer());
+    const bytes = await readCapped(response, MAX_COVER_BYTES);
+    if (!bytes) {
+      return new NextResponse(null, {
+        status: 404,
+        headers: { 'Cache-Control': 'no-store' },
+      });
+    }
     const image = decryptHuangguoCover(bytes);
     const type = image ? coverContentType(image) : '';
     if (!image || !type) {

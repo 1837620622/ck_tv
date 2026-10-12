@@ -4,12 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
 import { getStorage } from '@/lib/db';
-import {
-  clientKey,
-  lockedSeconds,
-  recordFailure,
-  recordSuccess,
-} from '@/lib/throttle';
+import { beginAttempt, clientKey, recordSuccess } from '@/lib/throttle';
 import { IStorage } from '@/lib/types';
 
 export const runtime = 'edge';
@@ -71,8 +66,9 @@ export async function POST(request: NextRequest) {
     if (typeof oldPassword !== 'string' || !oldPassword) {
       return NextResponse.json({ error: '请输入当前密码' }, { status: 400 });
     }
+    // 校验之前先计数，并发请求不能各自绕过上限
     const throttleKey = clientKey(request, username);
-    const wait = lockedSeconds(throttleKey);
+    const wait = beginAttempt(throttleKey);
     if (wait > 0) {
       return NextResponse.json(
         { error: `尝试次数过多，请 ${Math.ceil(wait / 60)} 分钟后再试` },
@@ -80,7 +76,6 @@ export async function POST(request: NextRequest) {
       );
     }
     if (!(await storage.verifyUser(username, oldPassword))) {
-      recordFailure(throttleKey);
       return NextResponse.json({ error: '当前密码错误' }, { status: 401 });
     }
     recordSuccess(throttleKey);
