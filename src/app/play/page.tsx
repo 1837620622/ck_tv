@@ -30,6 +30,7 @@ import { processImageUrl } from '@/lib/utils';
 import CloudflareAISubtitle from '@/components/CloudflareAISubtitle';
 import EpisodeSelector from '@/components/EpisodeSelector';
 import PageLayout from '@/components/PageLayout';
+import ScamNotice from '@/components/ScamNotice';
 import TVCastModal from '@/components/TVCastModal';
 
 // 扩展 HTMLVideoElement 类型以支持 hls 属性
@@ -1934,6 +1935,9 @@ function PlayPageClient() {
             </div>
           </div>
         </div>
+
+        {/* 防诈骗提醒：视频画面里的广告和水印不可信 */}
+        <ScamNotice />
 
         {/* 详情展示 */}
         <div className='grid grid-cols-1 md:grid-cols-4 gap-4'>
