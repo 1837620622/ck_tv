@@ -2,6 +2,7 @@ import { getOptionalRequestContext } from '@cloudflare/next-on-pages';
 import { NextResponse } from 'next/server';
 
 import { getCacheTime } from '@/lib/config';
+import { parseCardMeta } from '@/lib/douban-filter';
 import {
   jsonCacheHeaders,
   readJsonCache,
@@ -167,7 +168,7 @@ export async function GET(request: Request) {
     kind
   )}&category=${encodeURIComponent(category || '')}&type=${encodeURIComponent(
     type || ''
-  )}&start=${pageStart}&limit=${pageLimit}&v=1`;
+  )}&start=${pageStart}&limit=${pageLimit}&v=2`;
 
   try {
     const hit = await readJsonCache(cacheUrl);
@@ -183,13 +184,18 @@ export async function GET(request: Request) {
       try {
         const doubanData = await fetchDoubanData(recentHotUrl);
         const items = Array.isArray(doubanData?.items) ? doubanData.items : [];
-        list = items.map((item) => ({
-          id: item.id,
-          title: item.title,
-          poster: item.pic?.normal || item.pic?.large || '',
-          rate: item.rating?.value ? item.rating.value.toFixed(1) : '',
-          year: item.card_subtitle?.match(/(\d{4})/)?.[1] || '',
-        }));
+        list = items.map((item) => {
+          const meta = parseCardMeta(item.card_subtitle || '');
+          return {
+            id: item.id,
+            title: item.title,
+            poster: item.pic?.normal || item.pic?.large || '',
+            rate: item.rating?.value ? item.rating.value.toFixed(1) : '',
+            year: meta.year,
+            regions: meta.regions,
+            genres: meta.genres,
+          };
+        });
       } catch {
         list = [];
       }

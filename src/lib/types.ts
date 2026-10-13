@@ -92,6 +92,9 @@ export interface DoubanItem {
   poster: string;
   rate: string;
   year: string;
+  // 从卡片副标题解析出的地区、类型；副标题里没有时为空数组或缺省
+  regions?: string[];
+  genres?: string[];
 }
 
 export interface DoubanResult {

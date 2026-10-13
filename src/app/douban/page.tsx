@@ -38,7 +38,12 @@ function DoubanPageClient() {
   // 筛选：年份、评分、排序。开启后一次取回前 100 部在本地过滤，结果存在 filterPool 里逐页展示
   const [filter, setFilter] = useState<DoubanFilter>(EMPTY_FILTER);
   const [filterPool, setFilterPool] = useState<DoubanItem[] | null>(null);
-  const [poolHasYear, setPoolHasYear] = useState(true);
+  // 本分类的数据里是否有年份、地区、类型信息，用于在没有结果时说明原因
+  const [poolInfo, setPoolInfo] = useState({
+    year: true,
+    region: true,
+    genre: true,
+  });
   const requestSeqRef = useRef(0);
   const observerRef = useRef<IntersectionObserver | null>(null);
   const loadingRef = useRef<HTMLDivElement>(null);
@@ -198,7 +203,11 @@ function DoubanPageClient() {
           page && page.code === 200 && Array.isArray(page.list) ? page.list : []
         );
         const filtered = filterAndSortDouban(merged, filter);
-        setPoolHasYear(merged.some((item) => /^\d{4}$/.test(item.year)));
+        setPoolInfo({
+          year: merged.some((item) => /^\d{4}$/.test(item.year)),
+          region: merged.some((item) => !!item.regions?.length),
+          genre: merged.some((item) => !!item.genres?.length),
+        });
         setFilterPool(filtered);
         setDoubanData(filtered.slice(0, FILTER_PAGE_SIZE));
         setHasMore(filtered.length > FILTER_PAGE_SIZE);
@@ -529,7 +538,7 @@ function DoubanPageClient() {
           </div>
         ) : (
           <div className='mt-8 overflow-visible'>
-            {filterOn && !loading ? (
+            {filterOn && !loading && (filterPool?.length ?? 0) > 0 ? (
               <p className='mb-4 text-sm text-gray-500 dark:text-gray-400'>
                 在本分类热门影片中筛选，共 {filterPool?.length ?? 0} 部
               </p>
@@ -591,8 +600,12 @@ function DoubanPageClient() {
               (filterOn ? (
                 <div className='flex flex-col items-center gap-3 py-8 text-center text-gray-500 dark:text-gray-400'>
                   <p>
-                    {filter.year && !poolHasYear
-                      ? '该分类暂不提供年份信息，可以试试评分或排序'
+                    {filter.year && !poolInfo.year
+                      ? '该分类暂不提供年份信息，可以试试其他条件'
+                      : filter.region && !poolInfo.region
+                      ? '该分类暂不提供地区信息，可以试试其他条件'
+                      : filter.genre && !poolInfo.genre
+                      ? '该分类暂不提供类型信息，可以试试其他条件'
                       : '没有符合条件的影片'}
                   </p>
                   <button

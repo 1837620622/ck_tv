@@ -1,3 +1,4 @@
+import { parseCardMeta } from './douban-filter';
 import { DoubanItem, DoubanResult } from './types';
 import { getDoubanProxyUrl } from './utils';
 
@@ -61,6 +62,7 @@ function mapDoubanRows(rows: unknown): DoubanItem[] {
     .map((row) => {
       const item = (row || {}) as RawDoubanRow;
       const score = Number(item.rating?.value);
+      const meta = parseCardMeta(String(item.card_subtitle || ''));
       return {
         id: String(item.id ?? ''),
         title: item.title || '',
@@ -68,7 +70,9 @@ function mapDoubanRows(rows: unknown): DoubanItem[] {
         rate:
           item.rate ||
           (Number.isFinite(score) && score > 0 ? score.toFixed(1) : ''),
-        year: String(item.card_subtitle || '').match(/(\d{4})/)?.[1] || '',
+        year: meta.year,
+        regions: meta.regions,
+        genres: meta.genres,
       };
     })
     .filter((item) => item.id && item.title);

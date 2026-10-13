@@ -2,6 +2,7 @@ import {
   EMPTY_FILTER,
   filterAndSortDouban,
   isFilterActive,
+  parseCardMeta,
   yearOptions,
 } from './douban-filter';
 import { DoubanItem } from './types';
@@ -10,17 +11,26 @@ const item = (
   id: string,
   year: string,
   rate: string,
+  meta: { regions?: string[]; genres?: string[] } = {},
   title = `片名${id}`
-): DoubanItem => ({ id, title, poster: '', year, rate });
+): DoubanItem => ({
+  id,
+  title,
+  poster: '',
+  year,
+  rate,
+  regions: meta.regions,
+  genres: meta.genres,
+});
 
 const pool: DoubanItem[] = [
-  item('1', '2026', '8.1'),
-  item('2', '2024', '9.2'),
-  item('3', '2015', '6.0'),
+  item('1', '2026', '8.1', { regions: ['中国大陆'], genres: ['剧情'] }),
+  item('2', '2024', '9.2', { regions: ['韩国'], genres: ['爱情', '喜剧'] }),
+  item('3', '2015', '6.0', { regions: ['中国大陆'], genres: ['悬疑'] }),
   item('4', '2012', ''),
-  item('5', '', '8.8'),
-  item('6', '1998', '7.5'),
-  item('7', '2025', '7.0'),
+  item('5', '', '8.8', { regions: ['美国'], genres: ['科幻'] }),
+  item('6', '1998', '7.5', { regions: ['中国香港'], genres: ['动作'] }),
+  item('7', '2025', '7.0', { regions: ['日本'], genres: ['剧情'] }),
 ];
 
 describe('filterAndSortDouban', () => {
@@ -37,7 +47,10 @@ describe('filterAndSortDouban', () => {
   });
 
   it('removes duplicate ids, keeping the first one', () => {
-    const dup = [item('1', '2026', '8.1', 'A'), item('1', '2026', '8.1', 'B')];
+    const dup = [
+      item('1', '2026', '8.1', {}, 'A'),
+      item('1', '2026', '8.1', {}, 'B'),
+    ];
     const result = filterAndSortDouban(dup, EMPTY_FILTER);
     expect(result).toHaveLength(1);
     expect(result[0].title).toBe('A');
@@ -60,6 +73,22 @@ describe('filterAndSortDouban', () => {
       year: 'earlier',
     });
     expect(earlier.map((i) => i.id)).toEqual(['6']);
+  });
+
+  it('filters by region and drops items without region data', () => {
+    const result = filterAndSortDouban(pool, {
+      ...EMPTY_FILTER,
+      region: '中国大陆',
+    });
+    expect(result.map((i) => i.id)).toEqual(['1', '3']);
+  });
+
+  it('filters by genre and drops items without genre data', () => {
+    const result = filterAndSortDouban(pool, {
+      ...EMPTY_FILTER,
+      genre: '剧情',
+    });
+    expect(result.map((i) => i.id)).toEqual(['1', '7']);
   });
 
   it('keeps items at or above the minimum rate and drops unrated items', () => {
@@ -102,9 +131,11 @@ describe('filterAndSortDouban', () => {
     ]);
   });
 
-  it('combines year, rate and sort', () => {
+  it('combines year, region, genre, rate and sort', () => {
     const result = filterAndSortDouban(pool, {
       year: 'decade-2010',
+      region: '中国大陆',
+      genre: '悬疑',
       minRate: '6',
       sort: 'rate',
     });
@@ -112,10 +143,38 @@ describe('filterAndSortDouban', () => {
   });
 });
 
+describe('parseCardMeta', () => {
+  it('reads the year, region and genres from a subtitle with slashes', () => {
+    expect(parseCardMeta('2024 / 中国大陆 / 剧情 悬疑 / 张三 李四')).toEqual({
+      year: '2024',
+      regions: ['中国大陆'],
+      genres: ['剧情', '悬疑'],
+    });
+  });
+
+  it('matches known names with any separator', () => {
+    const meta = parseCardMeta('2019·美国·科幻，喜剧');
+    expect(meta.year).toBe('2019');
+    expect(meta.regions).toEqual(['美国']);
+    expect(meta.genres).toEqual(['科幻', '喜剧']);
+  });
+
+  it('returns empty lists when the subtitle has no known names', () => {
+    expect(parseCardMeta('')).toEqual({ year: '', regions: [], genres: [] });
+    expect(parseCardMeta('未知地区 未知类型')).toEqual({
+      year: '',
+      regions: [],
+      genres: [],
+    });
+  });
+});
+
 describe('filter helpers', () => {
-  it('detects whether any filter is active', () => {
+  it('detects whether any filter is active, including region and genre', () => {
     expect(isFilterActive(EMPTY_FILTER)).toBe(false);
     expect(isFilterActive({ ...EMPTY_FILTER, sort: 'rate' })).toBe(true);
+    expect(isFilterActive({ ...EMPTY_FILTER, region: '韩国' })).toBe(true);
+    expect(isFilterActive({ ...EMPTY_FILTER, genre: '剧情' })).toBe(true);
   });
 
   it('builds year options from the current year down to 2020, then decades', () => {

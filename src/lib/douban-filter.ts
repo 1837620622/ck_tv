@@ -7,16 +7,32 @@ export const FILTER_POOL_PAGES = 4;
 export interface DoubanFilter {
   // '' 不限；'2026' 之类的单年；'decade-2010' / 'decade-2000' 年代；'earlier' 2000 年以前
   year: string;
+  // '' 不限；否则为地区名，如 '中国大陆'
+  region: string;
+  // '' 不限；否则为类型名，如 '剧情'
+  genre: string;
   // '' 不限；'7' 表示 7 分及以上
   minRate: string;
   // '' 综合；'rate' 评分从高到低；'year' 年份从新到旧
   sort: string;
 }
 
-export const EMPTY_FILTER: DoubanFilter = { year: '', minRate: '', sort: '' };
+export const EMPTY_FILTER: DoubanFilter = {
+  year: '',
+  region: '',
+  genre: '',
+  minRate: '',
+  sort: '',
+};
 
 export function isFilterActive(filter: DoubanFilter): boolean {
-  return Boolean(filter.year || filter.minRate || filter.sort);
+  return Boolean(
+    filter.year ||
+      filter.region ||
+      filter.genre ||
+      filter.minRate ||
+      filter.sort
+  );
 }
 
 export interface FilterOption {
@@ -39,6 +55,47 @@ export function yearOptions(currentYear: number): FilterOption[] {
   ];
 }
 
+const REGION_NAMES = [
+  '中国大陆',
+  '中国香港',
+  '中国台湾',
+  '美国',
+  '英国',
+  '韩国',
+  '日本',
+  '泰国',
+  '法国',
+  '德国',
+];
+
+const GENRE_NAMES = [
+  '剧情',
+  '喜剧',
+  '爱情',
+  '动作',
+  '悬疑',
+  '科幻',
+  '犯罪',
+  '奇幻',
+  '古装',
+  '武侠',
+  '动画',
+  '纪录片',
+  '历史',
+  '战争',
+  '恐怖',
+];
+
+export const REGION_OPTIONS: FilterOption[] = [
+  { label: '不限', value: '' },
+  ...REGION_NAMES.map((name) => ({ label: name, value: name })),
+];
+
+export const GENRE_OPTIONS: FilterOption[] = [
+  { label: '不限', value: '' },
+  ...GENRE_NAMES.map((name) => ({ label: name, value: name })),
+];
+
 export const RATE_OPTIONS: FilterOption[] = [
   { label: '不限', value: '' },
   { label: '7分以上', value: '7' },
@@ -51,6 +108,25 @@ export const SORT_OPTIONS: FilterOption[] = [
   { label: '评分最高', value: 'rate' },
   { label: '最新上映', value: 'year' },
 ];
+
+// 解析豆瓣卡片副标题，例如 "2024 / 中国大陆 / 剧情 悬疑 / 演员"。
+// 地区和类型按已知名称逐个匹配，不依赖分隔符的精确格式；匹配不到就是空数组。
+export function parseCardMeta(subtitle: string): {
+  year: string;
+  regions: string[];
+  genres: string[];
+} {
+  const text = subtitle || '';
+  const tokens = text
+    .split(/[\s/·,，|]+/)
+    .map((token) => token.trim())
+    .filter(Boolean);
+  return {
+    year: text.match(/\d{4}/)?.[0] || '',
+    regions: tokens.filter((token) => REGION_NAMES.includes(token)),
+    genres: tokens.filter((token) => GENRE_NAMES.includes(token)),
+  };
+}
 
 // 年份字段不是四位数字时视为缺失
 function parseYear(value: string): number | null {
@@ -84,7 +160,8 @@ function sortDescending(
   });
 }
 
-// 先去重，再按年份、评分下限过滤，最后排序。没有年份或评分的条目，在对应条件生效时会被排除。
+// 先去重，再按年份、地区、类型、评分下限过滤，最后排序。
+// 没有对应信息的条目，在该条件生效时会被排除。
 export function filterAndSortDouban(
   items: DoubanItem[],
   filter: DoubanFilter
@@ -102,6 +179,14 @@ export function filterAndSortDouban(
       const year = parseYear(item.year);
       return year !== null && yearMatches(year, filter.year);
     });
+  }
+
+  if (filter.region) {
+    list = list.filter((item) => !!item.regions?.includes(filter.region));
+  }
+
+  if (filter.genre) {
+    list = list.filter((item) => !!item.genres?.includes(filter.genre));
   }
 
   if (filter.minRate) {
