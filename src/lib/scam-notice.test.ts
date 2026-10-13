@@ -1,10 +1,17 @@
-import { hideNotice, isNoticeHidden } from './ScamNotice';
+import {
+  hideNotice,
+  isNoticeHidden,
+  SCAM_NOTICE_HIDDEN_ATTR,
+  SCAM_NOTICE_INIT_SCRIPT,
+  SCAM_NOTICE_KEY,
+} from './scam-notice';
 
 const DAY = 24 * 60 * 60 * 1000;
 
-describe('ScamNotice dismissal', () => {
+describe('scam notice dismissal', () => {
   beforeEach(() => {
     window.localStorage.clear();
+    document.documentElement.removeAttribute(SCAM_NOTICE_HIDDEN_ATTR);
   });
 
   afterEach(() => {
@@ -35,5 +42,20 @@ describe('ScamNotice dismissal', () => {
       throw new Error('storage denied');
     });
     expect(() => hideNotice()).not.toThrow();
+  });
+
+  it('init script marks <html> before paint when the notice was dismissed', () => {
+    window.localStorage.setItem(SCAM_NOTICE_KEY, String(Date.now() + DAY));
+    new Function(SCAM_NOTICE_INIT_SCRIPT)();
+    expect(document.documentElement.hasAttribute(SCAM_NOTICE_HIDDEN_ATTR)).toBe(
+      true
+    );
+  });
+
+  it('init script leaves <html> alone when the notice is not dismissed', () => {
+    new Function(SCAM_NOTICE_INIT_SCRIPT)();
+    expect(document.documentElement.hasAttribute(SCAM_NOTICE_HIDDEN_ATTR)).toBe(
+      false
+    );
   });
 });

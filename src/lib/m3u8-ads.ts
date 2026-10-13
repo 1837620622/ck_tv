@@ -16,10 +16,10 @@ export interface AdFilterResult {
 // 单次插播最长允许删掉的时长。超过这个长度的基本是正片分段，不当广告处理。
 const MAX_CUE_SECONDS = 180;
 const MAX_FENCED_SECONDS = 15;
-// 外站插播：单段最长 120 秒，所有外站插播加起来不超过整集时长的 20%。
-// 超出预算的保留，宁可漏删也不误删正片。
-const MAX_FOREIGN_SECONDS = 120;
-const MAX_FOREIGN_RATIO = 0.2;
+// 外站插播：单段最长 60 秒，所有外站插播加起来不超过整集时长的 10%。
+// 正片中途切到另一个 CDN 时也会长得像插播，所以判得越严越好：超出预算的保留，宁可漏删也不误删正片。
+const MAX_FOREIGN_SECONDS = 60;
+const MAX_FOREIGN_RATIO = 0.1;
 
 const isDisc = (line: string) => line.trim() === '#EXT-X-DISCONTINUITY';
 const isCueIn = (line: string) => line.trim() === '#EXT-X-CUE-IN';

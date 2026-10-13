@@ -438,7 +438,11 @@ function PlayPageClient() {
             // 如果是m3u8文件，处理内容以移除广告分段
             if (response.data && typeof response.data === 'string') {
               // 过滤掉广告段 - 实现更精确的广告过滤逻辑
-              const filtered = filterAdBreaks(response.data, context?.url);
+              // 用重定向之后的地址解析相对片段，和 hls.js 的解析保持一致
+              const filtered = filterAdBreaks(
+                response.data,
+                response.url || context?.url
+              );
               response.data = filtered.text;
               // 过滤生效时给出提示，让用户看得见跳过了什么
               if (filtered.removedSegments > 0 && artPlayerRef.current) {
@@ -1936,9 +1940,6 @@ function PlayPageClient() {
           </div>
         </div>
 
-        {/* 防诈骗提醒：视频画面里的广告和水印不可信 */}
-        <ScamNotice />
-
         {/* 详情展示 */}
         <div className='grid grid-cols-1 md:grid-cols-4 gap-4'>
           {/* 文字区 */}
@@ -1974,6 +1975,10 @@ function PlayPageClient() {
                   </span>
                 )}
                 {detail?.type_name && <span>{detail.type_name}</span>}
+              </div>
+              {/* 防诈骗提醒：紧跟标题信息，只占一行，不挤压播放器和选集 */}
+              <div className='mb-4 flex-shrink-0'>
+                <ScamNotice />
               </div>
               {/* 剧情简介 */}
               {detail?.desc && (

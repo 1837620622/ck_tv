@@ -174,3 +174,8 @@ div[data-media-provider] video {
     display: none !important;
   }
 }
+
+/* 防诈骗提醒：用户关闭后，初始化脚本给 html 加上此属性，提醒在首屏就隐藏 */
+html[data-scam-notice-hidden] [data-scam-notice] {
+  display: none !important;
+}

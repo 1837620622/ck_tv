@@ -117,21 +117,38 @@ describe('filterAdBreaks foreign-host ads', () => {
     expect(result.text).toContain('ads.example.net');
   });
 
-  it('caps the total foreign ad time at 20 percent of the episode', () => {
-    // 正片 200 秒，两段各 60 秒的外站插播：预算 64 秒，只能删第一段
+  it('caps the total foreign ad time at 10 percent of the episode', () => {
+    // 正片 400 秒，两段各 30 秒的外站插播：预算 46 秒，只能删第一段
     const playlist = [
       '#EXTM3U',
-      ...mainSegments(10),
-      ...fencedBlock(6, 'a.example.net'),
-      ...mainSegments(10),
-      ...fencedBlock(6, 'b.example.net'),
+      ...mainSegments(20),
+      ...fencedBlock(3, 'a.example.net'),
+      ...mainSegments(20),
+      ...fencedBlock(3, 'b.example.net'),
       '#EXT-X-ENDLIST',
     ].join('\n');
     const result = filterAdBreaks(playlist, BASE);
-    expect(result.removedSegments).toBe(6);
-    expect(result.removedSeconds).toBe(60);
+    expect(result.removedSegments).toBe(3);
+    expect(result.removedSeconds).toBe(30);
     expect(result.text).not.toContain('a.example.net');
     expect(result.text).toContain('b.example.net');
+  });
+
+  it('bounds the loss when a secondary CDN switches mid-episode', () => {
+    // 720 秒的正片（600 秒在主域名），中途三段各 40 秒的副 CDN 分段：预算 72 秒，只删得动一段
+    const playlist = [
+      '#EXTM3U',
+      ...mainSegments(20),
+      ...fencedBlock(4, 'cdn2.example.net', 10),
+      ...mainSegments(20),
+      ...fencedBlock(4, 'cdn2.example.net', 10),
+      ...mainSegments(20),
+      ...fencedBlock(4, 'cdn2.example.net', 10),
+      '#EXT-X-ENDLIST',
+    ].join('\n');
+    const result = filterAdBreaks(playlist, BASE);
+    expect(result.removedSeconds).toBe(40);
+    expect(result.text.match(/cdn2\.example\.net/g)).toHaveLength(8);
   });
 
   it('keeps a fenced block that stays on the main host', () => {

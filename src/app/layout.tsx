@@ -8,6 +8,7 @@ import 'sweetalert2/dist/sweetalert2.min.css';
 
 import { getConfig } from '@/lib/config';
 import RuntimeConfig from '@/lib/runtime';
+import { SCAM_NOTICE_INIT_SCRIPT } from '@/lib/scam-notice';
 
 import { GlobalErrorIndicator } from '../components/GlobalErrorIndicator';
 import { SiteProvider } from '../components/SiteProvider';
@@ -114,6 +115,8 @@ export default async function RootLayout({
             __html: `window.RUNTIME_CONFIG = ${runtimeConfigJson};`,
           }}
         />
+        {/* 防诈骗提醒：已关闭则在首屏绘制前隐藏，避免挂载后跳动 */}
+        <script dangerouslySetInnerHTML={{ __html: SCAM_NOTICE_INIT_SCRIPT }} />
       </head>
       <body
         className={`${inter.className} min-h-screen bg-white text-gray-900 dark:bg-black dark:text-gray-200`}
