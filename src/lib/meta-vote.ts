@@ -1,5 +1,5 @@
 import { GENRE_NAMES, REGION_NAMES } from './douban-filter';
-import { titlesMatch } from './match-title';
+import { titlesMatch, titleYear } from './match-title';
 import type { SearchResult } from './types';
 
 // 多源核对：豆瓣和每个资源源各自给出年份、地区、题材，按多数表决得到结论。
@@ -76,7 +76,10 @@ export function firstMatchPerSource(
   for (const result of results) {
     if (seen.has(result.source)) continue;
     if (!titlesMatch(result.title, title)) continue;
-    const resultYear = isYear(result.year || '') ? result.year : '';
+    // 没有年份字段时看片名里的年份，避免「三体 2023」顶替 2010 年的那一部
+    const resultYear = isYear(result.year || '')
+      ? result.year
+      : titleYear(result.title);
     if (isYear(year) && resultYear && resultYear !== year) continue;
     // 没有任何可用信息的重复条目不占这个源的名额，否则会把同源的完整条目挡在外面
     if (!hasMeta(resourceVote(result))) continue;

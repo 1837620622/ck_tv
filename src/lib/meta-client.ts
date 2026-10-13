@@ -107,7 +107,9 @@ export async function fetchResourceMeta(
         }
         batch.forEach((item) => {
           const meta = answer[item.id];
+          // 服务端没有给这一部的结果，说明它的资源源全部没有答复
           if (meta) results.set(item.id, meta);
+          else failed += 1;
         });
       }
     }

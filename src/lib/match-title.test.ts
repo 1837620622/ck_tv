@@ -1,4 +1,22 @@
-import { titleParts, titlesMatch } from './match-title';
+import {
+  pickPlayable,
+  titleParts,
+  titlesMatch,
+  titleYear,
+  workKey,
+} from './match-title';
+import type { SearchResult } from './types';
+
+const play = (title: string, year: string): SearchResult =>
+  ({
+    id: `${title}-${year}`,
+    title,
+    poster: '',
+    episodes: ['01', '02'],
+    source: 's1',
+    source_name: 's1',
+    year,
+  } as SearchResult);
 
 describe('titlesMatch with a year in the resource title', () => {
   it('matches a bare title against the same title with a year suffix', () => {
@@ -33,5 +51,33 @@ describe('titlesMatch keeps seasons and sequels apart', () => {
 
   it('keeps trailers apart from the feature', () => {
     expect(titlesMatch('功夫女足 预告', '功夫女足')).toBe(false);
+  });
+});
+
+describe('year taken from the title when the metadata has none', () => {
+  it('reads a trailing year but not a title that is only a year', () => {
+    expect(titleYear('三体 2023')).toBe('2023');
+    expect(titleYear('银翼杀手2049')).toBe('');
+    expect(titleYear('2046')).toBe('');
+  });
+
+  it('does not let an undated remake play for the earlier year', () => {
+    const picked = pickPlayable(
+      [play('三体 2023', ''), play('三体', '2010')],
+      '三体',
+      '2010',
+      'tv'
+    );
+    expect(picked.map((item) => item.year)).toEqual(['2010']);
+  });
+
+  it('keeps an undated title with no year in its name', () => {
+    const picked = pickPlayable([play('狂飙', '')], '狂飙', '2023', 'tv');
+    expect(picked).toHaveLength(1);
+  });
+
+  it('gives a title-dated item its own work key', () => {
+    expect(workKey('三体 2023', '', 30)).not.toBe(workKey('三体', '', 30));
+    expect(workKey('三体 2023', '', 30)).toBe(workKey('三体', '2023', 30));
   });
 });

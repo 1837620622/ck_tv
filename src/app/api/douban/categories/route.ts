@@ -168,7 +168,7 @@ export async function GET(request: Request) {
     kind
   )}&category=${encodeURIComponent(category || '')}&type=${encodeURIComponent(
     type || ''
-  )}&start=${pageStart}&limit=${pageLimit}&v=2`;
+  )}&start=${pageStart}&limit=${pageLimit}&v=3`;
 
   try {
     const hit = await readJsonCache(cacheUrl);

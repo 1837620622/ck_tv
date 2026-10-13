@@ -116,6 +116,13 @@ export type TitlePart = {
   trailer: boolean;
 };
 
+// 片名末尾的年份（如「三体 2023」）；没有就返回空串。至少要留两个字的片名，不把整个片名当年份
+export function titleYear(raw: string): string {
+  const compact = compactTitle(repairTitle(raw));
+  const tail = compact.match(/(19\d{2}|20[0-3]\d)$/);
+  return tail && compact.length - tail[0].length >= 2 ? tail[0] : '';
+}
+
 export function titleParts(raw: string): TitlePart {
   const compact = compactTitle(repairTitle(raw));
   const trailer = /解说|预告|花絮|番外|片花|速看|混剪|剪辑|特辑/.test(compact);
@@ -173,9 +180,13 @@ export function pickPlayable(
   );
   const yearKnown = /^\d{4}$/.test(year);
   const pool = yearKnown
-    ? titled.filter(
-        (item) => !item.year || item.year === 'unknown' || item.year === year
-      )
+    ? titled.filter((item) => {
+        // 没有年份字段时看片名里的年份：「三体 2023」不能冒充 2010 年的那一部
+        const known = /^\d{4}$/.test(item.year || '')
+          ? item.year
+          : titleYear(item.title);
+        return !known || known === year;
+      })
     : titled;
   if (searchType !== 'movie' && searchType !== 'tv') return pool;
   return pool.filter((item) => {
@@ -188,7 +199,12 @@ export function pickPlayable(
 export function workKey(title: string, year: string, episodes: number): string {
   const part = titleParts(title);
   // 预告只是同一条片子的不同写法，不按年份再拆开。
-  const y = part.trailer ? '' : /^\d{4}$/.test(year || '') ? year : '';
+  // 没有年份字段时用片名里的年份，否则「三体 2023」会和 2010 年的「三体」合并成同一部
+  const y = part.trailer
+    ? ''
+    : /^\d{4}$/.test(year || '')
+    ? year
+    : titleYear(title);
   const kind = episodes > 1 ? 'tv' : 'movie';
   return `${part.base}|${part.season}|${part.trailer ? '1' : '0'}|${kind}|${y}`;
 }

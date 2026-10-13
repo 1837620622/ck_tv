@@ -427,7 +427,8 @@ function DoubanPageClient() {
           console.error(err);
           if (seq === requestSeqRef.current) setPageError(true);
         } finally {
-          setIsLoadingMore(false);
+          // 过期的请求不能清掉当前列表正在进行的加载状态
+          if (seq === requestSeqRef.current) setIsLoadingMore(false);
         }
       };
 
@@ -486,32 +487,45 @@ function DoubanPageClient() {
   }, [loadInitialData]);
 
   // 筛选条件变化：先显示骨架屏，再由 loadInitialData 重新取数
-  const handleFilterChange = useCallback(
-    (next: DoubanFilter) => {
-      setLoading(true);
-      setFilter(next);
-      const params = applyFilterToSearch(
-        new URLSearchParams(searchParams.toString()),
-        next
+  // 还没提交的 URL 写入：连续两次写（比如先点分类、马上再点筛选）要叠在一起，不能都从渲染时的 searchParams 出发
+  const pendingQueryRef = useRef<string | null>(null);
+  useEffect(() => {
+    pendingQueryRef.current = null;
+  }, [filterQuery]);
+
+  const writeListUrl = useCallback(
+    (change: (base: URLSearchParams) => URLSearchParams) => {
+      const base = new URLSearchParams(
+        pendingQueryRef.current ?? searchParams.toString()
       );
-      const query = params.toString();
+      const query = change(base).toString();
+      pendingQueryRef.current = query;
       router.replace(query ? `/douban?${query}` : '/douban', { scroll: false });
     },
     [router, searchParams]
   );
 
+  const handleFilterChange = useCallback(
+    (next: DoubanFilter) => {
+      setLoading(true);
+      setFilter(next);
+      writeListUrl((base) => applyFilterToSearch(base, next));
+    },
+    [writeListUrl]
+  );
+
   // 把分类选择写进 URL，刷新或分享后仍是同一个列表；自定义分类由它自己的初始化逻辑决定，不写
   const updateListParams = useCallback(
     (values: Record<string, string>) => {
-      const params = new URLSearchParams(searchParams.toString());
-      Object.entries(values).forEach(([key, value]) => {
-        if (value) params.set(key, value);
-        else params.delete(key);
+      writeListUrl((base) => {
+        Object.entries(values).forEach(([key, value]) => {
+          if (value) base.set(key, value);
+          else base.delete(key);
+        });
+        return base;
       });
-      const query = params.toString();
-      router.replace(query ? `/douban?${query}` : '/douban', { scroll: false });
     },
-    [router, searchParams]
+    [writeListUrl]
   );
 
   // 处理选择器变化
@@ -584,7 +598,8 @@ function DoubanPageClient() {
     if (catalogEngine) return `/douban?src=${catalogEngine}`;
     const params = new URLSearchParams();
     if (type) params.set('type', type);
-    if (subType) params.set('sub', subType);
+    // 只有侧栏和底部导航里有的子分类才参与高亮；地区等筛选子项会让「剧集」「电影」这类没有 sub 的菜单失去高亮
+    if (subType && NAV_SUB_TYPES.has(subType)) params.set('sub', subType);
 
     const queryString = params.toString();
     return `/douban${queryString ? `?${queryString}` : ''}`;
@@ -791,6 +806,9 @@ function DoubanPageClient() {
     </PageLayout>
   );
 }
+
+// 侧栏和底部导航里带 sub 的子分类，需与 Sidebar、MobileBottomNav 保持一致
+const NAV_SUB_TYPES = new Set(['tv_animation', 'tv_documentary']);
 
 // 当前筛选需要资源源核对的字段，用于页面上的提示文字
 function verifiedFieldsOf(filter: DoubanFilter): string {

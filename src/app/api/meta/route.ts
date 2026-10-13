@@ -194,7 +194,9 @@ export async function POST(request: NextRequest) {
       }
     > = {};
     items.forEach((item, index) => {
-      const { votes } = lookups[index];
+      const { votes, failures, sources } = lookups[index];
+      // 这一部的源全部超时或出错：不返回结果，页面把它算作核对失败，而不是「没有数据」
+      if (sources > 0 && failures === sources) return;
       const consensus = voteConsensus(votes);
       results[item.id] = {
         year: consensus.year,

@@ -89,6 +89,18 @@ describe('firstMatchPerSource', () => {
     expect(matched[0].area).toBe('中国大陆');
     expect(hasMeta(resourceVote(matched[0]))).toBe(true);
   });
+
+  it('does not count an undated remake as the source for an earlier year', () => {
+    const matched = firstMatchPerSource(
+      [
+        result('s1', '三体 2023', { year: '', area: '美国', class: '科幻' }),
+        result('s2', '三体', { year: '2010', area: '中国大陆' }),
+      ],
+      '三体',
+      '2010'
+    );
+    expect(matched.map((r) => r.source)).toEqual(['s2']);
+  });
 });
 
 describe('voteConsensus', () => {

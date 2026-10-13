@@ -113,18 +113,45 @@ describe('fetchResourceMeta', () => {
   it('counts a failed batch instead of throwing', async () => {
     const items = Array.from({ length: 10 }, (_, i) => item(String(i)));
     let call = 0;
-    global.fetch = jest.fn(async () => {
+    global.fetch = jest.fn(async (_url: string, init?: RequestInit) => {
       call += 1;
       if (call === 1) {
         return { ok: false, status: 500 } as Response;
       }
-      return {
-        ok: true,
-        json: async () => ({ results: {} }),
-      } as Response;
+      // 服务端对答复过的每一部都会给出结果，哪怕没有票
+      const body = JSON.parse(String(init?.body));
+      const results: Record<string, unknown> = {};
+      body.items.forEach((entry: { id: string }) => {
+        results[entry.id] = {
+          year: '',
+          regions: [],
+          genres: [],
+          resourceVotes: 0,
+        };
+      });
+      return { ok: true, json: async () => ({ results }) } as Response;
     }) as unknown as typeof fetch;
 
     const { failed } = await fetchResourceMeta(items);
     expect(failed).toBe(META_BATCH_SIZE);
+  });
+
+  it('counts an item the server left out as failed, not as a no-match', async () => {
+    const items = [item('1'), item('2')];
+    global.fetch = jest.fn(async () => {
+      return {
+        ok: true,
+        json: async () => ({
+          results: {
+            '1': { year: '', regions: [], genres: [], resourceVotes: 0 },
+          },
+        }),
+      } as Response;
+    }) as unknown as typeof fetch;
+
+    const { results, failed } = await fetchResourceMeta(items);
+    expect(results.has('1')).toBe(true);
+    expect(results.has('2')).toBe(false);
+    expect(failed).toBe(1);
   });
 });
