@@ -78,6 +78,7 @@ export interface SearchResult {
   source: string;
   source_name: string;
   class?: string;
+  area?: string;
   year: string;
   desc?: string;
   type_name?: string;
@@ -95,6 +96,8 @@ export interface DoubanItem {
   // 从卡片副标题解析出的地区、类型；副标题里没有时为空数组或缺省
   regions?: string[];
   genres?: string[];
+  // 资源源核对过地区或题材的来源数，没有核对时缺省
+  verified?: number;
 }
 
 export interface DoubanResult {

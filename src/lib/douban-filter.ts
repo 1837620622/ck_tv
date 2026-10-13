@@ -55,7 +55,7 @@ export function yearOptions(currentYear: number): FilterOption[] {
   ];
 }
 
-const REGION_NAMES = [
+export const REGION_NAMES = [
   '中国大陆',
   '中国香港',
   '中国台湾',
@@ -68,7 +68,7 @@ const REGION_NAMES = [
   '德国',
 ];
 
-const GENRE_NAMES = [
+export const GENRE_NAMES = [
   '剧情',
   '喜剧',
   '爱情',
@@ -108,6 +108,54 @@ export const SORT_OPTIONS: FilterOption[] = [
   { label: '评分最高', value: 'rate' },
   { label: '最新上映', value: 'year' },
 ];
+
+const YEAR_VALUES = /^(\d{4}|decade-2010|decade-2000|earlier)$/;
+
+// 从 URL 查询参数还原筛选条件；缺失或不认识的值按不限处理，所以手改地址也不会出错
+export function filterFromSearch(params: URLSearchParams): DoubanFilter {
+  const pick = (key: string, allowed: readonly string[]) => {
+    const value = params.get(key) || '';
+    return allowed.includes(value) ? value : '';
+  };
+  const year = params.get('year') || '';
+  return {
+    year: YEAR_VALUES.test(year) ? year : '',
+    region: pick('region', REGION_NAMES),
+    genre: pick('genre', GENRE_NAMES),
+    minRate: pick('rate', ['7', '8', '9']),
+    sort: pick('sort', ['rate', 'year']),
+  };
+}
+
+// 把筛选条件写回 URL 查询参数，保留 type、sub、src 等其它参数
+export function applyFilterToSearch(
+  params: URLSearchParams,
+  filter: DoubanFilter
+): URLSearchParams {
+  const next = new URLSearchParams(params.toString());
+  const entries: [string, string][] = [
+    ['year', filter.year],
+    ['region', filter.region],
+    ['genre', filter.genre],
+    ['rate', filter.minRate],
+    ['sort', filter.sort],
+  ];
+  entries.forEach(([key, value]) => {
+    if (value) next.set(key, value);
+    else next.delete(key);
+  });
+  return next;
+}
+
+export function sameFilter(a: DoubanFilter, b: DoubanFilter): boolean {
+  return (
+    a.year === b.year &&
+    a.region === b.region &&
+    a.genre === b.genre &&
+    a.minRate === b.minRate &&
+    a.sort === b.sort
+  );
+}
 
 // 解析豆瓣卡片副标题，例如 "2024 / 中国大陆 / 剧情 悬疑 / 演员"。
 // 地区和类型按已知名称逐个匹配，不依赖分隔符的精确格式；匹配不到就是空数组。

@@ -12,6 +12,7 @@ interface ApiSearchItem {
   vod_remarks?: string;
   vod_play_url?: string;
   vod_class?: string;
+  vod_area?: string;
   vod_year?: string;
   vod_content?: string;
   vod_douban_id?: number;
@@ -66,6 +67,7 @@ function toSearchResult(
       source: apiSite.key,
       source_name: apiSite.name,
       class: item.vod_class,
+      area: item.vod_area ? String(item.vod_area) : undefined,
       year: yearText ? yearText.match(/\d{4}/)?.[0] || '' : 'unknown',
       desc: cleanHtmlTags(String(item.vod_content ?? '')),
       type_name: item.type_name,

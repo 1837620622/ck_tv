@@ -1,8 +1,11 @@
 import {
+  applyFilterToSearch,
   EMPTY_FILTER,
   filterAndSortDouban,
+  filterFromSearch,
   isFilterActive,
   parseCardMeta,
+  sameFilter,
   yearOptions,
 } from './douban-filter';
 import { DoubanItem } from './types';
@@ -192,5 +195,45 @@ describe('filter helpers', () => {
       'decade-2000',
       'earlier',
     ]);
+  });
+});
+
+describe('filter and URL round trip', () => {
+  it('reads a filter from the query string and ignores unknown values', () => {
+    const filter = filterFromSearch(
+      new URLSearchParams(
+        'type=tv&year=2024&region=韩国&genre=剧情&rate=8&sort=rate'
+      )
+    );
+    expect(filter).toEqual({
+      year: '2024',
+      region: '韩国',
+      genre: '剧情',
+      minRate: '8',
+      sort: 'rate',
+    });
+    const bogus = filterFromSearch(
+      new URLSearchParams('year=abc&region=火星&genre=x&rate=5&sort=hot')
+    );
+    expect(bogus).toEqual(EMPTY_FILTER);
+  });
+
+  it('writes the filter back and keeps the other parameters', () => {
+    const params = applyFilterToSearch(
+      new URLSearchParams('type=tv&sub=tv_domestic&region=美国'),
+      { ...EMPTY_FILTER, year: 'decade-2010', sort: 'year' }
+    );
+    expect(params.get('type')).toBe('tv');
+    expect(params.get('sub')).toBe('tv_domestic');
+    expect(params.get('year')).toBe('decade-2010');
+    expect(params.get('sort')).toBe('year');
+    expect(params.has('region')).toBe(false);
+  });
+
+  it('compares two filters field by field', () => {
+    expect(sameFilter(EMPTY_FILTER, { ...EMPTY_FILTER })).toBe(true);
+    expect(sameFilter(EMPTY_FILTER, { ...EMPTY_FILTER, genre: '剧情' })).toBe(
+      false
+    );
   });
 });

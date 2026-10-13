@@ -8,13 +8,22 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { getDoubanCategories, getDoubanList } from '@/lib/douban.client';
 import {
+  applyFilterToSearch,
   DoubanFilter,
   EMPTY_FILTER,
   FILTER_PAGE_SIZE,
   FILTER_POOL_PAGES,
   filterAndSortDouban,
+  filterFromSearch,
   isFilterActive,
+  sameFilter,
 } from '@/lib/douban-filter';
+import {
+  fetchResourceMeta,
+  mergeResourceMeta,
+  META_VERIFY_LIMIT,
+  needsVerification,
+} from '@/lib/meta-client';
 import { DoubanItem, DoubanResult } from '@/lib/types';
 
 import CatalogPanel from '@/components/CatalogPanel';
@@ -36,7 +45,14 @@ function DoubanPageClient() {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [selectorsReady, setSelectorsReady] = useState(false);
   // 筛选：年份、评分、排序。开启后一次取回前 100 部在本地过滤，结果存在 filterPool 里逐页展示
-  const [filter, setFilter] = useState<DoubanFilter>(EMPTY_FILTER);
+  // 筛选条件同时保存在地址里：刷新、分享、前进后退都能还原
+  const [filter, setFilter] = useState<DoubanFilter>(() =>
+    filterFromSearch(new URLSearchParams(searchParams.toString()))
+  );
+  // 多源核对的状态：是否正在核对、是否有批次失败、有多少部片用资源源补全了信息
+  const [metaChecking, setMetaChecking] = useState(false);
+  const [metaFailed, setMetaFailed] = useState(false);
+  const [metaVerified, setMetaVerified] = useState(0);
   const [filterPool, setFilterPool] = useState<DoubanItem[] | null>(null);
   // 本分类的数据里是否有年份、地区、类型信息，用于在没有结果时说明原因
   const [poolInfo, setPoolInfo] = useState({
@@ -45,6 +61,13 @@ function DoubanPageClient() {
     genre: true,
   });
   const requestSeqRef = useRef(0);
+
+  // 地址里的筛选条件变化（前进、后退、切换分类）时同步到页面状态
+  const filterQuery = searchParams.toString();
+  useEffect(() => {
+    const fromUrl = filterFromSearch(new URLSearchParams(filterQuery));
+    setFilter((prev) => (sameFilter(prev, fromUrl) ? prev : fromUrl));
+  }, [filterQuery]);
   const observerRef = useRef<IntersectionObserver | null>(null);
   const loadingRef = useRef<HTMLDivElement>(null);
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -199,14 +222,33 @@ function DoubanPageClient() {
         );
         if (seq !== requestSeqRef.current) return;
 
-        const merged = pages.flatMap((page) =>
+        let pool = pages.flatMap((page) =>
           page && page.code === 200 && Array.isArray(page.list) ? page.list : []
         );
-        const filtered = filterAndSortDouban(merged, filter);
+
+        // 多源核对：豆瓣没有、但当前筛选用得上的信息，交给资源源核对后再过滤
+        const targets = pool
+          .filter((item) => needsVerification(item, filter))
+          .slice(0, META_VERIFY_LIMIT);
+        setMetaChecking(targets.length > 0);
+        let failed = 0;
+        if (targets.length > 0) {
+          const checked = await fetchResourceMeta(targets);
+          if (seq !== requestSeqRef.current) return;
+          failed = checked.failed;
+          pool = pool.map((item) =>
+            mergeResourceMeta(item, checked.results.get(item.id))
+          );
+          setMetaChecking(false);
+        }
+        setMetaFailed(failed > 0);
+        setMetaVerified(pool.filter((item) => (item.verified || 0) > 0).length);
+
+        const filtered = filterAndSortDouban(pool, filter);
         setPoolInfo({
-          year: merged.some((item) => /^\d{4}$/.test(item.year)),
-          region: merged.some((item) => !!item.regions?.length),
-          genre: merged.some((item) => !!item.genres?.length),
+          year: pool.some((item) => /^\d{4}$/.test(item.year)),
+          region: pool.some((item) => !!item.regions?.length),
+          genre: pool.some((item) => !!item.genres?.length),
         });
         setFilterPool(filtered);
         setDoubanData(filtered.slice(0, FILTER_PAGE_SIZE));
@@ -216,6 +258,9 @@ function DoubanPageClient() {
       }
 
       setFilterPool(null);
+      setMetaChecking(false);
+      setMetaFailed(false);
+      setMetaVerified(0);
       let data: DoubanResult;
 
       if (type === 'custom') {
@@ -404,10 +449,19 @@ function DoubanPageClient() {
   }, [hasMore, isLoadingMore, loading]);
 
   // 筛选条件变化：先显示骨架屏，再由 loadInitialData 重新取数
-  const handleFilterChange = useCallback((next: DoubanFilter) => {
-    setLoading(true);
-    setFilter(next);
-  }, []);
+  const handleFilterChange = useCallback(
+    (next: DoubanFilter) => {
+      setLoading(true);
+      setFilter(next);
+      const params = applyFilterToSearch(
+        new URLSearchParams(searchParams.toString()),
+        next
+      );
+      const query = params.toString();
+      router.replace(query ? `/douban?${query}` : '/douban', { scroll: false });
+    },
+    [router, searchParams]
+  );
 
   // 处理选择器变化
   const handlePrimaryChange = useCallback(
@@ -538,10 +592,22 @@ function DoubanPageClient() {
           </div>
         ) : (
           <div className='mt-8 overflow-visible'>
-            {filterOn && !loading && (filterPool?.length ?? 0) > 0 ? (
-              <p className='mb-4 text-sm text-gray-500 dark:text-gray-400'>
-                在本分类热门影片中筛选，共 {filterPool?.length ?? 0} 部
-              </p>
+            {filterOn && (metaChecking || !loading) ? (
+              <div className='mb-4 space-y-1 text-sm text-gray-500 dark:text-gray-400'>
+                {metaChecking ? (
+                  <p>正在用资源源核对地区和题材…</p>
+                ) : (filterPool?.length ?? 0) > 0 ? (
+                  <p>
+                    在本分类热门影片中筛选，共 {filterPool?.length ?? 0} 部
+                    {metaVerified > 0
+                      ? `，地区和题材已用资源源核对（最多核对前 ${META_VERIFY_LIMIT} 部）`
+                      : ''}
+                  </p>
+                ) : null}
+                {metaFailed && !metaChecking ? (
+                  <p>部分影片核对失败，结果可能不完整</p>
+                ) : null}
+              </div>
             ) : null}
             {/* 内容网格：与上方的分类、筛选行左对齐 */}
             <div className='justify-start grid grid-cols-3 gap-x-2 gap-y-10 px-0 sm:grid-cols-[repeat(auto-fill,minmax(160px,1fr))] sm:gap-x-8 sm:gap-y-12'>
@@ -606,6 +672,8 @@ function DoubanPageClient() {
                       ? '该分类暂不提供地区信息，可以试试其他条件'
                       : filter.genre && !poolInfo.genre
                       ? '该分类暂不提供类型信息，可以试试其他条件'
+                      : metaFailed
+                      ? '部分影片核对失败，可以稍后重试或换个条件'
                       : '没有符合条件的影片'}
                   </p>
                   <button
