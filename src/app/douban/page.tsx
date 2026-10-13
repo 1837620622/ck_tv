@@ -7,12 +7,21 @@ import { Suspense } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { getDoubanCategories, getDoubanList } from '@/lib/douban.client';
+import {
+  DoubanFilter,
+  EMPTY_FILTER,
+  FILTER_PAGE_SIZE,
+  FILTER_POOL_PAGES,
+  filterAndSortDouban,
+  isFilterActive,
+} from '@/lib/douban-filter';
 import { DoubanItem, DoubanResult } from '@/lib/types';
 
 import CatalogPanel from '@/components/CatalogPanel';
-import ChoiceRow from '@/components/ChoiceRow';
+import ChoiceRow, { choiceClass } from '@/components/ChoiceRow';
 import DoubanCardSkeleton from '@/components/DoubanCardSkeleton';
 import DoubanCustomSelector from '@/components/DoubanCustomSelector';
+import DoubanFilterBar from '@/components/DoubanFilterBar';
 import DoubanSelector from '@/components/DoubanSelector';
 import PageLayout from '@/components/PageLayout';
 import VideoCard from '@/components/VideoCard';
@@ -26,6 +35,11 @@ function DoubanPageClient() {
   const [hasMore, setHasMore] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [selectorsReady, setSelectorsReady] = useState(false);
+  // 筛选：年份、评分、排序。开启后一次取回前 100 部在本地过滤，结果存在 filterPool 里逐页展示
+  const [filter, setFilter] = useState<DoubanFilter>(EMPTY_FILTER);
+  const [filterPool, setFilterPool] = useState<DoubanItem[] | null>(null);
+  const [poolHasYear, setPoolHasYear] = useState(true);
+  const requestSeqRef = useRef(0);
   const observerRef = useRef<IntersectionObserver | null>(null);
   const loadingRef = useRef<HTMLDivElement>(null);
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -158,10 +172,41 @@ function DoubanPageClient() {
     [type, primarySelection, secondarySelection]
   );
 
+  // 筛选只用于电影、电视剧、综艺的分类；自定义分类、番组和哔哩不适用
+  const filterEnabled =
+    !catalogEngine && (type === 'movie' || type === 'tv' || type === 'show');
+  const filterOn = filterEnabled && isFilterActive(filter);
+
   // 防抖的数据加载函数
   const loadInitialData = useCallback(async () => {
+    const seq = ++requestSeqRef.current;
     try {
       setLoading(true);
+
+      if (filterOn) {
+        // 筛选模式：一次取回前 100 部，过滤、排序后逐页展示
+        const pages = await Promise.all(
+          Array.from({ length: FILTER_POOL_PAGES }, (_, index) =>
+            getDoubanCategories(getRequestParams(index * FILTER_PAGE_SIZE), {
+              silent: true,
+            }).catch(() => null)
+          )
+        );
+        if (seq !== requestSeqRef.current) return;
+
+        const merged = pages.flatMap((page) =>
+          page && page.code === 200 && Array.isArray(page.list) ? page.list : []
+        );
+        const filtered = filterAndSortDouban(merged, filter);
+        setPoolHasYear(merged.some((item) => /^\d{4}$/.test(item.year)));
+        setFilterPool(filtered);
+        setDoubanData(filtered.slice(0, FILTER_PAGE_SIZE));
+        setHasMore(filtered.length > FILTER_PAGE_SIZE);
+        setLoading(false);
+        return;
+      }
+
+      setFilterPool(null);
       let data: DoubanResult;
 
       if (type === 'custom') {
@@ -185,6 +230,9 @@ function DoubanPageClient() {
         data = await getDoubanCategories(getRequestParams(0));
       }
 
+      // 筛选条件已变，这次的结果不再有效
+      if (seq !== requestSeqRef.current) return;
+
       if (data.code === 200) {
         const list = Array.isArray(data.list) ? data.list : [];
         setDoubanData(list);
@@ -202,6 +250,8 @@ function DoubanPageClient() {
     secondarySelection,
     getRequestParams,
     customCategories,
+    filterOn,
+    filter,
   ]);
 
   // 只在选择器准备好后才加载数据
@@ -248,6 +298,13 @@ function DoubanPageClient() {
   // 单独处理 currentPage 变化（加载更多）
   useEffect(() => {
     if (catalogEngine || currentPage <= 0) {
+      return;
+    }
+    // 筛选模式下结果已全部取回，翻页只是切片
+    if (filterPool) {
+      const end = (currentPage + 1) * FILTER_PAGE_SIZE;
+      setDoubanData(filterPool.slice(0, end));
+      setHasMore(filterPool.length > end);
       return;
     }
     if (currentPage > 0) {
@@ -303,6 +360,7 @@ function DoubanPageClient() {
     primarySelection,
     secondarySelection,
     customCategories,
+    filterPool,
   ]);
 
   // 设置滚动监听
@@ -335,6 +393,12 @@ function DoubanPageClient() {
       }
     };
   }, [hasMore, isLoadingMore, loading]);
+
+  // 筛选条件变化：先显示骨架屏，再由 loadInitialData 重新取数
+  const handleFilterChange = useCallback((next: DoubanFilter) => {
+    setLoading(true);
+    setFilter(next);
+  }, []);
 
   // 处理选择器变化
   const handlePrimaryChange = useCallback(
@@ -449,6 +513,14 @@ function DoubanPageClient() {
               />
             </div>
           )}
+
+          {filterEnabled ? (
+            <DoubanFilterBar
+              value={filter}
+              onChange={handleFilterChange}
+              currentYear={new Date().getFullYear()}
+            />
+          ) : null}
         </div>
 
         {catalogEngine ? (
@@ -457,6 +529,11 @@ function DoubanPageClient() {
           </div>
         ) : (
           <div className='mt-8 overflow-visible'>
+            {filterOn && !loading ? (
+              <p className='mb-4 text-sm text-gray-500 dark:text-gray-400'>
+                在本分类热门影片中筛选，共 {filterPool?.length ?? 0} 部
+              </p>
+            ) : null}
             {/* 内容网格：与上方的分类、筛选行左对齐 */}
             <div className='justify-start grid grid-cols-3 gap-x-2 gap-y-10 px-0 sm:grid-cols-[repeat(auto-fill,minmax(160px,1fr))] sm:gap-x-8 sm:gap-y-12'>
               {loading || !selectorsReady
@@ -509,9 +586,28 @@ function DoubanPageClient() {
             )}
 
             {/* 空状态 */}
-            {!loading && doubanData.length === 0 && (
-              <div className='text-center text-gray-500 py-8'>暂无相关内容</div>
-            )}
+            {!loading &&
+              doubanData.length === 0 &&
+              (filterOn ? (
+                <div className='flex flex-col items-center gap-3 py-8 text-center text-gray-500 dark:text-gray-400'>
+                  <p>
+                    {filter.year && !poolHasYear
+                      ? '该分类暂不提供年份信息，可以试试评分或排序'
+                      : '没有符合条件的影片'}
+                  </p>
+                  <button
+                    type='button'
+                    onClick={() => handleFilterChange(EMPTY_FILTER)}
+                    className={choiceClass(false)}
+                  >
+                    清除筛选
+                  </button>
+                </div>
+              ) : (
+                <div className='text-center text-gray-500 py-8'>
+                  暂无相关内容
+                </div>
+              ))}
           </div>
         )}
       </div>
