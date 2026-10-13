@@ -158,4 +158,50 @@ describe('POST /api/meta', () => {
     expect(ttls).toContain(86400);
     expect(ttls).toContain(900);
   });
+
+  it('reports the batch as degraded when every source failed', async () => {
+    (searchFromApi as jest.Mock).mockImplementation(
+      async (
+        _site: unknown,
+        _title: string,
+        options: { onFailure: () => void }
+      ) => {
+        options.onFailure();
+        return [];
+      }
+    );
+    const res = await call({
+      items: [{ id: '1', title: '功夫女足', year: '2024' }],
+    });
+    const body = (await res.json()) as { degraded: boolean; results: object };
+    expect(body.degraded).toBe(true);
+    expect(body.results).toEqual({});
+    expect(writeJsonCache).not.toHaveBeenCalled();
+  });
+
+  it('does not cache a lookup where some sources timed out', async () => {
+    (searchFromApi as jest.Mock).mockImplementation(
+      async (
+        site: { key: string },
+        title: string,
+        options: { onFailure: () => void }
+      ) => {
+        if (site.key === 's3') {
+          options.onFailure();
+          return [];
+        }
+        return [hit(site.key, { area: '韩国', class: '剧情' })];
+      }
+    );
+    const res = await call({
+      items: [{ id: '1', title: '功夫女足', year: '2024' }],
+    });
+    const body = (await res.json()) as {
+      degraded: boolean;
+      results: Record<string, { regions: string[] }>;
+    };
+    expect(body.degraded).toBe(false);
+    expect(body.results['1'].regions).toEqual(['韩国']);
+    expect(writeJsonCache).not.toHaveBeenCalled();
+  });
 });

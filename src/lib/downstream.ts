@@ -86,7 +86,13 @@ interface ApiListPayload {
 export async function searchFromApi(
   apiSite: ApiSite,
   query: string,
-  options?: { keepAdult?: boolean; timeoutMs?: number; page?: number }
+  options?: {
+    keepAdult?: boolean;
+    timeoutMs?: number;
+    page?: number;
+    // 超时、网络错误、非 200 或返回的不是 JSON 时调用，和「没有匹配」区分开
+    onFailure?: () => void;
+  }
 ): Promise<SearchResult[]> {
   const pageNo = Math.max(1, Math.floor(options?.page || 1));
   const pageSuffix = pageNo > 1 ? `&pg=${pageNo}` : '';
@@ -133,6 +139,7 @@ export async function searchFromApi(
     const data = outcome.data;
     if (!data) {
       noteSite(apiSite.key, false);
+      options?.onFailure?.();
       return [];
     }
     noteSite(apiSite.key, true);
@@ -152,6 +159,7 @@ export async function searchFromApi(
     return tagged.filter((item: SearchResult) => !isAdultContent(item));
   } catch {
     noteSite(apiSite.key, false);
+    options?.onFailure?.();
     return [];
   }
 }

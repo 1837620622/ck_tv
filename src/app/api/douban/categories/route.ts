@@ -200,7 +200,10 @@ export async function GET(request: Request) {
         list = [];
       }
     }
-    if (list.length === 0) {
+    // search_subjects 不认地区和题材限定：只有请求本身不限定时才能退回它。
+    // 否则会拿到不限定的列表，又被缓存到限定的 key 下，之后每次都显示错的内容
+    const unrestricted = movieGenre || ['全部', 'tv', 'show'].includes(type);
+    if (list.length === 0 && unrestricted) {
       const subjectData = await fetchDoubanData(subjectUrl);
       const subjects = Array.isArray(subjectData.subjects)
         ? subjectData.subjects

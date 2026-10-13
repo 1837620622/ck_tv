@@ -127,7 +127,8 @@ export function titleParts(raw: string): TitlePart {
     text = text.replace(marked[0], '');
   }
   if (!season) {
-    const tail = text.match(/([0-9]{1,2}|ii|iii|iv|ⅱ|ⅲ|ⅳ)$/);
+    // 季数必须是独立的一两位数：「三体2023」末尾的 23 是年份的一部分，不是第 23 季
+    const tail = text.match(/((?<!\d)[0-9]{1,2}|ii|iii|iv|ⅱ|ⅲ|ⅳ)$/);
     const rest = tail ? text.length - tail[0].length : 0;
     const roman = tail ? romanSeason(tail[1]) : '';
     const arabic = tail && !roman && /^[0-9]{1,2}$/.test(tail[1]);
@@ -137,7 +138,8 @@ export function titleParts(raw: string): TitlePart {
     }
   }
   text = text.replace(QUALITY, '');
-  const yearTail = text.match(/(19|20)\d{2}$/);
+  // 只把 1900 到 2039 当作年份；「银翼杀手2049」这类续作名要留在片名里
+  const yearTail = text.match(/(19\d{2}|20[0-3]\d)$/);
   if (yearTail && text.length - yearTail[0].length >= 2) {
     text = text.slice(0, -yearTail[0].length);
   }

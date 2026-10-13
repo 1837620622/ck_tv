@@ -54,6 +54,12 @@ function DoubanPageClient() {
   const [metaFailed, setMetaFailed] = useState(false);
   const [metaVerified, setMetaVerified] = useState(0);
   const [filterPool, setFilterPool] = useState<DoubanItem[] | null>(null);
+  // 整个列表取不到（不是没有数据）；翻页失败时停在当前页，等用户点重试
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [pageError, setPageError] = useState(false);
+  const [pageRetry, setPageRetry] = useState(0);
+  // 筛选模式下有几页没取到，结果可能不完整
+  const [poolPartial, setPoolPartial] = useState(false);
   // 本分类的数据里是否有年份、地区、类型信息，用于在没有结果时说明原因
   const [poolInfo, setPoolInfo] = useState({
     year: true,
@@ -210,6 +216,8 @@ function DoubanPageClient() {
     const seq = ++requestSeqRef.current;
     try {
       setLoading(true);
+      setLoadFailed(false);
+      setPageError(false);
 
       if (filterOn) {
         // 筛选模式：一次取回前 100 部，过滤、排序后逐页展示
@@ -222,6 +230,9 @@ function DoubanPageClient() {
         );
         if (seq !== requestSeqRef.current) return;
 
+        const failedPages = pages.filter(
+          (page) => !page || page.code !== 200
+        ).length;
         let pool = pages.flatMap((page) =>
           page && page.code === 200 && Array.isArray(page.list) ? page.list : []
         );
@@ -244,6 +255,9 @@ function DoubanPageClient() {
         setMetaFailed(failed > 0);
         setMetaVerified(pool.filter((item) => (item.verified || 0) > 0).length);
 
+        // 一页都没取到，和「取到了但没有符合条件的」是两回事
+        setLoadFailed(pool.length === 0 && failedPages === pages.length);
+        setPoolPartial(failedPages > 0 && failedPages < pages.length);
         const filtered = filterAndSortDouban(pool, filter);
         setPoolInfo({
           year: pool.some((item) => /^\d{4}$/.test(item.year)),
@@ -258,6 +272,7 @@ function DoubanPageClient() {
       }
 
       setFilterPool(null);
+      setPoolPartial(false);
       setMetaChecking(false);
       setMetaFailed(false);
       setMetaVerified(0);
@@ -297,6 +312,13 @@ function DoubanPageClient() {
       }
     } catch (err) {
       console.error(err);
+      // 只处理当前这次请求；被新选择覆盖的旧请求不能把页面切到失败状态
+      if (seq === requestSeqRef.current) {
+        setDoubanData([]);
+        setHasMore(false);
+        setLoadFailed(true);
+        setLoading(false);
+      }
     }
   }, [
     type,
@@ -362,6 +384,8 @@ function DoubanPageClient() {
       return;
     }
     if (currentPage > 0) {
+      // 记下发起时的请求序号：选择或筛选变了以后，这一页属于旧列表，不能再加进来
+      const seq = requestSeqRef.current;
       const fetchMoreData = async () => {
         try {
           setIsLoadingMore(true);
@@ -391,6 +415,7 @@ function DoubanPageClient() {
             );
           }
 
+          if (seq !== requestSeqRef.current) return;
           if (data.code === 200) {
             const list = Array.isArray(data.list) ? data.list : [];
             setDoubanData((prev) => [...prev, ...list]);
@@ -400,6 +425,7 @@ function DoubanPageClient() {
           }
         } catch (err) {
           console.error(err);
+          if (seq === requestSeqRef.current) setPageError(true);
         } finally {
           setIsLoadingMore(false);
         }
@@ -410,6 +436,7 @@ function DoubanPageClient() {
   }, [
     catalogEngine,
     currentPage,
+    pageRetry,
     type,
     primarySelection,
     secondarySelection,
@@ -419,8 +446,8 @@ function DoubanPageClient() {
 
   // 设置滚动监听
   useEffect(() => {
-    // 如果没有更多数据或正在加载，则不设置监听
-    if (!hasMore || isLoadingMore || loading) {
+    // 如果没有更多数据、正在加载或上一页失败，则不设置监听（失败后由用户点重试）
+    if (!hasMore || isLoadingMore || loading || pageError) {
       return;
     }
 
@@ -446,7 +473,17 @@ function DoubanPageClient() {
         observerRef.current.disconnect();
       }
     };
-  }, [hasMore, isLoadingMore, loading]);
+  }, [hasMore, isLoadingMore, loading, pageError]);
+
+  const retryPage = useCallback(() => {
+    setPageError(false);
+    setPageRetry((n) => n + 1);
+  }, []);
+
+  const retryLoad = useCallback(() => {
+    setLoading(true);
+    loadInitialData();
+  }, [loadInitialData]);
 
   // 筛选条件变化：先显示骨架屏，再由 loadInitialData 重新取数
   const handleFilterChange = useCallback(
@@ -463,12 +500,29 @@ function DoubanPageClient() {
     [router, searchParams]
   );
 
+  // 把分类选择写进 URL，刷新或分享后仍是同一个列表；自定义分类由它自己的初始化逻辑决定，不写
+  const updateListParams = useCallback(
+    (values: Record<string, string>) => {
+      const params = new URLSearchParams(searchParams.toString());
+      Object.entries(values).forEach(([key, value]) => {
+        if (value) params.set(key, value);
+        else params.delete(key);
+      });
+      const query = params.toString();
+      router.replace(query ? `/douban?${query}` : '/douban', { scroll: false });
+    },
+    [router, searchParams]
+  );
+
   // 处理选择器变化
   const handlePrimaryChange = useCallback(
     (value: string) => {
       // 只有当值真正改变时才设置loading状态
       if (value !== primarySelection) {
         setLoading(true);
+        // 与选择同一批更新，避免翻页请求用旧页码去取新分类
+        setCurrentPage(0);
+        setPageError(false);
 
         // 如果是自定义分类模式，同时更新一级和二级选择器
         if (type === 'custom' && customCategories.length > 0) {
@@ -484,10 +538,11 @@ function DoubanPageClient() {
           }
         } else {
           setPrimarySelection(value);
+          updateListParams({ cat: value });
         }
       }
     },
-    [primarySelection, type, customCategories]
+    [primarySelection, type, customCategories, updateListParams]
   );
 
   const handleSecondaryChange = useCallback(
@@ -495,10 +550,13 @@ function DoubanPageClient() {
       // 只有当值真正改变时才设置loading状态
       if (value !== secondarySelection) {
         setLoading(true);
+        setCurrentPage(0);
+        setPageError(false);
         setSecondarySelection(value);
+        if (type !== 'custom') updateListParams({ sub: value });
       }
     },
-    [secondarySelection]
+    [secondarySelection, type, updateListParams]
   );
 
   const getPageTitle = () => {
@@ -595,17 +653,22 @@ function DoubanPageClient() {
             {filterOn && (metaChecking || !loading) ? (
               <div className='mb-4 space-y-1 text-sm text-gray-500 dark:text-gray-400'>
                 {metaChecking ? (
-                  <p>正在用资源源核对地区和题材…</p>
+                  <p>正在用资源源核对{verifiedFieldsOf(filter)}…</p>
                 ) : (filterPool?.length ?? 0) > 0 ? (
                   <p>
                     在本分类热门影片中筛选，共 {filterPool?.length ?? 0} 部
                     {metaVerified > 0
-                      ? `，地区和题材已用资源源核对（最多核对前 ${META_VERIFY_LIMIT} 部）`
+                      ? `，${verifiedFieldsOf(
+                          filter
+                        )}已用资源源核对（最多核对前 ${META_VERIFY_LIMIT} 部）`
                       : ''}
                   </p>
                 ) : null}
                 {metaFailed && !metaChecking ? (
                   <p>部分影片核对失败，结果可能不完整</p>
+                ) : null}
+                {poolPartial && !loadFailed ? (
+                  <p>部分数据没有取到，结果可能不完整</p>
                 ) : null}
               </div>
             ) : null}
@@ -644,12 +707,23 @@ function DoubanPageClient() {
                 }}
                 className='flex justify-center mt-12 py-8'
               >
-                {isLoadingMore && (
+                {pageError ? (
+                  <div className='flex items-center gap-3 text-gray-500 dark:text-gray-400'>
+                    <span>这一页加载失败</span>
+                    <button
+                      type='button'
+                      onClick={retryPage}
+                      className={choiceClass(false)}
+                    >
+                      重试
+                    </button>
+                  </div>
+                ) : isLoadingMore ? (
                   <div className='flex items-center gap-2'>
                     <div className='animate-spin rounded-full h-6 w-6 border-b-2 border-green-500'></div>
                     <span className='text-gray-600'>加载中...</span>
                   </div>
-                )}
+                ) : null}
               </div>
             )}
 
@@ -666,22 +740,44 @@ function DoubanPageClient() {
               (filterOn ? (
                 <div className='flex flex-col items-center gap-3 py-8 text-center text-gray-500 dark:text-gray-400'>
                   <p>
-                    {filter.year && !poolInfo.year
+                    {loadFailed
+                      ? '数据获取失败，请稍后重试'
+                      : metaFailed
+                      ? '部分影片核对失败，可以稍后重试或换个条件'
+                      : filter.year && !poolInfo.year
                       ? '该分类暂不提供年份信息，可以试试其他条件'
                       : filter.region && !poolInfo.region
                       ? '该分类暂不提供地区信息，可以试试其他条件'
                       : filter.genre && !poolInfo.genre
                       ? '该分类暂不提供类型信息，可以试试其他条件'
-                      : metaFailed
-                      ? '部分影片核对失败，可以稍后重试或换个条件'
                       : '没有符合条件的影片'}
                   </p>
+                  {loadFailed ? (
+                    <button
+                      type='button'
+                      onClick={retryLoad}
+                      className={choiceClass(false)}
+                    >
+                      重试
+                    </button>
+                  ) : null}
                   <button
                     type='button'
                     onClick={() => handleFilterChange(EMPTY_FILTER)}
                     className={choiceClass(false)}
                   >
                     清除筛选
+                  </button>
+                </div>
+              ) : loadFailed ? (
+                <div className='flex flex-col items-center gap-3 py-8 text-center text-gray-500 dark:text-gray-400'>
+                  <p>数据获取失败，请稍后重试</p>
+                  <button
+                    type='button'
+                    onClick={retryLoad}
+                    className={choiceClass(false)}
+                  >
+                    重试
                   </button>
                 </div>
               ) : (
@@ -694,6 +790,17 @@ function DoubanPageClient() {
       </div>
     </PageLayout>
   );
+}
+
+// 当前筛选需要资源源核对的字段，用于页面上的提示文字
+function verifiedFieldsOf(filter: DoubanFilter): string {
+  return [
+    filter.year || filter.sort === 'year' ? '年份' : '',
+    filter.region ? '地区' : '',
+    filter.genre ? '题材' : '',
+  ]
+    .filter(Boolean)
+    .join('、');
 }
 
 export default function DoubanPage() {

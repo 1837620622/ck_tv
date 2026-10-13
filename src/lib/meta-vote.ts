@@ -78,6 +78,8 @@ export function firstMatchPerSource(
     if (!titlesMatch(result.title, title)) continue;
     const resultYear = isYear(result.year || '') ? result.year : '';
     if (isYear(year) && resultYear && resultYear !== year) continue;
+    // 没有任何可用信息的重复条目不占这个源的名额，否则会把同源的完整条目挡在外面
+    if (!hasMeta(resourceVote(result))) continue;
     seen.add(result.source);
     matched.push(result);
   }

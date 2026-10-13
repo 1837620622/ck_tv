@@ -64,12 +64,30 @@ describe('firstMatchPerSource', () => {
         result('s1', '功夫女足 第二季'),
         result('s2', '功夫女足 预告'),
         result('s3', '功夫女足', { year: '2019' }),
-        result('s4', '功夫女足', { year: 'unknown' }),
+        result('s4', '功夫女足', { year: 'unknown', area: '中国大陆' }),
       ],
       '功夫女足',
       '2024'
     );
     expect(matched.map((r) => r.source)).toEqual(['s4']);
+  });
+
+  it('skips an empty duplicate so the same source can still vote', () => {
+    const matched = firstMatchPerSource(
+      [
+        result('s1', '流浪地球2', { year: '', area: undefined, class: '' }),
+        result('s1', '流浪地球2', {
+          year: '2023',
+          area: '中国大陆',
+          class: '科幻,剧情',
+        }),
+      ],
+      '流浪地球2',
+      ''
+    );
+    expect(matched).toHaveLength(1);
+    expect(matched[0].area).toBe('中国大陆');
+    expect(hasMeta(resourceVote(matched[0]))).toBe(true);
   });
 });
 

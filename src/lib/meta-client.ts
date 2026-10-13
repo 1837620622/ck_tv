@@ -6,7 +6,8 @@ import type { DoubanItem } from './types';
 export const META_BATCH_SIZE = 8;
 export const META_VERIFY_LIMIT = 40;
 const META_CONCURRENCY = 2;
-const META_TIMEOUT_MS = 15000;
+// 服务端最坏约 21 秒：每部每个源 2.5 秒、失败后还会重试一次，8 部分 4 轮处理
+const META_TIMEOUT_MS = 30000;
 
 export interface ResourceMeta {
   year: string;
@@ -69,7 +70,10 @@ async function verifyBatch(
     if (!response.ok) return null;
     const data = (await response.json()) as {
       results?: Record<string, ResourceMeta>;
+      degraded?: boolean;
     };
+    // 所有资源源都没有答复：这一批按失败计算，而不是「没有数据」
+    if (data.degraded) return null;
     return data.results || {};
   } catch {
     return null;
