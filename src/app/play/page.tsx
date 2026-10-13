@@ -437,7 +437,7 @@ function PlayPageClient() {
             // 如果是m3u8文件，处理内容以移除广告分段
             if (response.data && typeof response.data === 'string') {
               // 过滤掉广告段 - 实现更精确的广告过滤逻辑
-              const filtered = filterAdBreaks(response.data);
+              const filtered = filterAdBreaks(response.data, context?.url);
               response.data = filtered.text;
               // 过滤生效时给出提示，让用户看得见跳过了什么
               if (filtered.removedSegments > 0 && artPlayerRef.current) {
