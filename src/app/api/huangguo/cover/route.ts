@@ -47,6 +47,45 @@ async function readCapped(
   return out;
 }
 
+// 上游有时把封面跳到同一个白名单域名的另一个路径（比如补签名、换路径）。
+// 手动跟随，每一跳都重新过白名单，最多 3 跳；跳出白名单就放弃。
+const COVER_MAX_HOPS = 3;
+
+async function fetchCover(start: string): Promise<Response | null> {
+  let current = start;
+  for (let hop = 0; hop < COVER_MAX_HOPS; hop += 1) {
+    const response = await fetch(current, {
+      redirect: 'manual',
+      headers: {
+        Accept: 'image/*,*/*',
+        Referer: 'https://huangguoai.com/',
+        'User-Agent':
+          'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15',
+      },
+      cf: {
+        cacheEverything: true,
+        cacheTtl: COVER_SECONDS,
+        cacheTtlByStatus: {
+          '200-299': COVER_SECONDS,
+          '400-499': 60,
+          '500-599': 0,
+        },
+      },
+    } as RequestInit);
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get('location');
+      const next = location
+        ? allowedCoverUrl(new URL(location, current).toString())
+        : '';
+      if (!next) return null;
+      current = next;
+      continue;
+    }
+    return response;
+  }
+  return null;
+}
+
 export async function GET(request: Request) {
   const target = allowedCoverUrl(
     new URL(request.url).searchParams.get('u') || ''
@@ -73,26 +112,8 @@ export async function GET(request: Request) {
   }
 
   try {
-    // 不跟随跳转：白名单只校验了第一跳，跳到其他地址就不再受控
-    const response = await fetch(target, {
-      redirect: 'manual',
-      headers: {
-        Accept: 'image/*,*/*',
-        Referer: 'https://huangguoai.com/',
-        'User-Agent':
-          'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15',
-      },
-      cf: {
-        cacheEverything: true,
-        cacheTtl: COVER_SECONDS,
-        cacheTtlByStatus: {
-          '200-299': COVER_SECONDS,
-          '400-499': 60,
-          '500-599': 0,
-        },
-      },
-    } as RequestInit);
-    if (!response.ok) {
+    const response = await fetchCover(target);
+    if (!response || !response.ok) {
       return new NextResponse(null, {
         status: 404,
         headers: { 'Cache-Control': 'no-store' },
