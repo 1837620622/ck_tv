@@ -68,7 +68,8 @@ function toSearchResult(
       source_name: apiSite.name,
       class: item.vod_class,
       area: item.vod_area ? String(item.vod_area) : undefined,
-      year: yearText ? yearText.match(/\d{4}/)?.[0] || '' : 'unknown',
+      // 没有四位数字的年份（如「未知」）同样记为 unknown，排序时才和缺失年份一样排在最后
+      year: yearText.match(/\d{4}/)?.[0] || 'unknown',
       desc: cleanHtmlTags(String(item.vod_content ?? '')),
       type_name: item.type_name,
       douban_id: item.vod_douban_id,
@@ -190,11 +191,7 @@ export function extractPlayUrls(vodPlayUrl: string): string[] {
     const others = urls.filter((url) => !url.includes('.m3u8'));
     // 整组以 m3u8 为主才只用 m3u8。只有一条预告 m3u8、正片是 mp4 时不能把正片丢掉。
     const chosen =
-      m3u8s.length === 0
-        ? urls
-        : m3u8s.length >= others.length
-        ? m3u8s
-        : others;
+      m3u8s.length === 0 ? urls : m3u8s.length > others.length ? m3u8s : others;
     const chosenM3u8 = chosen.filter((url) => url.includes('.m3u8')).length;
     if (
       chosenM3u8 > bestM3u8 ||
@@ -277,7 +274,7 @@ export async function getDetailFromApi(
     source: apiSite.key,
     source_name: apiSite.name,
     class: videoDetail.vod_class,
-    year: yearText ? yearText.match(/\d{4}/)?.[0] || '' : 'unknown',
+    year: yearText.match(/\d{4}/)?.[0] || 'unknown',
     desc: cleanHtmlTags(String(videoDetail.vod_content ?? '')),
     type_name: videoDetail.type_name,
     douban_id: videoDetail.vod_douban_id,
