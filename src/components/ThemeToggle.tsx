@@ -4,7 +4,7 @@
 
 import { Moon, Sun } from 'lucide-react';
 import { useTheme } from 'next-themes';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 // 根据时间判断应该使用的主题
 // 早上6点到晚上18点使用亮色主题，其他时间使用暗色主题
@@ -16,6 +16,9 @@ const getThemeByTime = (): 'light' | 'dark' => {
 export function ThemeToggle() {
   const [mounted, setMounted] = useState(false);
   const { setTheme, resolvedTheme } = useTheme();
+  // 定时器只在挂载时创建一次，要读到最新的主题就得通过 ref，否则会拿挂载时的旧值比较
+  const resolvedRef = useRef(resolvedTheme);
+  resolvedRef.current = resolvedTheme;
 
   const setThemeColor = (themeValue?: string) => {
     const meta = document.querySelector('meta[name="theme-color"]');
@@ -52,7 +55,7 @@ export function ThemeToggle() {
       const hasManual = localStorage.getItem('theme-manual');
       if (!hasManual) {
         const autoTheme = getThemeByTime();
-        if (autoTheme !== resolvedTheme) {
+        if (autoTheme !== resolvedRef.current) {
           setTheme(autoTheme);
           setThemeColor(autoTheme);
         }

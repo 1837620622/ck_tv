@@ -1,6 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+
+// 错误提示停留的时间；不自动关闭的话，它会一直盖住右上角的主题和用户按钮
+const AUTO_HIDE_MS = 6000;
+const REPLACE_ANIMATION_MS = 200;
 
 interface ErrorInfo {
   id: string;
@@ -12,47 +16,57 @@ export function GlobalErrorIndicator() {
   const [currentError, setCurrentError] = useState<ErrorInfo | null>(null);
   const [isVisible, setIsVisible] = useState(false);
   const [isReplacing, setIsReplacing] = useState(false);
+  const visibleRef = useRef(false);
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const replaceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
-    // 监听自定义错误事件
-    const handleError = (event: CustomEvent) => {
-      const { message } = event.detail;
-      const newError: ErrorInfo = {
-        id: Date.now().toString(),
-        message,
-        timestamp: Date.now(),
-      };
-
-      // 如果已有错误，开始替换动画
-      if (currentError) {
-        setCurrentError(newError);
-        setIsReplacing(true);
-
-        // 动画完成后恢复正常
-        setTimeout(() => {
-          setIsReplacing(false);
-        }, 200);
-      } else {
-        // 第一次显示错误
-        setCurrentError(newError);
-      }
-
-      setIsVisible(true);
-    };
-
-    // 监听错误事件
-    window.addEventListener('globalError', handleError as EventListener);
-
-    return () => {
-      window.removeEventListener('globalError', handleError as EventListener);
-    };
-  }, [currentError]);
+  const clearTimers = () => {
+    if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    if (replaceTimerRef.current) clearTimeout(replaceTimerRef.current);
+    hideTimerRef.current = null;
+    replaceTimerRef.current = null;
+  };
 
   const handleClose = () => {
+    clearTimers();
+    visibleRef.current = false;
     setIsVisible(false);
     setCurrentError(null);
     setIsReplacing(false);
   };
+
+  useEffect(() => {
+    // 监听自定义错误事件
+    const handleError = (event: Event) => {
+      const { message } = (event as CustomEvent<{ message: string }>).detail;
+      const now = Date.now();
+      setCurrentError({ id: now.toString(), message, timestamp: now });
+
+      // 已经在显示时换成新内容，做一次替换动画
+      if (visibleRef.current) {
+        setIsReplacing(true);
+        if (replaceTimerRef.current) clearTimeout(replaceTimerRef.current);
+        replaceTimerRef.current = setTimeout(() => {
+          setIsReplacing(false);
+        }, REPLACE_ANIMATION_MS);
+      }
+      visibleRef.current = true;
+      setIsVisible(true);
+
+      // 每条新错误都重新计时
+      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = setTimeout(handleClose, AUTO_HIDE_MS);
+    };
+
+    // 监听错误事件
+    window.addEventListener('globalError', handleError);
+    return () => {
+      window.removeEventListener('globalError', handleError);
+      clearTimers();
+    };
+    // handleClose 只用到 setState 和 ref，不需要进依赖
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (!isVisible || !currentError) {
     return null;
@@ -62,6 +76,7 @@ export function GlobalErrorIndicator() {
     <div className='fixed top-4 right-4 z-[2000]'>
       {/* 错误卡片 */}
       <div
+        role='alert'
         className={`bg-red-500 text-white px-4 py-3 rounded-lg shadow-lg flex items-center justify-between min-w-[300px] max-w-[400px] transition-all duration-300 ${
           isReplacing ? 'scale-105 bg-red-400' : 'scale-100 bg-red-500'
         } animate-fade-in`}

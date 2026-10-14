@@ -226,7 +226,7 @@ export const UserMenu: React.FC = () => {
             <span className='text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
               站点
             </span>
-            <div className='text-[10px] text-gray-400 dark:text-gray-500'>
+            <div className='text-[11px] text-gray-600 dark:text-gray-400'>
               数据存储：
               {storageType === 'localstorage' ? '本地' : storageType}
             </div>
@@ -299,7 +299,7 @@ export const UserMenu: React.FC = () => {
       />
 
       {/* 设置面板 */}
-      <div className='fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white dark:bg-gray-900 rounded-xl shadow-xl z-[1001] p-6'>
+      <div className='fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[calc(100%-2rem)] max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto bg-white dark:bg-gray-900 rounded-xl shadow-xl z-[1001] p-6'>
         {/* 标题栏 */}
         <div className='flex items-center justify-between mb-6'>
           <div className='flex items-center gap-3'>
