@@ -3,6 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { getAuthInfoFromCookie, LOCAL_AUTH_SUBJECT } from '@/lib/auth';
+import { DEFAULT_JSON_BODY_BYTES, readJsonBody } from '@/lib/body';
 import { db, hasServerStorage } from '@/lib/db';
 import { SkipConfig } from '@/lib/types';
 
@@ -56,8 +57,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '未登录' }, { status: 401 });
     }
 
-    const body = await request.json();
-    const { key, config } = body;
+    const parsed = await readJsonBody(request, DEFAULT_JSON_BODY_BYTES);
+    if (!parsed.ok) {
+      return NextResponse.json(
+        { error: parsed.error },
+        { status: parsed.status }
+      );
+    }
+    const { key, config } = parsed.data as {
+      key: string;
+      config: Partial<SkipConfig>;
+    };
 
     if (!key || !config) {
       return NextResponse.json({ error: '缺少必要参数' }, { status: 400 });

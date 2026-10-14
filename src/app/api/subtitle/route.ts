@@ -15,6 +15,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
+import { DEFAULT_JSON_BODY_BYTES, readJsonBody } from '@/lib/body';
 import { fetchPublic, publicHttpUrl } from '@/lib/safe-url';
 
 // Cloudflare Pages 需要 Edge Runtime
@@ -251,8 +252,14 @@ function checkAndUpdateQuota(audioDurationMinutes: number): {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = (await request.json()) as SubtitleRequest;
-    const { url, language } = body;
+    const parsed = await readJsonBody(request, DEFAULT_JSON_BODY_BYTES);
+    if (!parsed.ok) {
+      return NextResponse.json(
+        { error: parsed.error },
+        { status: parsed.status }
+      );
+    }
+    const { url, language } = (parsed.data ?? {}) as SubtitleRequest;
 
     if (!url) {
       return NextResponse.json({ error: '缺少视频 URL' }, { status: 400 });

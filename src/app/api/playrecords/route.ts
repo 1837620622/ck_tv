@@ -3,6 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { getAuthInfoFromCookie, LOCAL_AUTH_SUBJECT } from '@/lib/auth';
+import { DEFAULT_JSON_BODY_BYTES, readJsonBody } from '@/lib/body';
 import { db, hasServerStorage } from '@/lib/db';
 import { PlayRecord } from '@/lib/types';
 
@@ -47,8 +48,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const body = await request.json();
-    const { key, record }: { key: string; record: PlayRecord } = body;
+    const parsed = await readJsonBody(request, DEFAULT_JSON_BODY_BYTES);
+    if (!parsed.ok) {
+      return NextResponse.json(
+        { error: parsed.error },
+        { status: parsed.status }
+      );
+    }
+    const { key, record } = parsed.data as {
+      key: string;
+      record: PlayRecord;
+    };
 
     if (!key || !record) {
       return NextResponse.json(
