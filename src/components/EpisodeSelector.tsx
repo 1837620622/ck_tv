@@ -208,13 +208,16 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sourceSignature, activeTab]);
 
+  // 换源后集数变少，之前手动翻到的分页可能已经越界；越界时停在最后一页，不显示空网格
+  const shownPage = Math.min(currentPage, Math.max(0, pageCount - 1));
+
   // 根据 descending 状态计算实际显示的分页索引
   const displayPage = useMemo(() => {
     if (descending) {
-      return pageCount - 1 - currentPage;
+      return pageCount - 1 - shownPage;
     }
-    return currentPage;
-  }, [currentPage, descending, pageCount]);
+    return shownPage;
+  }, [shownPage, descending, pageCount]);
 
   // 升序分页标签
   const categoriesAsc = useMemo(() => {
@@ -296,7 +299,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
     [onSourceChange]
   );
 
-  const currentStart = currentPage * episodesPerPage + 1;
+  const currentStart = shownPage * episodesPerPage + 1;
   const currentEnd = Math.min(
     currentStart + episodesPerPage - 1,
     totalEpisodes

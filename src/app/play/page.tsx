@@ -10,6 +10,11 @@ import { Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import {
+  isAirPlaying,
+  loadNativeSource,
+  supportsNativeHls,
+} from '@/lib/airplay';
+import {
   deleteFavorite,
   deletePlayRecord,
   deleteSkipConfig,
@@ -376,24 +381,97 @@ function PlayPageClient() {
     setVideoUrl(newUrl);
   };
 
-  const ensureVideoSource = (video: HTMLVideoElement | null, url: string) => {
-    if (!video || !url) return;
-    const sources = Array.from(video.getElementsByTagName('source'));
-    const existed = sources.some((s) => s.src === url);
-    if (!existed) {
-      // 移除旧的 source，保持唯一
-      sources.forEach((s) => s.remove());
-      const sourceEl = document.createElement('source');
-      sourceEl.src = url;
-      video.appendChild(sourceEl);
-    }
+  // AirPlay 要的是唯一的原生 HLS 地址；hls.js 的 MSE（blob）地址投不出去，所以切到原始 m3u8。
+  // 切换记在 airPlaySwitchRef 里：同一个播放器只切一次；切换失败或投屏弹窗关闭时，据此把 hls.js 接回来（保留去广告）。
+  type AirPlaySwitch = {
+    art: NonNullable<typeof artPlayerRef.current>;
+    video: HTMLVideoElement;
+    url: string;
+    at: number;
+    resume: boolean;
+    done: Promise<boolean>;
+  };
+  const airPlaySwitchRef = useRef<AirPlaySwitch | null>(null);
 
-    // 始终允许远程播放（AirPlay / Cast）
-    video.disableRemotePlayback = false;
-    // 如果曾经有禁用属性，移除之
-    if (video.hasAttribute('disableRemotePlayback')) {
-      video.removeAttribute('disableRemotePlayback');
+  // 把 hls.js 重新挂到这个 video 上，并回到切换前的进度
+  const reattachHls = (
+    art: NonNullable<typeof artPlayerRef.current>,
+    video: HTMLVideoElement,
+    url: string,
+    at: number,
+    resume: boolean
+  ) => {
+    video.removeAttribute('src');
+    video.load();
+    art.option.customType?.m3u8?.(video, url, art);
+    if (at > 0) {
+      video.addEventListener(
+        'loadedmetadata',
+        () => {
+          video.currentTime = at;
+          if (resume) void video.play().catch(() => undefined);
+        },
+        { once: true }
+      );
     }
+  };
+
+  const prepareAirPlay = (): Promise<boolean> => {
+    const art = artPlayerRef.current;
+    const video = art?.video as
+      | (HTMLVideoElement & { hls?: { destroy: () => void } })
+      | undefined;
+    if (!art || !video || !videoUrl || !supportsNativeHls(video)) {
+      return Promise.resolve(false);
+    }
+    const switched = airPlaySwitchRef.current;
+    if (switched && switched.art === art && switched.video === video) {
+      return switched.done;
+    }
+    // 本来就是原生播放（mp4），不需要切换
+    if (!video.hls) return Promise.resolve(true);
+    // 销毁 hls.js 会清空进度和播放状态，所以先记下
+    const at = video.currentTime;
+    const resume = !video.paused;
+    video.__ckTeardown?.();
+    video.hls.destroy();
+    video.hls = undefined;
+    video.disableRemotePlayback = false;
+    const done = loadNativeSource(video, videoUrl, { at, resume }).then(
+      (ok) => {
+        if (ok) return true;
+        airPlaySwitchRef.current = null;
+        // 播放器已经换了（换集、离开页面）时，旧 video 已经脱离，不能再挂 hls.js
+        if (artPlayerRef.current === art && video.isConnected) {
+          reattachHls(art, video, videoUrl, at, resume);
+        }
+        return false;
+      }
+    );
+    airPlaySwitchRef.current = {
+      art,
+      video,
+      url: videoUrl,
+      at,
+      resume,
+      done,
+    };
+    return done;
+  };
+
+  // 投屏弹窗关闭、且没有投到 AirPlay 设备时，把本机播放切回 hls.js，去广告才会恢复
+  const restoreLocalHls = () => {
+    const switched = airPlaySwitchRef.current;
+    if (!switched) return;
+    const { art, video, url } = switched;
+    if (artPlayerRef.current !== art || !video.isConnected) {
+      airPlaySwitchRef.current = null;
+      return;
+    }
+    // 正在投到 AirPlay 设备：保留原生地址，否则会断开投屏
+    if (isAirPlaying(video)) return;
+    airPlaySwitchRef.current = null;
+    reattachHls(art, video, url, video.currentTime, !video.paused);
   };
 
   // 跳过片头片尾配置相关函数
@@ -1258,7 +1336,6 @@ function PlayPageClient() {
       art.switch = videoUrl;
       art.title = `${videoTitle} - 第${currentEpisodeIndex + 1}集`;
       art.poster = processImageUrl(videoCover);
-      if (video) ensureVideoSource(video, videoUrl);
       return;
     }
 
@@ -1306,7 +1383,8 @@ function PlayPageClient() {
         mutex: true,
         playsInline: true,
         autoPlayback: false,
-        airplay: true,
+        // AirPlay 统一走投屏弹窗：先切到原生 HLS 地址再调出选择器。播放器自带的按钮会跳过这一步
+        airplay: false,
         theme: '#22c55e',
         lang: 'zh-cn',
         hotkey: false,
@@ -1399,8 +1477,6 @@ function PlayPageClient() {
             hls.loadSource(url);
             hls.attachMedia(video);
             video.hls = hls;
-
-            ensureVideoSource(video, url);
 
             let opened = false;
             let networkRetries = 0;
@@ -1921,13 +1997,6 @@ function PlayPageClient() {
       artPlayerRef.current.on('pause', () => {
         saveCurrentPlayProgress();
       });
-
-      if (artPlayerRef.current?.video) {
-        ensureVideoSource(
-          artPlayerRef.current.video as HTMLVideoElement,
-          videoUrl
-        );
-      }
     } catch (err) {
       console.error('创建播放器失败:', err);
       setError('播放器初始化失败');
@@ -2004,7 +2073,7 @@ function PlayPageClient() {
   if (loading) {
     return (
       <PageLayout activePath='/play'>
-        <div className='flex min-h-screen items-center justify-center px-6'>
+        <div className='flex min-h-svh items-center justify-center px-6'>
           <div className='w-full max-w-sm'>
             <p className='mb-3 text-sm text-gray-700 dark:text-gray-200'>
               {loadingMessage}
@@ -2031,7 +2100,7 @@ function PlayPageClient() {
   if (error) {
     return (
       <PageLayout activePath='/play'>
-        <div className='flex min-h-screen items-center justify-center px-6'>
+        <div className='flex min-h-svh items-center justify-center px-6'>
           <div className='w-full max-w-sm'>
             <h2 className='text-lg font-semibold text-gray-900 dark:text-gray-100'>
               播放失败
@@ -2334,6 +2403,8 @@ function PlayPageClient() {
         videoPoster={videoCover}
         episodeIndex={currentEpisodeIndex}
         getCurrentTime={() => artPlayerRef.current?.currentTime || 0}
+        onPrepareAirPlay={prepareAirPlay}
+        onRestoreLocal={restoreLocalHls}
       />
     </PageLayout>
   );

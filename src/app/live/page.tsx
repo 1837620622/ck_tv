@@ -362,7 +362,7 @@ function LivePageClient() {
 
   return (
     <PageLayout activePath='/live'>
-      <div className='min-h-screen max-w-full overflow-x-hidden px-3 py-4 pb-8 sm:px-10 sm:py-8'>
+      <div className='min-h-svh max-w-full overflow-x-hidden px-3 py-4 pb-8 sm:px-10 sm:py-8'>
         <div className='mb-4 flex items-center gap-3'>
           <Radio className='h-5 w-5 text-green-600' />
           <h1 className='text-xl font-semibold text-gray-900 dark:text-gray-100'>

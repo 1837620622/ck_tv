@@ -37,6 +37,9 @@ export default function CatalogPanel({
   const [kind, setKind] = useState(kinds[0].id);
   const [page, setPage] = useState(1);
   const [pageCount, setPageCount] = useState(1);
+  // 上游没有真实总数时（豆瓣回退），只知道还有没有下一页，不显示推测的总页数
+  const [hasNext, setHasNext] = useState(false);
+  const [totalKnown, setTotalKnown] = useState(true);
   const [items, setItems] = useState<DoubanItem[]>([]);
   const [loading, setLoading] = useState(true);
   const pageCountRef = useRef(1);
@@ -51,6 +54,12 @@ export default function CatalogPanel({
     pageCountRef.current = pageCount;
   }, [pageCount]);
 
+  // 翻页或换分类后回到列表顶部。手机上在底部点「下一页」，否则新内容会接着停在页脚
+  useEffect(() => {
+    document.body.scrollTop = 0;
+    document.documentElement.scrollTop = 0;
+  }, [engine, kind, page]);
+
   useEffect(() => {
     const req = ++requestId.current;
     const controller = new AbortController();
@@ -60,18 +69,29 @@ export default function CatalogPanel({
         const response = await fetch(
           `/api/catalog?engine=${engine}&kind=${encodeURIComponent(
             kind
-          )}&page=${page}&v=3`,
+          )}&page=${page}&v=4`,
           { cache: 'no-store', signal: controller.signal }
         );
         const data = await response.json();
         if (req !== requestId.current) return;
         setItems(Array.isArray(data.list) ? data.list : []);
         const count = Number(data.pagecount);
+        // 只有明确说明总数真实时才当分母；字段缺失按未知处理
+        const known = data.totalKnown === true;
+        setTotalKnown(known);
         setPageCount(
           Number.isFinite(count) && count >= 1 ? Math.floor(count) : 1
         );
+        setHasNext(
+          typeof data.hasMore === 'boolean'
+            ? data.hasMore
+            : Number.isFinite(count) && page < count
+        );
       } catch {
-        if (req === requestId.current) setItems([]);
+        if (req === requestId.current) {
+          setItems([]);
+          setHasNext(false);
+        }
       } finally {
         if (req === requestId.current) setLoading(false);
       }
@@ -130,12 +150,16 @@ export default function CatalogPanel({
       <PagePager
         page={page}
         pageCount={pageCount}
-        onPrev={() => setPage((current) => Math.max(1, asPage(current, 1) - 1))}
-        onNext={() =>
-          setPage((current) =>
-            Math.min(pageCountRef.current, asPage(current, 1) + 1)
-          )
-        }
+        hasNext={hasNext}
+        totalKnown={totalKnown}
+        busy={loading}
+        onPrev={() => {
+          if (!loading)
+            setPage((current) => Math.max(1, asPage(current, 1) - 1));
+        }}
+        onNext={() => {
+          if (hasNext && !loading) setPage((current) => asPage(current, 1) + 1);
+        }}
         onJump={(next) =>
           setPage((current) =>
             Math.min(

@@ -189,3 +189,10 @@ div[data-media-provider] video {
 html[data-scam-notice-hidden] [data-scam-notice] {
   display: none !important;
 }
+
+/* 旧浏览器不认识 svh：退回到 vh，否则 min-h-svh 整条声明会被丢掉，页面高度塌陷 */
+@supports not (min-height: 100svh) {
+  .min-h-svh {
+    min-height: 100vh;
+  }
+}

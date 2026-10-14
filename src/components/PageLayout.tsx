@@ -12,12 +12,12 @@ interface PageLayoutProps {
 
 const PageLayout = ({ children, activePath = '/' }: PageLayoutProps) => {
   return (
-    <div className='w-full min-h-screen'>
+    <div className='w-full min-h-svh'>
       {/* 移动端头部 */}
       <MobileHeader showBackButton={['/play'].includes(activePath)} />
 
       {/* 主要布局容器 */}
-      <div className='flex md:grid md:grid-cols-[auto_1fr] w-full min-h-screen md:min-h-auto'>
+      <div className='flex md:grid md:grid-cols-[auto_1fr] w-full min-h-svh md:min-h-0'>
         {/* 侧边栏 - 桌面端显示，移动端隐藏 */}
         <div className='hidden md:block'>
           <Sidebar activePath={activePath} />

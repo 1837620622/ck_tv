@@ -190,7 +190,7 @@ function LoginPageClient() {
   };
 
   return (
-    <div className='relative min-h-screen flex items-center justify-center px-4 overflow-hidden'>
+    <div className='relative min-h-svh flex items-center justify-center px-4 overflow-hidden'>
       <div className='absolute top-4 right-4'>
         <ThemeToggle />
       </div>

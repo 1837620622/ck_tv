@@ -2,13 +2,49 @@
 
 import { Heart, Sparkles, X } from 'lucide-react';
 import Image from 'next/image';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 export const WelcomeModal: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [showQr, setShowQr] = useState(false);
+  const [coversPager, setCoversPager] = useState(false);
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  // 翻页条被卡片盖住时收起，让人能点到翻页。直接比较两个矩形，不依赖页面用的是 body 还是 window 滚动，
+  // 也不管页面长短；翻页条不在屏幕上或不存在时卡片照常显示。
+  useEffect(() => {
+    if (!isOpen) return;
+    const update = () => {
+      const pager = document.querySelector('nav[aria-label="翻页"]');
+      const card = cardRef.current;
+      if (!pager || !card) {
+        setCoversPager(false);
+        return;
+      }
+      const p = pager.getBoundingClientRect();
+      const c = card.getBoundingClientRect();
+      setCoversPager(
+        p.bottom > c.top &&
+          p.top < c.bottom &&
+          p.right > c.left &&
+          p.left < c.right
+      );
+    };
+    update();
+    // capture：页面里任何一个滚动容器（body 或其它）滚动都会触发
+    window.addEventListener('scroll', update, { capture: true, passive: true });
+    window.addEventListener('resize', update);
+    // 翻页条和卡片本身的内容（展开赞赏码、列表异步加载）变化后也要重新判断
+    const observer = new MutationObserver(update);
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => {
+      window.removeEventListener('scroll', update, { capture: true });
+      window.removeEventListener('resize', update);
+      observer.disconnect();
+    };
+  }, [isOpen]);
 
   useEffect(() => {
     setMounted(true);
@@ -31,9 +67,16 @@ export const WelcomeModal: React.FC = () => {
   if (!mounted || !isOpen) return null;
 
   return createPortal(
-    <div className='fixed bottom-20 md:bottom-6 right-4 sm:right-6 z-[999] max-w-sm w-[calc(100%-2rem)] sm:w-80 transition-all duration-300 animate-slide-up'>
-      {/* 悬浮卡片 - 不遮挡全屏，不强制倒计时 */}
-      <div className='relative overflow-hidden border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-950'>
+    <div
+      ref={cardRef}
+      className={`fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom))] md:bottom-6 right-4 sm:right-6 z-[999] max-w-sm w-[calc(100%-2rem)] sm:w-80 transition-all duration-300 ${
+        coversPager
+          ? 'pointer-events-none invisible translate-y-2 opacity-0'
+          : 'opacity-100'
+      }`}
+    >
+      {/* 悬浮卡片 - 不遮挡全屏，不强制倒计时；盖住翻页条时自动收起 */}
+      <div className='relative animate-slide-up overflow-hidden border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-950'>
         <div className='absolute left-0 right-0 top-0 h-1 bg-green-600' />
 
         {/* 标题栏 */}

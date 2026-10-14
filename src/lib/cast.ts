@@ -1,5 +1,6 @@
-// Google Cast（Chromecast）发送端。投屏的是 .m3u8 地址，由电视自己去拉流。
+// Google Cast（Chromecast）发送端。投屏的是原始播放地址，由电视自己去拉流。
 // 页面里的 hls.js 用 MSE 播放，video.src 是 blob 地址，电视拿不到，所以不能用 video.remote 投屏。
+import { castContentType } from '@/lib/cast-support';
 
 export const CAST_SDK_URL =
   'https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1';
@@ -80,7 +81,7 @@ export function buildCastRequest(
   const poster = (input.poster || '').trim();
   return {
     contentUrl: url,
-    contentType: HLS_CONTENT_TYPE,
+    contentType: castContentType(url),
     title: input.title || '传康播放器',
     images: /^https?:\/\//.test(poster) ? [poster] : [],
     currentTime: clampTime(Number(input.currentTime)),

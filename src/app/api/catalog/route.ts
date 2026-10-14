@@ -14,6 +14,46 @@ const EDGE_SECONDS = 7200;
 const BROWSER_SECONDS = 300;
 const PAGE_SIZE = 20;
 
+// 翻页信息。totalKnown 为 false 时 pagecount 只是下界，不是真实总页数，前端不能拿来当分母
+interface CatalogPage {
+  list: DoubanItem[];
+  page: number;
+  pagecount: number;
+  hasMore: boolean;
+  totalKnown: boolean;
+}
+
+function knownTotal(
+  list: DoubanItem[],
+  page: number,
+  total: number
+): CatalogPage {
+  const pagecount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  return { list, page, pagecount, hasMore: page < pagecount, totalKnown: true };
+}
+
+// 上游不给总数时只能看本页是否满员，满了就认为后面还有一页。
+// 满员要看上游原始条数：过滤掉的坏条目不能让第 1 页少了翻页。
+function unknownTotal(
+  list: DoubanItem[],
+  page: number,
+  upstreamCount = list.length
+): CatalogPage {
+  const hasMore = upstreamCount >= PAGE_SIZE;
+  return {
+    list,
+    page,
+    pagecount: page + (hasMore ? 1 : 0),
+    hasMore,
+    totalKnown: false,
+  };
+}
+
+// 空页或出错：不知道总页数，只把当前页号告诉前端，不能伪造成「共 1 页」
+function emptyPage(page: number): CatalogPage {
+  return { list: [], page, pagecount: page, hasMore: false, totalKnown: false };
+}
+
 const BILIBILI_KIND: Record<string, number> = {
   bangumi: 1,
   movie: 2,
@@ -83,7 +123,7 @@ interface BilibiliRankItem {
   rating?: string | number;
 }
 
-async function loadBangumi(kind: string, page: number) {
+async function loadBangumi(kind: string, page: number): Promise<CatalogPage> {
   const type = kind === 'real' ? 6 : 2;
   const offset = (page - 1) * PAGE_SIZE;
   const data = (await fetchJson(
@@ -102,12 +142,11 @@ async function loadBangumi(kind: string, page: number) {
       year: String(item.date || '').slice(0, 4),
     })
   );
-  const total = Number(data?.total) || list.length;
-  return {
-    list: list.filter((item) => item.id && item.title),
-    page,
-    pagecount: Math.max(1, Math.ceil(total / PAGE_SIZE)),
-  };
+  const rows = list.filter((item) => item.id && item.title);
+  const reported = Number(data?.total) || 0;
+  return reported > 0
+    ? knownTotal(rows, page, reported)
+    : unknownTotal(rows, page, list.length);
 }
 
 const DOUBAN_KIND: Record<string, { type: string; tag: string }> = {
@@ -126,7 +165,10 @@ interface DoubanSubject {
   rate?: string;
 }
 
-async function loadDoubanFallback(kind: string, page: number) {
+async function loadDoubanFallback(
+  kind: string,
+  page: number
+): Promise<CatalogPage> {
   const picked = DOUBAN_KIND[kind] || DOUBAN_KIND.bangumi;
   const start = (page - 1) * PAGE_SIZE;
   const data = (await fetchJson(
@@ -149,15 +191,14 @@ async function loadDoubanFallback(kind: string, page: number) {
     rate: rateText(item.rate),
     year: '',
   }));
-  const rows = list.filter((item) => item.id && item.title);
-  return {
-    list: rows,
+  return unknownTotal(
+    list.filter((item) => item.id && item.title),
     page,
-    pagecount: rows.length >= PAGE_SIZE ? page + 1 : page,
-  };
+    list.length
+  );
 }
 
-async function loadBilibili(kind: string, page: number) {
+async function loadBilibili(kind: string, page: number): Promise<CatalogPage> {
   const seasonType = BILIBILI_KIND[kind] || BILIBILI_KIND.bangumi;
   const data = (await fetchJson(
     `https://api.bilibili.com/pgc/season/rank/web/list?season_type=${seasonType}&day=3`,
@@ -176,13 +217,11 @@ async function loadBilibili(kind: string, page: number) {
     year: '',
   }));
   const start = (page - 1) * PAGE_SIZE;
-  return {
-    list: all
-      .slice(start, start + PAGE_SIZE)
-      .filter((item) => item.id && item.title),
+  return knownTotal(
+    all.slice(start, start + PAGE_SIZE).filter((item) => item.id && item.title),
     page,
-    pagecount: Math.max(1, Math.ceil(all.length / PAGE_SIZE)),
-  };
+    all.length
+  );
 }
 
 export async function GET(request: Request) {
@@ -200,7 +239,7 @@ export async function GET(request: Request) {
   const page = asPage(searchParams.get('page'));
   const cacheUrl = `https://cktv-cache.local/catalog?engine=${engine}&kind=${encodeURIComponent(
     kind
-  )}&page=${page}&v=3`;
+  )}&page=${page}&v=4`;
   const hit = await readJsonCache(cacheUrl);
   if (hit) {
     return new NextResponse(await hit.text(), {
@@ -212,7 +251,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    let payload;
+    let payload: CatalogPage;
     try {
       payload =
         engine === 'bilibili'
@@ -221,13 +260,13 @@ export async function GET(request: Request) {
     } catch (error) {
       if (engine !== 'bilibili') throw error;
       // 哔哩榜单从 Cloudflare 出口常返回 412，先记成空列表再走回退
-      payload = { list: [] as DoubanItem[], page, pagecount: 1 };
+      payload = emptyPage(page);
     }
     if (engine === 'bilibili' && payload.list.length === 0) {
       try {
         payload = await loadDoubanFallback(kind, page);
       } catch {
-        payload = { list: [] as DoubanItem[], page, pagecount: 1 };
+        payload = emptyPage(page);
       }
     }
     // 豆瓣标签在机房出口也可能是空的；番剧再退到 Bangumi，线上已确认能出片
@@ -236,7 +275,9 @@ export async function GET(request: Request) {
       payload.list.length === 0 &&
       (kind === 'bangumi' || kind === 'anime')
     ) {
-      payload = await loadBangumi('anime', page);
+      // 哔哩的榜单页数不能借给 Bangumi 的总数，这里只保留这一页，按满员判断还有没有下一页
+      const fallback = await loadBangumi('anime', page);
+      payload = unknownTotal(fallback.list, page);
     }
     const body = JSON.stringify(payload);
     if (payload.list.length === 0) {
@@ -257,7 +298,10 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     return NextResponse.json(
-      { list: [], page, pagecount: 1, error: (error as Error).message },
+      {
+        ...emptyPage(page),
+        error: (error as Error).message,
+      },
       { headers: { 'Cache-Control': 'no-store' } }
     );
   }
