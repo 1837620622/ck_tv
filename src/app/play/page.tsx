@@ -55,6 +55,12 @@ declare global {
   }
 }
 
+// 扫码、投屏链接里的 ep 参数是从 0 开始的集数；不是合法整数就当没有
+function parseEpisodeParam(raw: string | null): number | null {
+  if (raw === null || !/^\d{1,4}$/.test(raw)) return null;
+  return Number(raw);
+}
+
 function PlayPageClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -150,8 +156,13 @@ function PlayPageClient() {
   const [searchTitle] = useState(searchParams.get('stitle') || '');
   const [searchType] = useState(searchParams.get('stype') || '');
 
-  // 集数相关
-  const [currentEpisodeIndex, setCurrentEpisodeIndex] = useState(0);
+  // 集数相关；链接带了 ep（扫码、投屏）就从那一集开始
+  const [pinnedEpisode] = useState(() =>
+    parseEpisodeParam(searchParams.get('ep'))
+  );
+  const [currentEpisodeIndex, setCurrentEpisodeIndex] = useState(
+    pinnedEpisode ?? 0
+  );
 
   const currentSourceRef = useRef(currentSource);
   const currentIdRef = useRef(currentId);
@@ -713,6 +724,8 @@ function PlayPageClient() {
       newUrl.searchParams.set('year', detailData.year);
       newUrl.searchParams.set('title', detailData.title);
       newUrl.searchParams.delete('prefer');
+      // ep 只在打开链接时起作用；留着的话刷新会退回到链接里的那一集
+      newUrl.searchParams.delete('ep');
       window.history.replaceState({}, '', newUrl.toString());
 
       setLoadingStage('ready');
@@ -736,6 +749,9 @@ function PlayPageClient() {
         if (record) {
           const targetIndex = record.index - 1;
           const targetTime = record.play_time;
+
+          // 链接指定了集数时以链接为准，进度只有属于这一集才恢复
+          if (pinnedEpisode !== null && pinnedEpisode !== targetIndex) return;
 
           // 更新当前选集索引
           if (targetIndex !== currentEpisodeIndex) {
@@ -2315,7 +2331,9 @@ function PlayPageClient() {
         onClose={() => setIsTVCastModalOpen(false)}
         videoUrl={videoUrl}
         videoTitle={videoTitle}
-        currentTime={artPlayerRef.current?.currentTime || 0}
+        videoPoster={videoCover}
+        episodeIndex={currentEpisodeIndex}
+        getCurrentTime={() => artPlayerRef.current?.currentTime || 0}
       />
     </PageLayout>
   );
