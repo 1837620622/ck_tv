@@ -37,6 +37,8 @@ function SearchPageClient() {
   const [isLoading, setIsLoading] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  // 请求失败（非 200 或网络错误）和「没有匹配」要分开显示
+  const [searchFailed, setSearchFailed] = useState(false);
 
   // 获取默认聚合设置：只读取用户本地设置，默认为 true
   const getDefaultAggregate = () => {
@@ -246,6 +248,7 @@ function SearchPageClient() {
     try {
       setIsLoading(true);
       const response = await fetch(searchUrl, { cache: 'no-store' });
+      if (!response.ok) throw new Error('搜索失败');
       const data = await response.json();
       if (seq !== searchSeq.current) return;
       const results = (data.results || [])
@@ -254,6 +257,7 @@ function SearchPageClient() {
           ...result,
           title: repairTitle(result.title),
         }));
+      setSearchFailed(false);
       setSearchResults(sortResults(results, query));
       setShowResults(true);
       // 首包只有排序靠前的片源。等边缘把其余源写入缓存后再拉一次完整结果。
@@ -300,7 +304,10 @@ function SearchPageClient() {
         }, 1800);
       }
     } catch (error) {
-      if (seq === searchSeq.current) setSearchResults([]);
+      if (seq === searchSeq.current) {
+        setSearchResults([]);
+        setSearchFailed(true);
+      }
     } finally {
       if (seq === searchSeq.current) setIsLoading(false);
     }
@@ -440,7 +447,7 @@ function SearchPageClient() {
                     ))}
                 {searchResults.length === 0 && (
                   <div className='col-span-full text-center text-gray-500 py-8 dark:text-gray-400'>
-                    未找到相关结果
+                    {searchFailed ? '搜索失败，请稍后重试' : '未找到相关结果'}
                   </div>
                 )}
               </div>

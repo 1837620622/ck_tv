@@ -302,7 +302,10 @@ export async function fetchDoubanList(
     throw new Error('pageStart 不能小于 0');
   }
 
-  const target = `https://movie.douban.com/j/search_subjects?type=${type}&tag=${tag}&sort=recommend&page_limit=${pageLimit}&page_start=${pageStart}`;
+  // 自定义分类的 tag 可能含 & # + 等字符，必须编码，否则会被当成 URL 分隔符
+  const target = `https://movie.douban.com/j/search_subjects?type=${type}&tag=${encodeURIComponent(
+    tag
+  )}&sort=recommend&page_limit=${pageLimit}&page_start=${pageStart}`;
 
   try {
     const response = await fetchWithTimeout(target);

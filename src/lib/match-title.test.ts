@@ -81,3 +81,39 @@ describe('year taken from the title when the metadata has none', () => {
     expect(workKey('三体 2023', '', 30)).toBe(workKey('三体', '2023', 30));
   });
 });
+
+describe('quality tags on the title do not change its identity', () => {
+  it('strips every trailing quality tag, not only the last one', () => {
+    expect(titleParts('流浪地球 HD国语中字').base).toBe('流浪地球');
+    expect(titlesMatch('流浪地球 HD国语中字', '流浪地球')).toBe(true);
+    expect(titlesMatch('流浪地球 国语 中字', '流浪地球')).toBe(true);
+  });
+
+  it('reads a season that sits in front of a quality tag', () => {
+    expect(titleParts('流浪地球2 4K')).toEqual({
+      base: '流浪地球',
+      season: '2',
+      trailer: false,
+    });
+    expect(titlesMatch('流浪地球2 4K', '流浪地球2')).toBe(true);
+    expect(titlesMatch('流浪地球2 4K', '流浪地球')).toBe(false);
+  });
+
+  it('reads a year that sits in front of a quality tag', () => {
+    expect(titleYear('三体 2023 4K')).toBe('2023');
+    expect(titleYear('三体2023高清国语')).toBe('2023');
+    expect(workKey('三体 2023 4K', 'unknown', 30)).toBe(
+      workKey('三体 2023', '', 30)
+    );
+  });
+
+  it('does not let a 4K copy of the 2023 remake play for the 2010 entry', () => {
+    const picked = pickPlayable(
+      [play('三体 2023 4K', 'unknown'), play('三体', '2010')],
+      '三体',
+      '2010',
+      'tv'
+    );
+    expect(picked.map((item) => item.year)).toEqual(['2010']);
+  });
+});

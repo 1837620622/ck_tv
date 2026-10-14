@@ -116,9 +116,20 @@ export type TitlePart = {
   trailer: boolean;
 };
 
+// 画质、音轨、字幕标签可能连着出现（如「HD国语中字」），要一直剥到没有为止
+function stripQuality(text: string): string {
+  let rest = text;
+  let before: string;
+  do {
+    before = rest;
+    rest = rest.replace(QUALITY, '');
+  } while (rest !== before);
+  return rest;
+}
+
 // 片名末尾的年份（如「三体 2023」）；没有就返回空串。至少要留两个字的片名，不把整个片名当年份
 export function titleYear(raw: string): string {
-  const compact = compactTitle(repairTitle(raw));
+  const compact = stripQuality(compactTitle(repairTitle(raw)));
   const tail = compact.match(/(19\d{2}|20[0-3]\d)$/);
   return tail && compact.length - tail[0].length >= 2 ? tail[0] : '';
 }
@@ -126,7 +137,8 @@ export function titleYear(raw: string): string {
 export function titleParts(raw: string): TitlePart {
   const compact = compactTitle(repairTitle(raw));
   const trailer = /解说|预告|花絮|番外|片花|速看|混剪|剪辑|特辑/.test(compact);
-  let text = compact.replace(NOISE, '');
+  // 画质标签要先剥掉，「流浪地球2 4K」的季数才认得出来，「HD国语中字」也才能整段去掉
+  let text = stripQuality(compact.replace(NOISE, ''));
   let season = '';
   const marked = text.match(/第([0-9一二三四五六七八九十百两]+)[季部期]/);
   if (marked) {
@@ -144,7 +156,6 @@ export function titleParts(raw: string): TitlePart {
       text = text.slice(0, -tail[0].length);
     }
   }
-  text = text.replace(QUALITY, '');
   // 只把 1900 到 2039 当作年份；「银翼杀手2049」这类续作名要留在片名里
   const yearTail = text.match(/(19\d{2}|20[0-3]\d)$/);
   if (yearTail && text.length - yearTail[0].length >= 2) {
