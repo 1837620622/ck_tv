@@ -28,7 +28,14 @@ export async function readJsonBody(
   const reader = request.body?.getReader();
   if (reader) {
     for (;;) {
-      const { done, value } = await reader.read();
+      // 客户端中途断开或读取出错，和 JSON 格式错误一样按 400 处理，不能抛成 500
+      let chunk: ReadableStreamReadResult<Uint8Array>;
+      try {
+        chunk = await reader.read();
+      } catch {
+        return { ok: false, status: 400, error: '请求格式不正确' };
+      }
+      const { done, value } = chunk;
       if (done) break;
       size += value.byteLength;
       if (size > maxBytes) {

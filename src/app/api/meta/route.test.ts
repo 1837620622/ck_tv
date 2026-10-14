@@ -28,10 +28,18 @@ jest.mock('@/lib/edge-cache', () => ({
   writeJsonCache: jest.fn(),
 }));
 
+import { TextDecoder as NodeTextDecoder } from 'util';
+
 import { getSearchApiSites } from '@/lib/config';
 import { recentlyFailed, searchFromApi } from '@/lib/downstream';
 import { readJsonCache, writeJsonCache } from '@/lib/edge-cache';
 import type { SearchResult } from '@/lib/types';
+
+// jsdom 测试环境没有 TextDecoder，readJsonBody 解码请求体需要它
+if (typeof globalThis.TextDecoder === 'undefined') {
+  // @ts-expect-error 测试替身，只需要 decode
+  globalThis.TextDecoder = NodeTextDecoder;
+}
 
 import { POST } from './route';
 
@@ -47,8 +55,26 @@ const hit = (source: string, extra: Partial<SearchResult>): SearchResult =>
     ...extra,
   } as SearchResult);
 
+// 与 readJsonBody 读取的接口一致：一个分块的请求体加上 headers.get
+const fakeRequest = (payload: unknown) => {
+  const data = new Uint8Array(Buffer.from(JSON.stringify(payload), 'utf8'));
+  let sent = false;
+  return {
+    headers: { get: () => null },
+    body: {
+      getReader: () => ({
+        read: async () =>
+          sent
+            ? { done: true, value: undefined }
+            : ((sent = true), { done: false, value: data }),
+        cancel: async () => undefined,
+      }),
+    },
+  };
+};
+
 const call = (body: unknown) =>
-  POST({ json: async () => body } as never) as Promise<{
+  POST(fakeRequest(body) as never) as Promise<{
     status: number;
     json: () => Promise<Record<string, unknown>>;
   }>;
@@ -70,6 +96,23 @@ describe('POST /api/meta', () => {
         return [];
       }
     );
+  });
+
+  it('refuses a body that declares a size over the limit without reading it', async () => {
+    const reads = jest.fn();
+    const oversized = {
+      headers: {
+        get: (name: string) => (name === 'content-length' ? '10000000' : null),
+      },
+      body: {
+        getReader: () => ({ read: reads, cancel: async () => undefined }),
+      },
+    };
+    const res = (await POST(oversized as never)) as unknown as {
+      status: number;
+    };
+    expect(res.status).toBe(413);
+    expect(reads).not.toHaveBeenCalled();
   });
 
   it('rejects a body with no items or a blank title', async () => {

@@ -1,6 +1,7 @@
 import { getOptionalRequestContext } from '@cloudflare/next-on-pages';
 import { NextRequest, NextResponse } from 'next/server';
 
+import { DEFAULT_JSON_BODY_BYTES, readJsonBody } from '@/lib/body';
 import { getSearchApiSites } from '@/lib/config';
 import { recentlyFailed, searchFromApi } from '@/lib/downstream';
 import { readJsonCache, writeJsonCache } from '@/lib/edge-cache';
@@ -142,13 +143,12 @@ async function mapLimit<T, R>(
 }
 
 export async function POST(request: NextRequest) {
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ error: '请求格式不正确' }, { status: 400 });
+  // 请求体边读边计数，超过上限就不再读，避免单个请求把任意大小的内容整个读进内存
+  const read = await readJsonBody(request, DEFAULT_JSON_BODY_BYTES);
+  if (!read.ok) {
+    return NextResponse.json({ error: read.error }, { status: read.status });
   }
-  const items = parseItems(body);
+  const items = parseItems(read.data);
   if (!items) {
     return NextResponse.json(
       { error: `items 需要 1 到 ${MAX_ITEMS} 部，且标题不能为空` },

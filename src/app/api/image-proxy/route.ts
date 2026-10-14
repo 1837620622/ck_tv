@@ -1,9 +1,18 @@
 import { getOptionalRequestContext } from '@cloudflare/next-on-pages';
 
 import { readJsonCache, writeCached } from '@/lib/edge-cache';
+import { limitStream } from '@/lib/limit-stream';
 import { fetchPublic, publicHttpUrl } from '@/lib/safe-url';
 
 export const runtime = 'edge';
+
+// 海报一般几百 KB。声明了长度且超过的直接不代理；没有声明长度的，读到这个上限就中断，
+// 免得被拿来当流量出口
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+// 等响应头的时间
+const HEADER_TIMEOUT_MS = 8000;
+// 读响应体时两块数据之间最多等多久；慢但在持续出数据的图片不会被切断
+const BODY_IDLE_TIMEOUT_MS = 8000;
 
 const FALLBACK_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 600" width="100%" height="100%">
   <defs>
@@ -65,8 +74,9 @@ export async function GET(request: Request) {
       headers['Referer'] = 'https://movie.douban.com/';
     }
 
+    // 只管等响应头；响应头到了就清掉，读响应体的超时交给 limitStream 的空闲检查
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    const timeoutId = setTimeout(() => controller.abort(), HEADER_TIMEOUT_MS);
     // 只缓存最终图片。重定向不进缓存，避免把临时跳转钉住。
     const imageResponse = await fetchPublic(target, {
       headers,
@@ -95,7 +105,14 @@ export async function GET(request: Request) {
     const imageType =
       (mime.startsWith('image/') && mime !== 'image/svg+xml') ||
       mime === 'application/octet-stream';
-    if (!imageResponse.ok || !imageResponse.body || !imageType) {
+    const length = Number(imageResponse.headers.get('content-length') || '0');
+    if (
+      !imageResponse.ok ||
+      !imageResponse.body ||
+      !imageType ||
+      length > MAX_IMAGE_BYTES
+    ) {
+      imageResponse.body?.cancel().catch(() => undefined);
       return fallback();
     }
     const resHeaders = new Headers();
@@ -112,8 +129,12 @@ export async function GET(request: Request) {
     resHeaders.set('Vercel-CDN-Cache-Control', 'public, s-maxage=15720000');
     resHeaders.set('x-ck-cache', 'MISS');
 
-    const length = Number(imageResponse.headers.get('content-length') || '0');
-    const out = new Response(imageResponse.body, {
+    // 读取时同样限制大小，超限或长时间没有新数据就中断
+    const body = limitStream(imageResponse.body, {
+      maxBytes: MAX_IMAGE_BYTES,
+      idleMs: BODY_IDLE_TIMEOUT_MS,
+    });
+    const out = new Response(body, {
       status: 200,
       headers: resHeaders,
     });

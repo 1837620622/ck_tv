@@ -34,6 +34,22 @@ function fakeRequest(
 }
 
 describe('readJsonBody', () => {
+  it('客户端中途断开、读取出错时按 400 处理', async () => {
+    const request = {
+      headers: { get: () => null },
+      body: {
+        getReader: () => ({
+          read: async () => {
+            throw new Error('aborted');
+          },
+          cancel: async () => undefined,
+        }),
+      },
+    } as unknown as Request;
+    const result = await readJsonBody(request, 1024);
+    expect(result).toEqual({ ok: false, status: 400, error: '请求格式不正确' });
+  });
+
   it('解析限制内的 JSON', async () => {
     const { request } = fakeRequest([bytes('{"password":"abc"}')]);
     const result = await readJsonBody(request, 1024);

@@ -100,6 +100,22 @@ function blockedIPv6(host: string): boolean {
   return embedded ? privateIPv4(embedded) : false;
 }
 
+// 主机名里嵌着 IPv4 地址时也要判断，例如 127.0.0.1.nip.io、10-0-0-1.sslip.io。
+// 这类域名解析出来就是内网地址，只看字面 IP 挡不住。
+// 注意：这只能挡住地址写在域名里的情况；普通域名解析到内网 IP 的情况，边缘运行时无法在这里查 DNS。
+// 逐个位置试连续四段数字，不用正则的非重叠匹配：那样 1.127.0.0.1.nip.io 会被前面的 1.127.0.0 吃掉，
+// 真正的 127.0.0.1 就漏了。前面有公网的段（如 1.127.0.0.1.nip.io）同样要拦住。
+function embeddedIPv4Blocked(host: string): boolean {
+  const labels = host.split(/[.-]/);
+  for (let start = 0; start + 3 < labels.length; start += 1) {
+    const four = labels.slice(start, start + 4);
+    if (!four.every((label) => /^\d{1,3}$/.test(label))) continue;
+    const parts = four.map((label) => Number(label));
+    if (parts.every((part) => part <= 255) && privateIPv4(parts)) return true;
+  }
+  return false;
+}
+
 export function publicHttpUrl(raw: string): URL | null {
   let url: URL;
   try {
@@ -127,6 +143,7 @@ export function publicHttpUrl(raw: string): URL | null {
     if (privateIPv4(parts)) return null;
   }
   if (host.includes(':') && blockedIPv6(host)) return null;
+  if (embeddedIPv4Blocked(host)) return null;
   return url;
 }
 

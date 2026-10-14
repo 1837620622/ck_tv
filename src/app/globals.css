@@ -103,6 +103,16 @@ html:not(.dark) body {
   display: none; /* Chrome, Safari, Opera */
 }
 
+/* 侧栏菜单可能被裁切，保留一条细滚动条，让人看得出下面还有内容 */
+.sidebar-scroll {
+  scrollbar-width: thin;
+}
+
+.sidebar-scroll::-webkit-scrollbar {
+  display: block;
+  width: 6px;
+}
+
 /* View Transitions API 动画 */
 @keyframes slide-from-top {
   from {

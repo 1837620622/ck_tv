@@ -287,7 +287,7 @@ const Sidebar = ({ onToggle, activePath = '/' }: SidebarProps) => {
             </nav>
 
             {/* 菜单项 */}
-            <div className='flex-1 overflow-y-auto px-2 pt-4'>
+            <div className='sidebar-scroll flex-1 overflow-y-auto px-2 pt-4'>
               <div className='space-y-1'>
                 {menuItems.map((item) => {
                   // 检查当前路径是否匹配这个菜单项

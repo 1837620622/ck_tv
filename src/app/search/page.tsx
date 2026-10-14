@@ -347,7 +347,8 @@ function SearchPageClient() {
 
   return (
     <PageLayout activePath='/search'>
-      <div className='px-4 sm:px-10 py-4 sm:py-8 overflow-visible mb-10'>
+      {/* 桌面端右上角有主题和用户按钮，内容要让开它们 */}
+      <div className='px-4 sm:px-10 py-4 sm:py-8 md:pt-14 overflow-visible mb-10'>
         {/* 搜索框 */}
         <div className='mb-8'>
           <form onSubmit={handleSearch} className='max-w-2xl mx-auto'>
@@ -509,7 +510,7 @@ function SearchPageClient() {
       {/* 返回顶部悬浮按钮 */}
       <button
         onClick={scrollToTop}
-        className={`fixed bottom-20 right-4 z-[500] flex h-10 w-10 items-center justify-center bg-green-600 text-white md:bottom-6 ${
+        className={`fixed bottom-[calc(5.5rem_+_env(safe-area-inset-bottom))] right-4 z-[500] flex h-10 w-10 items-center justify-center bg-green-600 text-white md:bottom-6 ${
           showBackToTop
             ? 'pointer-events-auto opacity-100'
             : 'pointer-events-none opacity-0'
