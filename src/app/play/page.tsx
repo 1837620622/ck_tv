@@ -7,6 +7,7 @@ import Hls from 'hls.js';
 import { Heart } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import {
   deleteFavorite,
@@ -23,9 +24,22 @@ import {
 } from '@/lib/db.client';
 import { filterAdBreaks } from '@/lib/m3u8-ads';
 import { pickPlayable, repairTitle } from '@/lib/match-title';
+import {
+  bindMediaActions,
+  setMediaInfo,
+  setMediaPlaybackState,
+  setMediaPosition,
+} from '@/lib/media-session';
+import {
+  readAutoNext,
+  readVolume,
+  writeAutoNext,
+  writeVolume,
+} from '@/lib/player-prefs';
 import { releaseMedia, silenceOtherMedia } from '@/lib/release-media';
 import { SearchResult } from '@/lib/types';
 import { processImageUrl } from '@/lib/utils';
+import { type ScreenWakeLock, createScreenWakeLock } from '@/lib/wake-lock';
 
 import CloudflareAISubtitle from '@/components/CloudflareAISubtitle';
 import EpisodeSelector from '@/components/EpisodeSelector';
@@ -214,6 +228,7 @@ function PlayPageClient() {
     const player = artPlayerRef.current;
     if (!player) return;
     player.video?.hls?.destroy();
+    wakeLockRef.current?.disable();
     player.destroy();
     artPlayerRef.current = null;
   }, [error]);
@@ -243,6 +258,58 @@ function PlayPageClient() {
   // 离开页面时 DOM ref 已经空了，播放中的节点要另外留住。
   const playingNodeRef = useRef<HTMLVideoElement | null>(null);
   const artRef = useRef<HTMLDivElement | null>(null);
+  // 自动连播倒计时（秒）；null 表示没有在倒计时
+  const [nextCountdown, setNextCountdown] = useState<number | null>(null);
+  // 倒计时蒙层挂在 ArtPlayer 自己的容器里，全屏时才会跟着显示
+  const [overlayHost, setOverlayHost] = useState<HTMLElement | null>(null);
+  const autoNextRef = useRef(true);
+  // 倒计时结束时调用最新的 handleNextEpisode，避免拿到旧闭包
+  const nextRef = useRef<() => void>(() => undefined);
+  // 睡眠定时：off / 15 / 30 / 60（分钟）/ episode（本集结束）
+  const sleepTimerRef = useRef<number>(0);
+  const sleepEndOfEpisodeRef = useRef(false);
+  // 当前选中的睡眠定时，播放器重建后菜单要回到这个选项
+  const sleepChoiceRef = useRef('off');
+  const wakeLockRef = useRef<ScreenWakeLock | null>(null);
+  if (wakeLockRef.current === null && typeof window !== 'undefined') {
+    wakeLockRef.current = createScreenWakeLock();
+  }
+
+  // 设置睡眠定时。定时到了暂停播放；「本集结束」由播放结束事件处理。
+  const applySleepTimer = (choice: string) => {
+    sleepChoiceRef.current = choice;
+    if (sleepTimerRef.current) {
+      window.clearTimeout(sleepTimerRef.current);
+      sleepTimerRef.current = 0;
+    }
+    sleepEndOfEpisodeRef.current = choice === 'episode';
+    const minutes = Number(choice);
+    if (Number.isFinite(minutes) && minutes > 0) {
+      sleepTimerRef.current = window.setTimeout(() => {
+        sleepTimerRef.current = 0;
+        sleepChoiceRef.current = 'off';
+        // 定时到了就不再自动连播
+        setNextCountdown(null);
+        // 离开页面后画中画里的视频也要能被暂停，所以两边都试
+        const player = artPlayerRef.current;
+        const video =
+          (player && player.video) || document.pictureInPictureElement;
+        if (video) (video as HTMLVideoElement).pause();
+        if (player) player.notice.show = '睡眠定时已到，已暂停播放';
+      }, minutes * 60 * 1000);
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      // 画中画还在播时保留定时器，它会暂停画中画里的视频
+      if (sleepTimerRef.current && !document.pictureInPictureElement) {
+        window.clearTimeout(sleepTimerRef.current);
+        sleepTimerRef.current = 0;
+      }
+      wakeLockRef.current?.disable();
+    };
+  }, []);
   const availableSourcesRef = useRef<SearchResult[]>([]);
   const failedSourceKeysRef = useRef<Set<string>>(new Set());
   const sourceSwitchingRef = useRef(false);
@@ -841,6 +908,8 @@ function PlayPageClient() {
   // ---------------------------------------------------------------------------
   // 处理集数切换
   const handleEpisodeChange = (episodeNumber: number) => {
+    // 手动换集后，倒计时要作废，否则会再切走一集
+    setNextCountdown(null);
     if (episodeNumber >= 0 && episodeNumber < totalEpisodes) {
       // 在更换集数前保存当前播放进度（播放中或暂停中都要存）
       saveCurrentPlayProgress();
@@ -849,6 +918,7 @@ function PlayPageClient() {
   };
 
   const handlePreviousEpisode = () => {
+    setNextCountdown(null);
     const d = detailRef.current;
     const idx = currentEpisodeIndexRef.current;
     if (d && d.episodes && idx > 0) {
@@ -858,6 +928,7 @@ function PlayPageClient() {
   };
 
   const handleNextEpisode = () => {
+    setNextCountdown(null);
     const d = detailRef.current;
     const idx = currentEpisodeIndexRef.current;
     if (d && d.episodes && idx < d.episodes.length - 1) {
@@ -865,6 +936,24 @@ function PlayPageClient() {
       setCurrentEpisodeIndex(idx + 1);
     }
   };
+
+  // 每次渲染都更新，倒计时结束时调到的是最新的「下一集」
+  nextRef.current = handleNextEpisode;
+
+  // 自动连播倒计时：每秒减一，到 0 切到下一集
+  useEffect(() => {
+    if (nextCountdown === null) return;
+    if (nextCountdown <= 0) {
+      setNextCountdown(null);
+      nextRef.current();
+      return;
+    }
+    const timer = window.setTimeout(
+      () => setNextCountdown(nextCountdown - 1),
+      1000
+    );
+    return () => window.clearTimeout(timer);
+  }, [nextCountdown]);
 
   // ---------------------------------------------------------------------------
   // 键盘快捷键
@@ -1163,12 +1252,17 @@ function PlayPageClient() {
         artPlayerRef.current.video.hls.destroy();
       }
       // 销毁播放器实例
+      wakeLockRef.current?.disable();
       artPlayerRef.current.destroy();
       artPlayerRef.current = null;
     }
 
     try {
       // 创建新的播放器实例
+      // 音量和自动连播沿用上次的设置；音量要同步给恢复逻辑，否则会被换回默认值
+      const savedVolume = readVolume();
+      lastVolumeRef.current = savedVolume;
+      autoNextRef.current = readAutoNext();
       Artplayer.PLAYBACK_RATE = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
       Artplayer.USE_RAF = true;
 
@@ -1176,7 +1270,7 @@ function PlayPageClient() {
         container: artRef.current,
         url: videoUrl,
         poster: processImageUrl(videoCover),
-        volume: 0.7,
+        volume: savedVolume,
         isLive: false,
         muted: false,
         autoplay: true,
@@ -1449,6 +1543,7 @@ function PlayPageClient() {
                   ) {
                     artPlayerRef.current.video.hls.destroy();
                   }
+                  wakeLockRef.current?.disable();
                   artPlayerRef.current.destroy();
                   artPlayerRef.current = null;
                 }
@@ -1527,6 +1622,69 @@ function PlayPageClient() {
               }
             },
           },
+          {
+            name: '自动连播',
+            html: '自动连播',
+            icon: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 5l9 7-9 7V5z" fill="#ffffff"/><path d="M17 5v14" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/></svg>',
+            switch: autoNextRef.current,
+            onSwitch: function (item: any) {
+              const newVal = !item.switch;
+              autoNextRef.current = newVal;
+              writeAutoNext(newVal);
+              if (!newVal) setNextCountdown(null);
+              return newVal;
+            },
+          },
+          {
+            name: '单集循环',
+            html: '单集循环',
+            icon: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M17 2l4 4-4 4M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4M21 13v2a3 3 0 0 1-3 3H3" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+            switch: false,
+            onSwitch: function (item: any) {
+              const newVal = !item.switch;
+              const video = artPlayerRef.current?.video as
+                | HTMLVideoElement
+                | undefined;
+              if (video) video.loop = newVal;
+              return newVal;
+            },
+          },
+          {
+            name: '睡眠定时',
+            html: '睡眠定时',
+            icon: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" stroke="#ffffff" stroke-width="2" stroke-linejoin="round"/></svg>',
+            selector: [
+              {
+                html: '关闭',
+                value: 'off',
+                default: sleepChoiceRef.current === 'off',
+              },
+              {
+                html: '15 分钟后',
+                value: '15',
+                default: sleepChoiceRef.current === '15',
+              },
+              {
+                html: '30 分钟后',
+                value: '30',
+                default: sleepChoiceRef.current === '30',
+              },
+              {
+                html: '60 分钟后',
+                value: '60',
+                default: sleepChoiceRef.current === '60',
+              },
+              {
+                html: '本集结束',
+                value: 'episode',
+                default: sleepChoiceRef.current === 'episode',
+              },
+            ],
+            onSelect: function (item: any) {
+              applySleepTimer(item.value);
+              return item.html;
+            },
+          },
         ],
         // 控制栏配置
         controls: [
@@ -1560,6 +1718,7 @@ function PlayPageClient() {
 
       artPlayerRef.current.on('video:volumechange', () => {
         lastVolumeRef.current = artPlayerRef.current.volume;
+        writeVolume(artPlayerRef.current.volume);
       });
       artPlayerRef.current.on('video:ratechange', () => {
         lastPlaybackRateRef.current = artPlayerRef.current.playbackRate;
@@ -1628,6 +1787,7 @@ function PlayPageClient() {
 
         // 跳过片尾
         if (
+          !artPlayerRef.current.video?.loop &&
           skipConfigRef.current.outro_time < 0 &&
           duration > 0 &&
           currentTime >
@@ -1651,14 +1811,76 @@ function PlayPageClient() {
         failOverRef.current();
       });
 
-      // 监听视频播放结束事件，自动播放下一集
+      setOverlayHost(
+        (artRef.current?.querySelector(
+          '.art-video-player'
+        ) as HTMLElement | null) ?? null
+      );
+
+      // 播放与暂停：同步锁屏状态，并在播放时保持屏幕常亮
+      artPlayerRef.current.on('video:play', () => {
+        // 倒计时期间用户又按了播放，就是不想切集了
+        setNextCountdown(null);
+        setMediaPlaybackState('playing');
+        wakeLockRef.current?.enable();
+      });
+      artPlayerRef.current.on('video:pause', () => {
+        setMediaPlaybackState('paused');
+        wakeLockRef.current?.disable();
+      });
+
+      // 锁屏进度条：每秒报一次位置
+      let lastMediaPositionAt = 0;
+      artPlayerRef.current.on('video:timeupdate', () => {
+        // 单集循环时不会派发结束事件，「本集结束」改为在这一遍快播完时暂停
+        const loopVideo = artPlayerRef.current?.video as
+          | HTMLVideoElement
+          | undefined;
+        if (
+          loopVideo &&
+          loopVideo.loop &&
+          sleepEndOfEpisodeRef.current &&
+          loopVideo.duration > 0 &&
+          loopVideo.currentTime >= loopVideo.duration - 0.5
+        ) {
+          loopVideo.pause();
+          applySleepTimer('off');
+          artPlayerRef.current.notice.show = '本集已播完，睡眠定时已暂停播放';
+          return;
+        }
+        const now = Date.now();
+        if (now - lastMediaPositionAt < 1000) return;
+        lastMediaPositionAt = now;
+        const video = artPlayerRef.current?.video as
+          | HTMLVideoElement
+          | undefined;
+        if (video) {
+          setMediaPosition({
+            position: video.currentTime,
+            duration: video.duration,
+            playbackRate: video.playbackRate,
+          });
+        }
+      });
+
+      // 播放结束：先看睡眠定时的「本集结束」，再看是否开启自动连播（倒计时，可以取消）
       artPlayerRef.current.on('video:ended', () => {
+        wakeLockRef.current?.disable();
+        setMediaPlaybackState('paused');
+        if (sleepEndOfEpisodeRef.current) {
+          applySleepTimer('off');
+          artPlayerRef.current.notice.show = '本集已播完，睡眠定时已暂停播放';
+          return;
+        }
         const d = detailRef.current;
         const idx = currentEpisodeIndexRef.current;
-        if (d && d.episodes && idx < d.episodes.length - 1) {
-          setTimeout(() => {
-            setCurrentEpisodeIndex(idx + 1);
-          }, 1000);
+        if (
+          autoNextRef.current &&
+          d &&
+          d.episodes &&
+          idx < d.episodes.length - 1
+        ) {
+          setNextCountdown(5);
         }
       });
 
@@ -1695,6 +1917,46 @@ function PlayPageClient() {
       setError('播放器初始化失败');
     }
   }, [Artplayer, Hls, videoUrl, loading, blockAdEnabled]);
+
+  // 锁屏与通知栏：集数变化时更新标题和封面，按钮只保留当前能用的（没有上一集就不显示上一集）
+  useEffect(() => {
+    if (!detail) return;
+    const idx = currentEpisodeIndex;
+    const total = detail.episodes ? detail.episodes.length : 0;
+    const episodeLabel = total > 1 ? ' 第' + (idx + 1) + '集' : '';
+    setMediaInfo({
+      title: (videoTitle || detail.title) + episodeLabel,
+      album: detail.source_name,
+      artwork: processImageUrl(videoCover || detail.poster),
+    });
+    const playSafely = () => {
+      const player = artPlayerRef.current;
+      const result = player ? player.play() : undefined;
+      if (result && typeof result.catch === 'function')
+        result.catch(() => undefined);
+    };
+    return bindMediaActions({
+      play: playSafely,
+      pause: () => artPlayerRef.current?.pause(),
+      seekBackward: () => {
+        const player = artPlayerRef.current;
+        if (player) player.currentTime = Math.max(0, player.currentTime - 10);
+      },
+      seekForward: () => {
+        const player = artPlayerRef.current;
+        if (player) {
+          player.currentTime = Math.min(
+            player.duration || 0,
+            player.currentTime + 10
+          );
+        }
+      },
+      previousTrack: idx > 0 ? handlePreviousEpisode : undefined,
+      nextTrack: idx < total - 1 ? handleNextEpisode : undefined,
+    });
+    // 切换集数时重新绑定，按钮要拿到最新的切集函数
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail, currentEpisodeIndex, videoTitle, videoCover]);
 
   // 离开播放页就停。画中画还在时先留着，退出画中画再拆。
   useLayoutEffect(() => {
@@ -1866,6 +2128,40 @@ function PlayPageClient() {
                   ref={artRef}
                   className='bg-black w-full h-full rounded-xl overflow-hidden shadow-lg'
                 ></div>
+
+                {nextCountdown !== null &&
+                  overlayHost &&
+                  createPortal(
+                    <div className='absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 rounded-xl bg-black/75 px-6 text-center text-white'>
+                      <p className='text-base sm:text-lg'>
+                        {nextCountdown} 秒后播放下一集
+                        {detail?.episodes &&
+                        currentEpisodeIndex + 1 < detail.episodes.length
+                          ? '（第 ' + (currentEpisodeIndex + 2) + ' 集）'
+                          : ''}
+                      </p>
+                      <div className='flex gap-3'>
+                        <button
+                          type='button'
+                          onClick={() => {
+                            setNextCountdown(null);
+                            handleNextEpisode();
+                          }}
+                          className='rounded-lg bg-green-600 px-4 py-2 text-sm font-medium hover:bg-green-500'
+                        >
+                          立即播放
+                        </button>
+                        <button
+                          type='button'
+                          onClick={() => setNextCountdown(null)}
+                          className='rounded-lg bg-white/15 px-4 py-2 text-sm font-medium hover:bg-white/25'
+                        >
+                          取消
+                        </button>
+                      </div>
+                    </div>,
+                    overlayHost
+                  )}
 
                 {/* Cloudflare AI 字幕 */}
                 <CloudflareAISubtitle
