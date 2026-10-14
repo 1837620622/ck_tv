@@ -48,6 +48,7 @@ export default function PagePager({
           onJump(asPage(draft, page));
         }}
       >
+        {/* iPhone 的数字键盘没有回车键，失去焦点时也提交（见 onBlur），否则输入的页码会被丢掉 */}
         <input
           inputMode='numeric'
           aria-label='页码'
@@ -55,6 +56,9 @@ export default function PagePager({
           onChange={(event) =>
             setDraft(event.target.value.replace(/[^\d]/g, ''))
           }
+          onBlur={() => {
+            if (draft !== String(page)) onJump(asPage(draft, page));
+          }}
           className='h-10 w-14 border border-gray-300 bg-white text-center text-gray-900 outline-none focus:border-green-600 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100'
         />
         <span>/ {pageCount}</span>

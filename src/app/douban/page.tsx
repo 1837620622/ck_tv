@@ -736,7 +736,9 @@ function DoubanPageClient() {
                 ) : isLoadingMore ? (
                   <div className='flex items-center gap-2'>
                     <div className='animate-spin rounded-full h-6 w-6 border-b-2 border-green-500'></div>
-                    <span className='text-gray-600'>加载中...</span>
+                    <span className='text-gray-600 dark:text-gray-400'>
+                      加载中...
+                    </span>
                   </div>
                 ) : null}
               </div>
@@ -744,7 +746,7 @@ function DoubanPageClient() {
 
             {/* 没有更多数据提示 */}
             {!hasMore && doubanData.length > 0 && (
-              <div className='text-center text-gray-500 py-8'>
+              <div className='text-center text-gray-500 dark:text-gray-400 py-8'>
                 已加载全部内容
               </div>
             )}
@@ -796,7 +798,7 @@ function DoubanPageClient() {
                   </button>
                 </div>
               ) : (
-                <div className='text-center text-gray-500 py-8'>
+                <div className='text-center text-gray-500 dark:text-gray-400 py-8'>
                   暂无相关内容
                 </div>
               ))}
