@@ -2,8 +2,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
-import { getAuthInfoFromCookie, LOCAL_AUTH_SUBJECT } from '@/lib/auth';
-import { verifyHmacHex } from '@/lib/crypto';
+import { AUTH_COOKIE, verifyAuthCookieValue } from '@/lib/auth-token';
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -22,16 +21,9 @@ export async function middleware(request: NextRequest) {
       : handleAuthFailure(request, pathname);
   }
 
-  // 认证 Cookie 只放对固定标记的签名，不放口令
-  const authInfo = getAuthInfoFromCookie(request);
-  if (!authInfo || !authInfo.signature) {
-    return handleAuthFailure(request, pathname);
-  }
-
-  const valid = await verifyHmacHex(
-    LOCAL_AUTH_SUBJECT,
-    authInfo.signature,
-    secret
+  // 认证 Cookie 必须是未过期、签名正确的 v2 令牌（旧格式的 Cookie 一律视为未登录）
+  const valid = await verifyAuthCookieValue(
+    request.cookies.get(AUTH_COOKIE)?.value
   );
   return valid ? NextResponse.next() : handleAuthFailure(request, pathname);
 }

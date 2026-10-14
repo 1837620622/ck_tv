@@ -1,9 +1,9 @@
 /* eslint-disable no-console */
 import { NextRequest, NextResponse } from 'next/server';
 
-import { LOCAL_AUTH_SUBJECT } from '@/lib/auth';
+import { createAuthCookieValue } from '@/lib/auth-token';
 import { readJsonBody } from '@/lib/body';
-import { hmacHex, safeEqual } from '@/lib/crypto';
+import { safeEqual } from '@/lib/crypto';
 import { isHttpsRequest } from '@/lib/https';
 import { beginAttempt, clientKey, recordSuccess } from '@/lib/throttle';
 
@@ -30,15 +30,6 @@ function tooManyAttempts(seconds: number) {
     { error: `尝试次数过多，请 ${Math.ceil(seconds / 60)} 分钟后再试` },
     { status: 429, headers: { 'Retry-After': String(seconds) } }
   );
-}
-
-// 认证 Cookie 只放签名，不放口令
-async function generateAuthCookie(): Promise<string> {
-  const signature = await hmacHex(
-    LOCAL_AUTH_SUBJECT,
-    process.env.PASSWORD || ''
-  );
-  return encodeURIComponent(JSON.stringify({ signature }));
 }
 
 export async function POST(req: NextRequest) {
@@ -94,7 +85,8 @@ export async function POST(req: NextRequest) {
     // 验证成功，设置认证cookie
     recordSuccess(key);
     const response = NextResponse.json({ ok: true });
-    const cookieValue = await generateAuthCookie();
+    // Cookie 里是带签发时间的签名，不含口令本身，也不能由口令直接推出
+    const cookieValue = await createAuthCookieValue();
     const expires = new Date();
     expires.setDate(expires.getDate() + 7); // 7天过期
 

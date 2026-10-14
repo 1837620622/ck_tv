@@ -1,6 +1,8 @@
 // 服务端出站请求只允许公网 http(s)。挡住内网、回环、云元数据地址，
 // 以及带账号密码的 URL，防止接口被拿来当任意网页代理或探测内网。
 
+import { nodeResolve } from '@/lib/dns-node';
+
 function privateIPv4(parts: number[]): boolean {
   if (
     parts.length !== 4 ||
@@ -102,7 +104,7 @@ function blockedIPv6(host: string): boolean {
 
 // 主机名里嵌着 IPv4 地址时也要判断，例如 127.0.0.1.nip.io、10-0-0-1.sslip.io。
 // 这类域名解析出来就是内网地址，只看字面 IP 挡不住。
-// 注意：这只能挡住地址写在域名里的情况；普通域名解析到内网 IP 的情况，边缘运行时无法在这里查 DNS。
+// 注意：这只能挡住地址写在域名里的情况；普通域名解析到内网 IP 的情况由 fetchPublic 在 Docker 下查解析结果来挡。
 // 逐个位置试连续四段数字，不用正则的非重叠匹配：那样 1.127.0.0.1.nip.io 会被前面的 1.127.0.0 吃掉，
 // 真正的 127.0.0.1 就漏了。前面有公网的段（如 1.127.0.0.1.nip.io）同样要拦住。
 function embeddedIPv4Blocked(host: string): boolean {
@@ -144,17 +146,50 @@ export function publicHttpUrl(raw: string): URL | null {
   }
   if (host.includes(':') && blockedIPv6(host)) return null;
   if (embeddedIPv4Blocked(host)) return null;
+  // 单段主机名（如 Docker 服务名 minio）只能指向内网，公网域名一定带点
+  if (!host.includes(':') && !host.includes('.')) return null;
   return url;
 }
 
+// 地址本身是否是公网地址。IPv4 与 IPv6 都按内网、回环、链路本地等网段判断。
+export function publicAddress(address: string): boolean {
+  if (address.includes(':')) return !blockedIPv6(address);
+  return !privateIPv4(address.split('.').map((part) => Number(part)));
+}
+
+export type HostResolver = (host: string) => Promise<string[]>;
+
+// 域名解析出的每个地址都必须是公网地址；解析失败或没有结果也拒绝。
+// 查询与连接之间解析结果被换掉（DNS 重绑定）这一步，这里防不住，需要连接层固定地址。
+async function hostResolvesPublic(
+  url: URL,
+  resolve: HostResolver
+): Promise<boolean> {
+  const host = url.hostname.replace(/^\[|\]$/g, '');
+  if (host.includes(':') || /^\d{1,3}(\.\d{1,3}){3}$/.test(host)) return true;
+  let addresses: string[];
+  try {
+    addresses = await resolve(host);
+  } catch {
+    return false;
+  }
+  return addresses.length > 0 && addresses.every(publicAddress);
+}
+
 // 发起出站请求并逐跳校验重定向目标，最多跟 3 跳。
+// 每一跳都要过 publicHttpUrl；Docker（Node 运行时）下还要检查域名的解析结果，
+// 否则 169.254.169.254、10.x 这类内网地址只要藏在域名后面就能连上。
 // 跳到非公网地址、Location 无效或超过跳数时返回 null。
 export async function fetchPublic(
   start: URL,
-  init: RequestInit
+  init: RequestInit,
+  resolve: HostResolver | null = process.env.DOCKER_ENV === 'true'
+    ? nodeResolve
+    : null
 ): Promise<Response | null> {
   let current = start;
   for (let hop = 0; hop < 3; hop += 1) {
+    if (resolve && !(await hostResolvesPublic(current, resolve))) return null;
     const response = await fetch(current.toString(), {
       ...init,
       redirect: 'manual',
