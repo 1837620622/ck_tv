@@ -21,14 +21,7 @@ const ImagePlaceholder = ({ aspectRatio }: { aspectRatio: string }) => (
         --skeleton-highlight: #e0e0e0;
       }
       
-      /* 暗色模式变量 */
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --skeleton-color: #2d2d2d;
-          --skeleton-highlight: #3d3d3d;
-        }
-      }
-      
+      /* 暗色模式变量：只跟随应用自己的 .dark 类（next-themes 写入），不跟随系统配色 */
       .dark {
         --skeleton-color: #2d2d2d;
         --skeleton-highlight: #3d3d3d;

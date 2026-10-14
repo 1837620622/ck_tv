@@ -11,7 +11,7 @@ export function choiceClass(active: boolean, dense = false) {
     'shrink-0 border',
     dense ? 'px-3 py-1 text-xs' : 'px-3 py-1.5 text-sm',
     active
-      ? 'border-green-600 bg-green-600 text-white'
+      ? 'border-green-700 bg-green-700 text-white'
       : 'border-gray-300 bg-white text-gray-700 hover:border-green-600 hover:text-green-700 dark:border-gray-600 dark:bg-gray-950 dark:text-gray-200 dark:hover:border-green-500 dark:hover:text-green-400',
   ].join(' ');
 }
@@ -36,11 +36,13 @@ export default function ChoiceRow({
           {label}
         </span>
       ) : null}
-      <div className='flex min-w-0 gap-1.5 overflow-x-auto'>
+      {/* 横向滚动区会裁掉子元素的焦点环，p-1 留出空间，-m-1 让排版位置不变 */}
+      <div className='flex min-w-0 gap-1.5 overflow-x-auto p-1 -m-1'>
         {options.map((option) => (
           <button
             key={option.value}
             type='button'
+            aria-pressed={value === option.value}
             onClick={() => onChange(option.value)}
             className={choiceClass(value === option.value, dense)}
           >
