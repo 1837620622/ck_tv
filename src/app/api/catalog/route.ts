@@ -28,6 +28,18 @@ function asPage(value: unknown): number {
   return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 1;
 }
 
+// 上游只认有限几个 kind，其余值都落到同一条默认路径。
+// 缓存键必须用归一后的值：否则每个随机 kind 都是一次缓存未命中，并各自回源一次。
+// 用 hasOwnProperty 判断，免得 constructor 之类的属性名也被当成合法 kind。
+function canonicalKind(engine: 'bilibili' | 'bangumi', raw: string | null) {
+  if (engine === 'bilibili') {
+    return raw && Object.prototype.hasOwnProperty.call(BILIBILI_KIND, raw)
+      ? raw
+      : 'bangumi';
+  }
+  return raw === 'real' ? 'real' : 'anime';
+}
+
 function rateText(value: unknown): string {
   const text = String(value ?? '')
     .replace('分', '')
@@ -184,8 +196,7 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const engine =
     searchParams.get('engine') === 'bilibili' ? 'bilibili' : 'bangumi';
-  const kind =
-    searchParams.get('kind') || (engine === 'bilibili' ? 'bangumi' : 'anime');
+  const kind = canonicalKind(engine, searchParams.get('kind'));
   const page = asPage(searchParams.get('page'));
   const cacheUrl = `https://cktv-cache.local/catalog?engine=${engine}&kind=${encodeURIComponent(
     kind

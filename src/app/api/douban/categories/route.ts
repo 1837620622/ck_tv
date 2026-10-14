@@ -96,8 +96,9 @@ export async function GET(request: Request) {
   const kind = searchParams.get('kind') || 'movie';
   const category = searchParams.get('category');
   const type = searchParams.get('type');
-  const pageLimit = parseInt(searchParams.get('limit') || '20');
-  const pageStart = parseInt(searchParams.get('start') || '0');
+  // 用 Number 而不是 parseInt：parseInt('abc') 得到 NaN，NaN 过不了 < / > 的范围判断，会被原样拼进上游地址
+  const pageLimit = Number(searchParams.get('limit') || 20);
+  const pageStart = Number(searchParams.get('start') || 0);
 
   // 验证参数
   if (!kind || !category || !type) {
@@ -114,14 +115,14 @@ export async function GET(request: Request) {
     );
   }
 
-  if (pageLimit < 1 || pageLimit > 100) {
+  if (!Number.isInteger(pageLimit) || pageLimit < 1 || pageLimit > 100) {
     return NextResponse.json(
       { error: 'pageSize 必须在 1-100 之间' },
       { status: 400 }
     );
   }
 
-  if (pageStart < 0) {
+  if (!Number.isInteger(pageStart) || pageStart < 0) {
     return NextResponse.json(
       { error: 'pageStart 不能小于 0' },
       { status: 400 }

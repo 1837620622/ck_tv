@@ -3,6 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { getAuthInfoFromCookie, LOCAL_AUTH_SUBJECT } from '@/lib/auth';
+import { DEFAULT_JSON_BODY_BYTES, readJsonBody } from '@/lib/body';
 import { db, hasServerStorage } from '@/lib/db';
 
 export const runtime = 'edge';
@@ -57,8 +58,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const body = await request.json();
-    const keyword: string = body.keyword?.trim();
+    const parsed = await readJsonBody(request, DEFAULT_JSON_BODY_BYTES);
+    if (!parsed.ok) {
+      return NextResponse.json(
+        { error: parsed.error },
+        { status: parsed.status }
+      );
+    }
+    // 非字符串的 keyword 直接当成空，返回 400，而不是在 .trim() 上抛异常变成 500
+    const raw = (parsed.data as { keyword?: unknown } | null)?.keyword;
+    const keyword = typeof raw === 'string' ? raw.trim() : '';
 
     if (!keyword) {
       return NextResponse.json(

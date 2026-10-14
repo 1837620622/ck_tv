@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { LOCAL_AUTH_SUBJECT } from '@/lib/auth';
+import { readJsonBody } from '@/lib/body';
 import { hmacHex, safeEqual } from '@/lib/crypto';
 import { isHttpsRequest } from '@/lib/https';
 import { beginAttempt, clientKey, recordSuccess } from '@/lib/throttle';
@@ -10,6 +11,9 @@ export const runtime = 'edge';
 
 // 站点只有一个口令，所有登录尝试共用同一个限流账号
 const THROTTLE_ACCOUNT = 'site';
+
+// 登录请求体只有一个口令字段。这是未认证接口，上限要小，免得被大包体撑爆内存
+const MAX_LOGIN_BODY_BYTES = 4 * 1024;
 
 // 读取存储类型环境变量，默认 localstorage
 const STORAGE_TYPE =
@@ -68,7 +72,14 @@ export async function POST(req: NextRequest) {
     const wait = beginAttempt(key);
     if (wait > 0) return tooManyAttempts(wait);
 
-    const { password } = await req.json();
+    const parsed = await readJsonBody(req, MAX_LOGIN_BODY_BYTES);
+    if (!parsed.ok) {
+      return NextResponse.json(
+        { error: parsed.error },
+        { status: parsed.status }
+      );
+    }
+    const password = (parsed.data as { password?: unknown } | null)?.password;
     if (!password || typeof password !== 'string') {
       return NextResponse.json({ error: '密码不能为空' }, { status: 400 });
     }
