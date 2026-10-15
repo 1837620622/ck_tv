@@ -1,10 +1,6 @@
 import { NextResponse } from 'next/server';
 
-import {
-  huangguoPlayWhy,
-  readHuangguoPlaylist,
-  readHuangguoPlayTarget,
-} from '@/lib/huangguo';
+import { huangguoPlayWhy, readHuangguoPlayTarget } from '@/lib/huangguo';
 
 export const runtime = 'edge';
 
@@ -44,14 +40,15 @@ export async function GET(request: Request) {
       });
     }
 
-    const body = await readHuangguoPlaylist(id, episode);
-    if (!body) return fail(404, huangguoPlayWhy());
-    return new NextResponse(body, {
+    // 边缘缓存曾把不同集的清单收成同一份。这里只跳到刚拿到的地址，正文由浏览器直连源站。
+    const target = await readHuangguoPlayTarget(id, episode);
+    if (!target) return fail(404, huangguoPlayWhy());
+    return new NextResponse(null, {
+      status: 302,
       headers: {
-        'Content-Type': 'application/vnd.apple.mpegurl',
+        Location: target,
         'Cache-Control': 'no-store, max-age=0',
         'CDN-Cache-Control': 'no-store',
-        'X-Content-Type-Options': 'nosniff',
       },
     });
   } catch {

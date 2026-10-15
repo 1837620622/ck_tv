@@ -29,22 +29,6 @@ function jsonResponse(body: unknown, status = 200) {
   };
 }
 
-function textResponse(text: string, status = 200) {
-  const bytes = Buffer.from(text);
-  return {
-    ok: status >= 200 && status < 300,
-    status,
-    headers: {
-      get: (name: string) =>
-        name.toLowerCase() === 'content-length'
-          ? String(bytes.byteLength)
-          : null,
-    },
-    arrayBuffer: async () =>
-      bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
-  };
-}
-
 const detail = {
   data: {
     id: 12,
@@ -74,27 +58,19 @@ describe('GET /api/huangguo/media/playlist.m3u8', () => {
             video_iv: 'secret-iv',
           },
         })
-      )
-      .mockResolvedValueOnce(
-        textResponse(
-          '#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="https://cdn.example/k"\nhttps://cdn.example/0.ts\n'
-        )
       );
     global.fetch = fetchMock as unknown as typeof fetch;
     const res = (await GET(playlist('id=12&ep=1'))) as unknown as {
       status: number;
       headers: Record<string, string>;
-      body: Uint8Array;
     };
-    expect(res.status).toBe(200);
-    expect(res.headers['Content-Type']).toBe('application/vnd.apple.mpegurl');
-    expect(res.headers['Cache-Control']).toContain('no-store');
-    const text = Buffer.from(res.body).toString('utf8');
-    expect(text.startsWith('#EXTM3U')).toBe(true);
-    expect(text).not.toContain('secret-key');
-    expect(String(fetchMock.mock.calls[2][0])).toBe(
+    expect(res.status).toBe(302);
+    expect(res.headers.Location).toBe(
       'https://cdn.example/videos/ep1.m3u8?auth_key=1'
     );
+    expect(res.headers['Cache-Control']).toContain('no-store');
+    expect(res.headers.Location).not.toContain('secret-key');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('returns only the absolute url when format=url', async () => {

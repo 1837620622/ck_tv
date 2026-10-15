@@ -1,10 +1,9 @@
 import { allowedCoverUrl } from '@/lib/huangguo-image';
 import { huangguoPlaylistPath } from '@/lib/huangguo-media';
-import { fetchPublic, publicHttpUrl } from '@/lib/safe-url';
+import { publicHttpUrl } from '@/lib/safe-url';
 import { isUnderageLabel } from '@/lib/yellow';
 
 const API = 'https://huangguoai.com';
-const MAX_PLAYLIST_BYTES = 1_000_000;
 
 function coverPath(url: string): string {
   const allowed = allowedCoverUrl(url.trim());
@@ -253,69 +252,6 @@ export async function readHuangguoPlayTarget(
   }
   playWhy = 'ok';
   return target.toString();
-}
-
-async function readPlaylistBody(
-  response: Response
-): Promise<Uint8Array | null> {
-  const declared = Number(response.headers.get('content-length') || 0);
-  if (declared > MAX_PLAYLIST_BYTES) return null;
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  if (bytes.byteLength === 0 || bytes.byteLength > MAX_PLAYLIST_BYTES) {
-    return null;
-  }
-  if (!startsWithPlaylist(bytes)) return null;
-  return bytes;
-}
-
-// 只认 #EXTM3U，允许前面有 BOM 和空白。不用 TextDecoder，测试环境和边缘运行时都一样。
-function startsWithPlaylist(bytes: Uint8Array): boolean {
-  let offset = 0;
-  if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) offset = 3;
-  while (
-    bytes[offset] === 0x20 ||
-    bytes[offset] === 0x09 ||
-    bytes[offset] === 0x0a ||
-    bytes[offset] === 0x0d
-  ) {
-    offset += 1;
-  }
-  const magic = [0x23, 0x45, 0x58, 0x54, 0x4d, 0x33, 0x55];
-  return magic.every((byte, index) => bytes[offset + index] === byte);
-}
-
-// 把刚拿到的清单原文交回播放器。分片地址留在清单里，不经过本站。
-export async function readHuangguoPlaylist(
-  id: string,
-  episode: number
-): Promise<Uint8Array | null> {
-  const target = playlistUrl(await readHuangguoPlayTarget(id, episode));
-  if (!target) return null;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 8000);
-  try {
-    const response = await fetchPublic(target, {
-      signal: controller.signal,
-      headers: {
-        Accept: 'application/vnd.apple.mpegurl,application/x-mpegURL,*/*',
-        Referer: 'https://huangguoai.com/',
-        'User-Agent': HEADERS['User-Agent'],
-      },
-      cf: { cacheTtl: 0, cacheEverything: false },
-    } as RequestInit);
-    if (!response || !response.ok) {
-      playWhy = response ? `list-${response.status}` : 'list-blocked';
-      return null;
-    }
-    const bytes = await readPlaylistBody(response);
-    if (!bytes) playWhy = 'list-body';
-    return bytes;
-  } catch {
-    playWhy = 'list-error';
-    return null;
-  } finally {
-    clearTimeout(timer);
-  }
 }
 
 export async function detailHuangguo(id: string) {
