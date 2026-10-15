@@ -13,6 +13,7 @@ const TIMEOUT_MS = 8000;
 interface TlsSocket {
   readable: ReadableStream<Uint8Array>;
   writable: WritableStream<Uint8Array>;
+  closed: Promise<void>;
   close: () => Promise<void>;
 }
 
@@ -95,11 +96,11 @@ async function requestBytes(path: string): Promise<ByteRead> {
   const done = (async (): Promise<ByteRead> => {
     const writer = socket.writable.getWriter();
     await writer.write(encodeHuangguoRequest(path));
-    await writer.close();
+    // 出站代理把写端关闭当成整条连接结束。响应回来之前不能关写端。
     const bytes = await readLimited(socket.readable);
     if (bytes === null) return { bytes: null, why: 'too-large' };
-    if (bytes.length === 0) return { bytes: null, why: 'empty' };
-    return { bytes, why: '' };
+    if (bytes.length > 0) return { bytes, why: '' };
+    return { bytes: null, why: await closedWhy(socket) };
   })();
   done.catch(() => undefined);
   try {
@@ -119,6 +120,22 @@ async function requestBytes(path: string): Promise<ByteRead> {
 export interface PlaylistRead {
   body: string;
   why: string;
+}
+
+function closedWhy(socket: TlsSocket): Promise<string> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve('empty'), 300);
+    socket.closed.then(
+      () => {
+        clearTimeout(timer);
+        resolve('empty');
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        resolve(`connect:${cleanError(error)}`);
+      }
+    );
+  });
 }
 
 function cleanError(error: unknown): string {
