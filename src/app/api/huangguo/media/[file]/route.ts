@@ -1,10 +1,6 @@
 import { NextResponse } from 'next/server';
 
-import {
-  huangguoPlayWhy,
-  readHuangguoPlaylist,
-  readHuangguoPlayTarget,
-} from '@/lib/huangguo';
+import { huangguoPlayWhy, readHuangguoPlayTarget } from '@/lib/huangguo';
 
 export const runtime = 'edge';
 
@@ -44,16 +40,15 @@ export async function GET(request: Request) {
       });
     }
 
-    // 直接回这一集的清单。跳转会被播放器当成同一条地址，切集就还是第一集的画面。
-    // 分片和密钥仍是清单里的源站绝对地址，不经过本站。
-    const body = await readHuangguoPlaylist(id, episode);
-    if (!body) return fail(404, huangguoPlayWhy());
-    return new NextResponse(body, {
+    // 边缘把同一主机上不同集的清单收成同一份。这里只跳到刚拿到的地址，正文由浏览器直连源站。
+    const target = await readHuangguoPlayTarget(id, episode);
+    if (!target) return fail(404, huangguoPlayWhy());
+    return new NextResponse(null, {
+      status: 302,
       headers: {
+        Location: target,
         'Cache-Control': 'no-store, max-age=0',
         'CDN-Cache-Control': 'no-store',
-        'content-type': 'application/vnd.apple.mpegurl; charset=utf-8',
-        'x-content-type-options': 'nosniff',
       },
     });
   } catch {
