@@ -2,6 +2,7 @@ declare module 'cloudflare:sockets' {
   interface Socket {
     readable: ReadableStream<Uint8Array>;
     writable: WritableStream<Uint8Array>;
+    closed: Promise<void>;
     close(): Promise<void>;
   }
 
