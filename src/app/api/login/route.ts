@@ -85,7 +85,7 @@ export async function POST(req: NextRequest) {
     // 验证成功，设置认证cookie
     recordSuccess(key);
     const response = NextResponse.json({ ok: true });
-    // Cookie 里是带签发时间的签名，不含口令本身，也不能由口令直接推出
+    // Cookie 里是带签发时间的签名，不含口令本身；签名密钥优先用 AUTH_SECRET，未设置时退回口令（见 auth-token.ts）
     const cookieValue = await createAuthCookieValue();
     const expires = new Date();
     expires.setDate(expires.getDate() + 7); // 7天过期
