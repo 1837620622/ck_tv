@@ -17,12 +17,18 @@ jest.mock('next/server', () => ({
 jest.mock('@/lib/huangguo-socket', () => ({
   readHuangguoPlaylist: jest.fn(async (target: string) => {
     if (String(target).includes('/videos/ep1')) {
-      return '#EXTM3U\nhttps://tp4.drleao.cn/a/111.ts\n';
+      return {
+        body: '#EXTM3U\nhttps://tp4.drleao.cn/a/111.ts\n',
+        why: 'ok',
+      };
     }
     if (String(target).includes('/videos/ep2')) {
-      return '#EXTM3U\nhttps://tp3.drleao.cn/b/222.ts\n';
+      return {
+        body: '#EXTM3U\nhttps://tp3.drleao.cn/b/222.ts\n',
+        why: 'ok',
+      };
     }
-    return '';
+    return { body: '', why: 'empty' };
   }),
 }));
 

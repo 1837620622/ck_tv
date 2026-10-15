@@ -1,4 +1,5 @@
 import {
+  encodeHuangguoRequest,
   httpMessageComplete,
   huangguoUpstreamPath,
   preparePlaylist,
@@ -29,18 +30,6 @@ async function openSocket(): Promise<TlsSocket> {
     { hostname: HOST, port: 443 },
     { secureTransport: 'on', allowHalfOpen: true }
   );
-}
-
-function requestOf(path: string): string {
-  return [
-    `GET ${path} HTTP/1.1`,
-    `Host: ${HOST}`,
-    'User-Agent: Mozilla/5.0',
-    'Accept: */*',
-    'Connection: close',
-    '',
-    '',
-  ].join('\r\n');
 }
 
 async function readLimited(
@@ -84,27 +73,39 @@ function messageReady(chunks: Uint8Array[], total: number): boolean {
   return httpMessageComplete(bytes);
 }
 
-async function requestBytes(path: string): Promise<Uint8Array | null> {
-  const socket = await openSocket();
+interface ByteRead {
+  bytes: Uint8Array | null;
+  why: string;
+}
+
+async function requestBytes(path: string): Promise<ByteRead> {
+  let socket: TlsSocket;
+  try {
+    socket = await openSocket();
+  } catch (error) {
+    return { bytes: null, why: `connect:${cleanError(error)}` };
+  }
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const timed = new Promise<null>((resolve) => {
+  const timed = new Promise<ByteRead>((resolve) => {
     timer = setTimeout(() => {
       socket.close().catch(() => undefined);
-      resolve(null);
+      resolve({ bytes: null, why: 'timeout' });
     }, TIMEOUT_MS);
   });
-  const done = (async () => {
+  const done = (async (): Promise<ByteRead> => {
     const writer = socket.writable.getWriter();
-    await writer.write(new TextEncoder().encode(requestOf(path)));
+    await writer.write(encodeHuangguoRequest(path));
     await writer.close();
-    return readLimited(socket.readable);
+    const bytes = await readLimited(socket.readable);
+    if (bytes === null) return { bytes: null, why: 'too-large' };
+    if (bytes.length === 0) return { bytes: null, why: 'empty' };
+    return { bytes, why: '' };
   })();
   done.catch(() => undefined);
   try {
     return await Promise.race([done, timed]);
-  } catch {
-    // 套接字被运行时拒绝，或对端中途断开。这一集按没打开处理。
-    return null;
+  } catch (error) {
+    return { bytes: null, why: `connect:${cleanError(error)}` };
   } finally {
     if (timer) clearTimeout(timer);
     try {
@@ -115,19 +116,59 @@ async function requestBytes(path: string): Promise<Uint8Array | null> {
   }
 }
 
+export interface PlaylistRead {
+  body: string;
+  why: string;
+}
+
+function cleanError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message
+    .replace(/https?:\/\/\S+/g, '')
+    .replace(/\?[^ ]*/g, '')
+    .replace(/[^ -~]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 60);
+}
+
+function headTag(bytes: Uint8Array): string {
+  let text = '';
+  const stop = Math.min(8, bytes.length);
+  for (let index = 0; index < stop; index += 1) {
+    const code = bytes[index];
+    text += code >= 32 && code < 127 ? String.fromCharCode(code) : '.';
+  }
+  return text;
+}
+
 // fetch 子请求一定带 CF-Worker，源站会因此回同一份清单。套接字上的请求头是这里写的。
-export async function readHuangguoPlaylist(target: string): Promise<string> {
+export async function readHuangguoPlaylist(
+  target: string
+): Promise<PlaylistRead> {
   let path = huangguoUpstreamPath(target);
+  if (!path) return { body: '', why: 'bad-path' };
   for (let hop = 0; hop < 2 && path; hop += 1) {
-    const bytes = await requestBytes(path);
-    if (!bytes) return '';
+    const loaded = await requestBytes(path);
+    if (loaded.why) return { body: '', why: loaded.why };
+    const bytes = loaded.bytes;
+    if (!bytes || bytes.length === 0) return { body: '', why: 'empty' };
     const message = readHttpMessage(bytes);
-    if (!message) return '';
+    if (!message) return { body: '', why: `not-http:${headTag(bytes)}` };
     if (message.status === 200) {
-      return preparePlaylist(message.body, `https://${HOST}${path}`);
+      const body = preparePlaylist(message.body, `https://${HOST}${path}`);
+      if (!body) {
+        return {
+          body: '',
+          why: message.body.includes('853acaba4721cceab535b64e6831f05a')
+            ? 'decoy'
+            : 'bad-playlist',
+        };
+      }
+      return { body, why: 'ok' };
     }
     if (message.status < 300 || message.status >= 400 || !message.location) {
-      return '';
+      return { body: '', why: `status-${message.status}` };
     }
     let next = '';
     try {
@@ -137,8 +178,8 @@ export async function readHuangguoPlaylist(target: string): Promise<string> {
     } catch {
       next = '';
     }
-    if (!next || next === path) return '';
+    if (!next || next === path) return { body: '', why: 'bad-redirect' };
     path = next;
   }
-  return '';
+  return { body: '', why: 'empty' };
 }

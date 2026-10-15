@@ -47,9 +47,9 @@ export async function GET(request: Request) {
     const target = await readHuangguoPlayTarget(id, episode);
     if (!target) return fail(404, huangguoPlayWhy());
     if (!huangguoUpstreamPath(target)) return fail(404, 'bad-host');
-    const body = await readHuangguoPlaylist(target);
-    if (!body) return fail(404, 'playlist-empty');
-    return new NextResponse(body, {
+    const result = await readHuangguoPlaylist(target);
+    if (!result.body) return fail(404, result.why || 'playlist-empty');
+    return new NextResponse(result.body, {
       headers: {
         'Cache-Control': 'no-store, max-age=0',
         'CDN-Cache-Control': 'no-store',

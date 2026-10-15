@@ -3,6 +3,8 @@
 
 const HOST = 'yd-hls.hzjvlo.cn';
 const DECOY_SEGMENT = '853acaba4721cceab535b64e6831f05a';
+// 不能把回车写进普通字符串。esbuild 压缩时会把 \r\n 收成 \n，源站看到这种请求就直接断开。
+const CRLF = new Uint8Array([13, 10]);
 
 export interface HttpMessage {
   status: number;
@@ -32,6 +34,39 @@ export function huangguoUpstreamPath(raw: string): string {
     return '';
   }
   return path;
+}
+
+function latin1(text: string): Uint8Array {
+  const bytes = new Uint8Array(text.length);
+  for (let index = 0; index < text.length; index += 1) {
+    bytes[index] = text.charCodeAt(index);
+  }
+  return bytes;
+}
+
+// 原始连接上的请求。行尾用 CR、LF 两个字节拼，避免压缩后再发出去变成只有换行。
+export function encodeHuangguoRequest(path: string): Uint8Array {
+  const lines = [
+    `GET ${path} HTTP/1.1`,
+    `Host: ${HOST}`,
+    'User-Agent: Mozilla/5.0',
+    'Accept: */*',
+    'Connection: close',
+    '',
+  ];
+  const parts: Uint8Array[] = [];
+  lines.forEach((line) => {
+    if (line) parts.push(latin1(line));
+    parts.push(CRLF);
+  });
+  const total = parts.reduce((sum, part) => sum + part.byteLength, 0);
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  parts.forEach((part) => {
+    bytes.set(part, offset);
+    offset += part.byteLength;
+  });
+  return bytes;
 }
 
 function ascii(bytes: Uint8Array, start: number, end: number): string {

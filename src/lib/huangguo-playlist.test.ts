@@ -1,4 +1,5 @@
 import {
+  encodeHuangguoRequest,
   httpMessageComplete,
   huangguoUpstreamPath,
   preparePlaylist,
@@ -32,6 +33,28 @@ describe('huangguoUpstreamPath', () => {
     expect(
       huangguoUpstreamPath('https://user:pass@yd-hls.hzjvlo.cn/videos/ep1.m3u8')
     ).toBe('');
+  });
+});
+
+describe('encodeHuangguoRequest', () => {
+  it('ends each header line with CR LF', () => {
+    const bytes = encodeHuangguoRequest('/videos/ep1.m3u8?auth_key=1');
+    let text = '';
+    bytes.forEach((code) => {
+      text += String.fromCharCode(code);
+    });
+    expect(
+      text.startsWith('GET /videos/ep1.m3u8?auth_key=1 HTTP/1.1\r\n')
+    ).toBe(true);
+    expect(text).toContain('Host: yd-hls.hzjvlo.cn\r\n');
+    expect(text.endsWith('\r\n\r\n')).toBe(true);
+    expect(text).not.toContain('Origin');
+    expect(text).not.toContain('CF-Worker');
+    for (let index = 0; index < text.length; index += 1) {
+      if (text.charCodeAt(index) === 10) {
+        expect(text.charCodeAt(index - 1)).toBe(13);
+      }
+    }
   });
 });
 
