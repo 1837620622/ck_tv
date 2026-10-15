@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 
 import { huangguoPlayWhy, readHuangguoPlayTarget } from '@/lib/huangguo';
+import { huangguoUpstreamPath } from '@/lib/huangguo-playlist';
+import { readHuangguoPlaylist } from '@/lib/huangguo-socket';
 
 export const runtime = 'edge';
 
@@ -40,15 +42,18 @@ export async function GET(request: Request) {
       });
     }
 
-    // 边缘把同一主机上不同集的清单收成同一份。这里只跳到刚拿到的地址，正文由浏览器直连源站。
+    // 浏览器跟随 302 时会带上本站 Origin，源站就把每一集收成同一份。
+    // 这里用原始连接取回这一集的正文再交给播放器。分片地址仍是源站绝对地址。
     const target = await readHuangguoPlayTarget(id, episode);
     if (!target) return fail(404, huangguoPlayWhy());
-    return new NextResponse(null, {
-      status: 302,
+    if (!huangguoUpstreamPath(target)) return fail(404, 'bad-host');
+    const body = await readHuangguoPlaylist(target);
+    if (!body) return fail(404, 'playlist-empty');
+    return new NextResponse(body, {
       headers: {
-        Location: target,
         'Cache-Control': 'no-store, max-age=0',
         'CDN-Cache-Control': 'no-store',
+        'content-type': 'application/vnd.apple.mpegurl',
       },
     });
   } catch {

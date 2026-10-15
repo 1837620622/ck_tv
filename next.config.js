@@ -74,6 +74,27 @@ const nextConfig = {
       crypto: false,
     };
 
+    // 原始套接字由运行时提供。打成普通包会在构建期解析 cloudflare: 协议失败。
+    const socketsExternal = ({ request }, callback) => {
+      if (request === 'cloudflare:sockets') {
+        return callback(null, 'commonjs cloudflare:sockets');
+      }
+      callback();
+    };
+    if (Array.isArray(config.externals)) {
+      config.externals.push(socketsExternal);
+    } else if (typeof config.externals === 'function') {
+      const previous = config.externals;
+      config.externals = (data, callback) => {
+        if (data.request === 'cloudflare:sockets') {
+          return callback(null, 'commonjs cloudflare:sockets');
+        }
+        return previous(data, callback);
+      };
+    } else {
+      config.externals = [socketsExternal];
+    }
+
     return config;
   },
 };

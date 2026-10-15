@@ -14,7 +14,23 @@ jest.mock('next/server', () => ({
   },
 }));
 
+jest.mock('@/lib/huangguo-socket', () => ({
+  readHuangguoPlaylist: jest.fn(async (target: string) => {
+    if (String(target).includes('/videos/ep1')) {
+      return '#EXTM3U\nhttps://tp4.drleao.cn/a/111.ts\n';
+    }
+    if (String(target).includes('/videos/ep2')) {
+      return '#EXTM3U\nhttps://tp3.drleao.cn/b/222.ts\n';
+    }
+    return '';
+  }),
+}));
+
+import { readHuangguoPlaylist } from '@/lib/huangguo-socket';
+
 import { GET } from './route';
+
+const playlistMock = readHuangguoPlaylist as unknown as jest.Mock;
 
 const request = (url: string) => ({ url } as unknown as Request);
 const playlist = (query: string) =>
@@ -44,16 +60,17 @@ const detail = {
 describe('GET /api/huangguo/media/playlist.m3u8', () => {
   afterEach(() => {
     delete (global as { fetch?: unknown }).fetch;
+    playlistMock.mockClear();
   });
 
-  it('redirects to that episode and does not pass through the key fields', async () => {
+  it('returns that episode playlist and does not pass through the key fields', async () => {
     const fetchMock = jest
       .fn()
       .mockResolvedValueOnce(jsonResponse(detail))
       .mockResolvedValueOnce(
         jsonResponse({
           data: {
-            video_url: 'https://cdn.example/videos/ep1.m3u8?auth_key=1',
+            video_url: 'https://yd-hls.hzjvlo.cn/videos/ep1.m3u8?auth_key=1',
             video_key: 'secret-key',
             video_iv: 'secret-iv',
           },
@@ -63,7 +80,7 @@ describe('GET /api/huangguo/media/playlist.m3u8', () => {
       .mockResolvedValueOnce(
         jsonResponse({
           data: {
-            video_url: 'https://cdn.example/videos/ep2.m3u8?auth_key=2',
+            video_url: 'https://yd-hls.hzjvlo.cn/videos/ep2.m3u8?auth_key=2',
             video_key: 'secret-key',
           },
         })
@@ -71,24 +88,27 @@ describe('GET /api/huangguo/media/playlist.m3u8', () => {
     global.fetch = fetchMock as unknown as typeof fetch;
     const first = (await GET(playlist('id=12&ep=1'))) as unknown as {
       status: number;
+      body: string;
       headers: Record<string, string>;
     };
     const second = (await GET(playlist('id=12&ep=2'))) as unknown as {
       status: number;
+      body: string;
       headers: Record<string, string>;
     };
-    expect(first.status).toBe(302);
-    expect(second.status).toBe(302);
-    expect(first.headers.Location).toBe(
-      'https://cdn.example/videos/ep1.m3u8?auth_key=1'
-    );
-    expect(second.headers.Location).toBe(
-      'https://cdn.example/videos/ep2.m3u8?auth_key=2'
-    );
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(first.body).toContain('111.ts');
+    expect(second.body).toContain('222.ts');
+    expect(first.body).not.toContain('222.ts');
+    expect(second.body).not.toContain('111.ts');
     expect(first.headers['Cache-Control']).toContain('no-store');
-    expect(first.headers.Location).not.toContain('secret-key');
-    expect(second.headers.Location).not.toContain('secret-key');
+    expect(first.headers['content-type']).toContain('mpegurl');
+    expect(first.body).not.toContain('secret-key');
+    expect(first.body).not.toContain('auth_key');
+    expect(second.body).not.toContain('secret-key');
     expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(playlistMock).toHaveBeenCalledTimes(2);
   });
 
   it('returns only the absolute url when format=url', async () => {
@@ -114,6 +134,7 @@ describe('GET /api/huangguo/media/playlist.m3u8', () => {
       url: 'https://cdn.example/videos/ep2.m3u8?auth_key=2',
     });
     expect(res.body).not.toContain('secret-key');
+    expect(playlistMock).not.toHaveBeenCalled();
   });
 
   it('does not fetch a play url that is not a public https playlist', async () => {
@@ -129,6 +150,27 @@ describe('GET /api/huangguo/media/playlist.m3u8', () => {
     };
     expect(res.status).toBe(404);
     expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(playlistMock).not.toHaveBeenCalled();
+  });
+
+  it('does not open a socket for a playlist on another host', async () => {
+    global.fetch = jest
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(detail))
+      .mockResolvedValueOnce(
+        jsonResponse({
+          data: {
+            video_url: 'https://cdn.example/videos/ep1.m3u8?auth_key=1',
+          },
+        })
+      ) as unknown as typeof fetch;
+    const res = (await GET(playlist('id=12&ep=1'))) as unknown as {
+      status: number;
+      headers: Record<string, string>;
+    };
+    expect(res.status).toBe(404);
+    expect(res.headers['x-ck-why']).toBe('bad-host');
+    expect(playlistMock).not.toHaveBeenCalled();
   });
 
   it('rejects a bad id before calling upstream', async () => {

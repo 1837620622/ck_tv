@@ -1,5 +1,5 @@
 // 播放页拿到的是这条稳定地址。签名只有几秒，不能写进详情缓存。
-// 真正的 m3u8 在打开这一集时再向黄果要，分片仍由浏览器直接向源站拉。
+// 打开这一集时由边缘取回这一份清单，分片仍由浏览器直接向源站拉。
 
 export function huangguoPlaylistPath(id: string, episode: number): string {
   return `/api/huangguo/media/playlist.m3u8?id=${encodeURIComponent(
