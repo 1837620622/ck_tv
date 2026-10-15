@@ -1,6 +1,6 @@
 import { allowedCoverUrl } from '@/lib/huangguo-image';
 import { huangguoPlaylistPath } from '@/lib/huangguo-media';
-import { publicHttpUrl } from '@/lib/safe-url';
+import { fetchPublic, publicHttpUrl } from '@/lib/safe-url';
 import { isUnderageLabel } from '@/lib/yellow';
 
 const API = 'https://huangguoai.com';
@@ -252,6 +252,68 @@ export async function readHuangguoPlayTarget(
   }
   playWhy = 'ok';
   return target.toString();
+}
+
+const MAX_PLAYLIST_CHARS = 512 * 1024;
+
+// 清单正文必须整份都是绝对地址。相对地址会被播放器拼到本站，分片不能进这里。
+function absolutePlaylist(text: string): boolean {
+  if (!text.startsWith('#EXTM3U')) return false;
+  let segments = 0;
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    if (!trimmed.startsWith('https://')) return false;
+    segments += 1;
+  }
+  return segments > 0;
+}
+
+// 播放器要的是这一集的清单正文，不是跳转。
+// 出站不要带 cf：带 cacheTtl 时，边缘曾把同一主机上不同集收成同一份。
+export async function readHuangguoPlaylist(
+  id: string,
+  episode: number
+): Promise<string> {
+  const target = await readHuangguoPlayTarget(id, episode);
+  if (!target) return '';
+  const playlist = playlistUrl(target);
+  if (!playlist) {
+    playWhy = 'bad-url';
+    return '';
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetchPublic(playlist, {
+      headers: {
+        Accept: 'application/vnd.apple.mpegurl, application/x-mpegURL, */*',
+        'User-Agent': HEADERS['User-Agent'],
+        Referer: HEADERS.Referer,
+      },
+      signal: controller.signal,
+    });
+    if (!response) {
+      playWhy = 'list-blocked';
+      return '';
+    }
+    if (!response.ok) {
+      playWhy = `list-${response.status}`;
+      return '';
+    }
+    const text = (await response.text()).replace(/^\uFEFF/, '');
+    if (text.length > MAX_PLAYLIST_CHARS || !absolutePlaylist(text)) {
+      playWhy = 'list-bad';
+      return '';
+    }
+    playWhy = 'ok';
+    return text;
+  } catch {
+    playWhy = 'list-error';
+    return '';
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export async function detailHuangguo(id: string) {

@@ -1341,17 +1341,27 @@ function PlayPageClient() {
       typeof window !== 'undefined' &&
       typeof (window as any).webkitConvertPointFromNodeToPage === 'function';
 
-    // 非 WebKit 走播放器的 switch 赋值，它内部会调用 switchUrl。先拆掉旧的 hls，避免旧清单的报错把线路打回默认源。
+    // 非 WebKit 不走 switch。播放器把地址记在 option.url，拆掉旧 hls 触发的 error 会按它重连。
+    // 不先改成这一集的话，重连目标一直是第一集，后面点哪集都是同一段画面。
     if (!isWebkit && artPlayerRef.current) {
       const art = artPlayerRef.current;
       const video = art.video as HTMLVideoElement & {
         hls?: { destroy: () => void };
+        __ckTeardown?: () => void;
       };
-      if (video?.hls && art.url !== videoUrl) {
+      art.option.url = videoUrl;
+      if (video?.hls) {
+        video.__ckTeardown?.();
         video.hls.destroy();
         video.hls = undefined;
       }
-      art.switch = videoUrl;
+      try {
+        video.pause();
+        if (video.currentTime > 0) video.currentTime = 0;
+      } catch {
+        // 旧媒体已经拆掉时改进度会抛错，下一集照样拉。
+      }
+      art.option.customType?.m3u8?.(video, videoUrl, art);
       art.title = `${videoTitle} - 第${currentEpisodeIndex + 1}集`;
       art.poster = processImageUrl(videoCover);
       return;
@@ -1443,6 +1453,8 @@ function PlayPageClient() {
               lowLatencyMode: false,
               capLevelToPlayerSize: true,
               startLevel: -1,
+              // 新的一集从 0 开始。不写的话，上一集留在 video 上的进度会被当成这一集的起点。
+              startPosition: 0,
               // 先按约 900kbps 起播，缓冲上来再升档，避免一上来选 1080p 把线路打满
               abrEwmaDefaultEstimate: 900_000,
               abrBandWidthFactor: 0.85,
@@ -1542,7 +1554,8 @@ function PlayPageClient() {
 
             hls.on(Hls.Events.ERROR, function (event: any, data: any) {
               if (!data?.fatal) return;
-              const notStarted = !opened && (video.currentTime || 0) < 0.5;
+              // 这一轮还没出过画面。不能看 currentTime，上一集的进度还留在同一个 video 上。
+              const notStarted = !opened;
               const manifestDead =
                 data.details === 'manifestLoadError' ||
                 data.details === 'manifestLoadTimeOut' ||
@@ -1550,17 +1563,25 @@ function PlayPageClient() {
                 data.details === 'levelLoadError';
               // 还没出画面时，清单打不开就换下一条。已经在播的只自救，不因测速换线。
               if (notStarted && manifestDead) {
+                if (parseHuangguoPlaylist(url)) {
+                  hls.destroy();
+                  video.hls = undefined;
+                  setLoadingHint('这一集没有打开，再点一次');
+                  setVideoLoadingStage('stalled');
+                  setIsVideoLoading(true);
+                  return;
+                }
                 failOverRef.current();
                 return;
               }
-              // 还没出画面的网络错误：换线前只重试一次
+              // 还没出画面的网络错误：换线前只重试一次，并从 0 开始，避免续上一集的进度
               if (data.type === Hls.ErrorTypes.NETWORK_ERROR && notStarted) {
                 if (networkRetries >= 1) {
                   failOverRef.current();
                   return;
                 }
                 networkRetries += 1;
-                hls.startLoad();
+                hls.startLoad(0);
                 return;
               }
               if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
