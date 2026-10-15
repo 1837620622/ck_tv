@@ -71,10 +71,10 @@ function HuangguoClient() {
     const url = isSearching
       ? `/api/huangguo?action=search&q=${encodeURIComponent(
           committedQuery
-        )}&page=${pageNum}`
+        )}&page=${pageNum}&cv=2`
       : `/api/huangguo?action=list&t=${encodeURIComponent(
           category
-        )}&page=${pageNum}`;
+        )}&page=${pageNum}&cv=2`;
 
     const run = async () => {
       try {

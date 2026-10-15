@@ -27,6 +27,10 @@ import {
   saveSkipConfig,
   subscribeToDataUpdates,
 } from '@/lib/db.client';
+import {
+  freshHuangguoDirectUrl,
+  parseHuangguoPlaylist,
+} from '@/lib/huangguo-media';
 import { filterAdBreaks } from '@/lib/m3u8-ads';
 import { pickPlayable, repairTitle } from '@/lib/match-title';
 import {
@@ -416,7 +420,7 @@ function PlayPageClient() {
     }
   };
 
-  const prepareAirPlay = (): Promise<boolean> => {
+  const prepareAirPlay = async (): Promise<boolean> => {
     const art = artPlayerRef.current;
     const video = art?.video as
       | (HTMLVideoElement & { hls?: { destroy: () => void } })
@@ -430,6 +434,11 @@ function PlayPageClient() {
     }
     // 本来就是原生播放（mp4），不需要切换
     if (!video.hls) return Promise.resolve(true);
+    // 黄果清单是站内入口。电视要在这一刻拿到新的绝对地址，旧签名过几秒就失效。
+    const nativeUrl = parseHuangguoPlaylist(videoUrl)
+      ? (await freshHuangguoDirectUrl(videoUrl)) || videoUrl
+      : videoUrl;
+    if (artPlayerRef.current !== art || !video.isConnected) return false;
     // 销毁 hls.js 会清空进度和播放状态，所以先记下
     const at = video.currentTime;
     const resume = !video.paused;
@@ -437,7 +446,7 @@ function PlayPageClient() {
     video.hls.destroy();
     video.hls = undefined;
     video.disableRemotePlayback = false;
-    const done = loadNativeSource(video, videoUrl, { at, resume }).then(
+    const done = loadNativeSource(video, nativeUrl, { at, resume }).then(
       (ok) => {
         if (ok) return true;
         airPlaySwitchRef.current = null;
@@ -628,7 +637,9 @@ function PlayPageClient() {
     ): Promise<SearchResult[]> => {
       try {
         const detailResponse = await fetch(
-          `/api/detail?source=${source}&id=${id}`
+          `/api/detail?source=${source}&id=${id}${
+            source === 'huangguo' ? '&hv=2' : ''
+          }`
         );
         if (!detailResponse.ok) {
           throw new Error('获取视频详情失败');
@@ -651,7 +662,7 @@ function PlayPageClient() {
       try {
         const searchUrl = `/api/search?q=${encodeURIComponent(
           query.trim()
-        )}&v=11`;
+        )}&v=12`;
         const response = await fetch(searchUrl, { cache: 'no-store' });
         if (!response.ok) {
           throw new Error('搜索失败');
@@ -748,19 +759,26 @@ function PlayPageClient() {
         const quickDetail = quick[0];
         if (quickDetail?.episodes?.length) {
           sourcesInfo = [quickDetail];
-          void fetchSourcesData(videoTitle || searchTitle, true).then(
-            (results) => {
-              if (results.length === 0) return;
-              const hasCurrent = results.some(
-                (source) =>
-                  String(source.source) === String(currentSource) &&
-                  String(source.id) === String(currentId)
-              );
-              setAvailableSources(
-                hasCurrent ? results : [quickDetail, ...results]
-              );
-            }
-          );
+          // 黄果不拿片名去全站搜索。同名结果会把选集换成另一部，切来切去还是那一条。
+          if (currentSource !== 'huangguo') {
+            void fetchSourcesData(videoTitle || searchTitle, true).then(
+              (results) => {
+                if (results.length === 0) return;
+                const hasCurrent = results.some(
+                  (source) =>
+                    String(source.source) === String(currentSource) &&
+                    String(source.id) === String(currentId)
+                );
+                setAvailableSources(
+                  hasCurrent ? results : [quickDetail, ...results]
+                );
+              }
+            );
+          }
+        } else if (currentSource === 'huangguo') {
+          setError('片库里暂时没有这一部');
+          setLoading(false);
+          return;
         }
       }
       if (sourcesInfo.length === 0) {
@@ -2435,10 +2453,22 @@ const FavoriteIcon = ({ filled }: { filled: boolean }) => {
   );
 };
 
+function PlayPageEntry() {
+  const searchParams = useSearchParams();
+  // 同一页只换查询参数时，播放器不会自己拆掉。换一部就整页重挂，上一集不会留在画面里。
+  const opened = [
+    searchParams.get('source') || '',
+    searchParams.get('id') || '',
+    searchParams.get('stitle') || '',
+    searchParams.get('title') || '',
+  ].join('\n');
+  return <PlayPageClient key={opened} />;
+}
+
 export default function PlayPage() {
   return (
     <Suspense fallback={<div>Loading...</div>}>
-      <PlayPageClient />
+      <PlayPageEntry />
     </Suspense>
   );
 }

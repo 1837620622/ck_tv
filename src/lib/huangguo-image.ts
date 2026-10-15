@@ -1,6 +1,7 @@
 import { decryptAes128Cbc } from '@/lib/aes-cbc';
 
-const COVER_HOST = 'pic.wirqed.cn';
+// 封面域名会换。只放行这两个，不接受接口里随便给的主机。
+const COVER_HOSTS = new Set(['pic.wirqed.cn', 'pic.drleao.cn']);
 
 function codedBytes(encoded: string): Uint8Array {
   return Uint8Array.from(encoded.split('_').map((part) => Number(part)));
@@ -79,7 +80,7 @@ export function decryptHuangguoCover(data: Uint8Array): Uint8Array | null {
 export function allowedCoverUrl(raw: string): string {
   try {
     const parsed = new URL(raw);
-    if (parsed.protocol === 'https:' && parsed.hostname === COVER_HOST) {
+    if (parsed.protocol === 'https:' && COVER_HOSTS.has(parsed.hostname)) {
       return parsed.toString();
     }
   } catch {

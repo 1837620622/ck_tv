@@ -17,6 +17,10 @@ import {
   castSupport,
   toAbsoluteUrl,
 } from '@/lib/cast-support';
+import {
+  freshHuangguoDirectUrl,
+  parseHuangguoPlaylist,
+} from '@/lib/huangguo-media';
 
 interface TVCastModalProps {
   isOpen: boolean;
@@ -239,8 +243,12 @@ export default function TVCastModal({
   })();
 
   const handleChromecast = async () => {
+    // 黄果的站内清单带着登录态，电视打不开。点投屏时再换一条刚签发的绝对地址。
+    const direct = parseHuangguoPlaylist(videoUrl)
+      ? await freshHuangguoDirectUrl(videoUrl)
+      : videoUrl;
     const plan = buildCastRequest({
-      url: videoUrl,
+      url: direct,
       title: videoTitle,
       // 封面可能是站内相对地址（如黄果封面接口），要补全成电视能访问的绝对地址
       poster: toAbsoluteUrl(videoPoster, window.location.href),

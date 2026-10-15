@@ -40,7 +40,7 @@ export async function GET(request: Request) {
     const id = searchParams.get('id') || '';
     const detailCacheUrl = `https://cktv-cache.local/huangguo-detail?id=${encodeURIComponent(
       id
-    )}&v=1`;
+    )}&v=2`;
     const detailHit = await readJsonCache(detailCacheUrl);
     if (detailHit) {
       return new NextResponse(await detailHit.text(), {
@@ -83,7 +83,7 @@ export async function GET(request: Request) {
   const query = (searchParams.get('q') || '').trim();
   const cacheUrl = `https://cktv-cache.local/huangguo?action=${action}&t=${encodeURIComponent(
     category
-  )}&q=${encodeURIComponent(query)}&page=${page}&v=1`;
+  )}&q=${encodeURIComponent(query)}&page=${page}&v=2`;
   const hit = await readJsonCache(cacheUrl);
   if (hit) {
     return new NextResponse(await hit.text(), {

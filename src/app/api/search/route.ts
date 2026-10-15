@@ -122,7 +122,7 @@ export async function GET(request: Request) {
   const slim = searchParams.get('slim') === '1';
   const cacheUrl = `https://cktv-cache.local/search?q=${encodeURIComponent(
     query
-  )}&line=${line}&slim=${slim ? '1' : '0'}&v=11`;
+  )}&line=${line}&slim=${slim ? '1' : '0'}&v=12`;
 
   const loadSites = async () =>
     (await getSearchApiSites(line)).filter((site) => !isAdultSource(site));

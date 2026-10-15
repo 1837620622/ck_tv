@@ -1,19 +1,15 @@
+import { allowedCoverUrl } from '@/lib/huangguo-image';
+import { huangguoPlaylistPath } from '@/lib/huangguo-media';
+import { fetchPublic, publicHttpUrl } from '@/lib/safe-url';
 import { isUnderageLabel } from '@/lib/yellow';
 
 const API = 'https://huangguoai.com';
-const COVER_HOST = 'pic.wirqed.cn';
+const MAX_PLAYLIST_BYTES = 1_000_000;
 
 function coverPath(url: string): string {
-  const clean = url.trim();
-  if (!clean) return '';
-  try {
-    const parsed = new URL(clean);
-    if (parsed.protocol !== 'https:' || parsed.hostname !== COVER_HOST)
-      return '';
-    return `/api/huangguo/cover?u=${encodeURIComponent(parsed.toString())}`;
-  } catch {
-    return '';
-  }
+  const allowed = allowedCoverUrl(url.trim());
+  if (!allowed) return '';
+  return `/api/huangguo/cover?u=${encodeURIComponent(allowed)}`;
 }
 
 const HEADERS = {
@@ -79,7 +75,7 @@ async function getJson(url: string, timeoutMs = 12000): Promise<unknown> {
     const response = await fetch(url, {
       headers: HEADERS,
       signal: controller.signal,
-      // 列表和详情 JSON 进 Cloudflare 子请求缓存。播放地址不走这里。
+      // 列表和详情可以缓存。播放地址签名只有几秒，不能走这里。
       cf: {
         cacheEverything: true,
         cacheTtl: 900,
@@ -154,67 +150,146 @@ export async function searchHuangguo(query: string, page: number) {
   return readPage(await getJson(url), pageNo);
 }
 
-async function playUrl(id: string, episode: number): Promise<string> {
-  try {
-    const data = (await getJson(
-      `${API}/api/videos/${id}/play?ep=${episode}`,
-      8000
-    )) as { data?: { video_url?: string }; video_url?: string };
-    const url = data?.data?.video_url || data?.video_url || '';
-    return typeof url === 'string' ? url : '';
-  } catch {
-    return '';
-  }
+function episodeNumbers(detail: HuangguoItem): number[] {
+  const episodes = Array.isArray(detail.episodes) ? detail.episodes : [];
+  const numbers = episodes
+    .map((episode) => Number(episode.ep_num || episode.episode || 0))
+    .filter((episode) => Number.isInteger(episode) && episode > 0);
+  if (numbers.length === 0 && detail.video_url) return [1];
+  return numbers;
 }
 
-async function mapPool<T, R>(
-  items: T[],
-  limit: number,
-  worker: (item: T) => Promise<R>
-): Promise<R[]> {
-  const output: R[] = new Array(items.length);
-  let cursor = 0;
-  const runners = Array.from(
-    { length: Math.min(limit, items.length) },
-    async () => {
-      while (cursor < items.length) {
-        const index = cursor;
-        cursor += 1;
-        output[index] = await worker(items[index]);
-      }
-    }
-  );
-  await Promise.all(runners);
-  return output;
-}
-
-export async function detailHuangguo(id: string) {
-  if (!/^\d+$/.test(id)) {
-    throw new Error('无效的视频ID');
-  }
+async function loadDetail(id: string): Promise<HuangguoItem | null> {
   const data = (await getJson(`${API}/api/videos/${id}`)) as {
     data?: HuangguoItem;
   };
   const detail = data?.data || {};
-  if (!detail.id || blocked(detail)) {
+  if (!detail.id || blocked(detail)) return null;
+  return detail;
+}
+
+// 播放接口的签名不能进缓存。响应里的密钥字段也不往外带。
+async function freshPlayUrl(id: string, episode: number): Promise<string> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetch(`${API}/api/videos/${id}/play?ep=${episode}`, {
+      headers: HEADERS,
+      signal: controller.signal,
+      cache: 'no-store',
+      cf: { cacheTtl: 0, cacheEverything: false },
+    } as RequestInit);
+    if (!response.ok) return '';
+    const data = (await response.json()) as {
+      data?: { video_url?: string };
+      video_url?: string;
+    };
+    const url = data?.data?.video_url || data?.video_url || '';
+    return typeof url === 'string' ? url : '';
+  } catch {
+    return '';
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function playlistUrl(raw: string): URL | null {
+  const parsed = publicHttpUrl(raw);
+  if (!parsed || parsed.protocol !== 'https:') return null;
+  if (!parsed.pathname.toLowerCase().endsWith('.m3u8')) return null;
+  return parsed;
+}
+
+export async function readHuangguoPlayTarget(
+  id: string,
+  episode: number
+): Promise<string> {
+  if (
+    !/^\d{1,12}$/.test(id) ||
+    !Number.isInteger(episode) ||
+    episode < 1 ||
+    episode > 9999
+  ) {
+    return '';
+  }
+  const detail = await loadDetail(id);
+  if (!detail || !episodeNumbers(detail).includes(episode)) return '';
+  const target = playlistUrl(await freshPlayUrl(id, episode));
+  return target ? target.toString() : '';
+}
+
+async function readPlaylistBody(
+  response: Response
+): Promise<Uint8Array | null> {
+  const declared = Number(response.headers.get('content-length') || 0);
+  if (declared > MAX_PLAYLIST_BYTES) return null;
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  if (bytes.byteLength === 0 || bytes.byteLength > MAX_PLAYLIST_BYTES) {
+    return null;
+  }
+  if (!startsWithPlaylist(bytes)) return null;
+  return bytes;
+}
+
+// 只认 #EXTM3U，允许前面有 BOM 和空白。不用 TextDecoder，测试环境和边缘运行时都一样。
+function startsWithPlaylist(bytes: Uint8Array): boolean {
+  let offset = 0;
+  if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) offset = 3;
+  while (
+    bytes[offset] === 0x20 ||
+    bytes[offset] === 0x09 ||
+    bytes[offset] === 0x0a ||
+    bytes[offset] === 0x0d
+  ) {
+    offset += 1;
+  }
+  const magic = [0x23, 0x45, 0x58, 0x54, 0x4d, 0x33, 0x55];
+  return magic.every((byte, index) => bytes[offset + index] === byte);
+}
+
+// 把刚拿到的清单原文交回播放器。分片地址留在清单里，不经过本站。
+export async function readHuangguoPlaylist(
+  id: string,
+  episode: number
+): Promise<Uint8Array | null> {
+  const target = playlistUrl(await readHuangguoPlayTarget(id, episode));
+  if (!target) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetchPublic(target, {
+      signal: controller.signal,
+      cache: 'no-store',
+      headers: {
+        Accept: 'application/vnd.apple.mpegurl,application/x-mpegURL,*/*',
+        Referer: 'https://huangguoai.com/',
+        'User-Agent': HEADERS['User-Agent'],
+      },
+      cf: { cacheTtl: 0, cacheEverything: false },
+    } as RequestInit);
+    if (!response || !response.ok) return null;
+    return await readPlaylistBody(response);
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function detailHuangguo(id: string) {
+  if (!/^\d{1,12}$/.test(id)) {
+    throw new Error('无效的视频ID');
+  }
+  const detail = await loadDetail(id);
+  if (!detail) {
     throw new Error('内容不可用');
   }
-  const episodes = Array.isArray(detail.episodes) ? detail.episodes : [];
-  const urls = (
-    await mapPool(episodes, 4, async (episode) => {
-      const number = Number(episode.ep_num || episode.episode || 0);
-      if (!number) return '';
-      return playUrl(id, number);
-    })
-  ).filter(Boolean);
-  if (urls.length === 0 && detail.video_url) {
-    urls.push(detail.video_url);
-  }
+  const numbers = episodeNumbers(detail);
   return {
     id,
     title: detail.title || id,
     poster: coverPath(detail.cover || ''),
-    episodes: urls,
+    episodes: numbers.map((episode) => huangguoPlaylistPath(id, episode)),
     source: 'huangguo',
     source_name: '黄果',
     class: tagText(detail),

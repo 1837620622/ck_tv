@@ -9,6 +9,7 @@ import React, {
   useState,
 } from 'react';
 
+import { parseHuangguoPlaylist } from '@/lib/huangguo-media';
 import { repairTitle } from '@/lib/match-title';
 import { playlistHeight, qualityText } from '@/lib/playlist';
 import { SearchResult } from '@/lib/types';
@@ -167,9 +168,15 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
         if (probedRef.current.has(key) || queued.has(key)) return;
         queued.add(key);
         const url = source.episodes?.find((item) => item.includes('.m3u8'));
-        // 分享页没有清单，标成源头不通，避免一直停在测速中。
-        if (url) jobs.push({ key, url });
-        else missed[key] = { ms: 0, height: 0, state: 'dead' };
+        // 黄果这条是打开时现取的清单入口，测速会把短时签名耗掉，也不代表源站快慢。
+        if (url && parseHuangguoPlaylist(url)) {
+          missed[key] = { ms: 0, height: 0, state: 'ok' };
+        } else if (url) {
+          jobs.push({ key, url });
+        } else {
+          // 分享页没有清单，标成源头不通，避免一直停在测速中。
+          missed[key] = { ms: 0, height: 0, state: 'dead' };
+        }
       });
       Object.keys(missed).forEach((key) => probedRef.current.add(key));
       if (Object.keys(missed).length > 0) {

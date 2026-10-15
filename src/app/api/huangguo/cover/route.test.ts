@@ -125,14 +125,29 @@ describe('GET /api/huangguo/cover', () => {
     expect(res.headers['Content-Type']).toBe('image/jpeg');
   });
 
-  it('follows a redirect that stays on the allowed host', async () => {
+  it('serves a cover from the current pic.drleao.cn host', async () => {
+    global.fetch = jest.fn(async () =>
+      upstream(200, jpegPlain())
+    ) as unknown as typeof fetch;
+    const drleao = `https://localhost/api/huangguo/cover?u=${encodeURIComponent(
+      'https://pic.drleao.cn/upload/a.jpg?auth_key=1'
+    )}`;
+    const res = (await GET(request(drleao))) as unknown as {
+      status: number;
+      headers: Record<string, string>;
+    };
+    expect(res.status).toBe(200);
+    expect(res.headers['Content-Type']).toBe('image/jpeg');
+  });
+
+  it('follows a redirect from the old cover host onto pic.drleao.cn', async () => {
     const redirect = {
       ok: false,
       status: 302,
       headers: {
         get: (name: string) =>
           name.toLowerCase() === 'location'
-            ? 'https://pic.wirqed.cn/cover/b.jpg'
+            ? 'https://pic.drleao.cn/upload/b.jpg?auth_key=1'
             : null,
       },
       body: null,
@@ -148,7 +163,7 @@ describe('GET /api/huangguo/cover', () => {
     };
     expect(res.status).toBe(200);
     expect(fetchMock.mock.calls[1][0]).toBe(
-      'https://pic.wirqed.cn/cover/b.jpg'
+      'https://pic.drleao.cn/upload/b.jpg?auth_key=1'
     );
   });
 
