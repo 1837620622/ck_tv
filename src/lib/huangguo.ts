@@ -168,7 +168,15 @@ async function loadDetail(id: string): Promise<HuangguoItem | null> {
   return detail;
 }
 
+// 最近一次播放地址失败原因。同一次请求里写完立刻读，不跨请求保存。
+let playWhy = '';
+
+export function huangguoPlayWhy(): string {
+  return playWhy;
+}
+
 // 播放接口的签名不能进缓存。响应里的密钥字段也不往外带。
+// 边缘运行时不要带 cache 模式：和 cf 一起用时，有的运行时会直接丢掉这次请求。
 async function freshPlayUrl(id: string, episode: number): Promise<string> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 8000);
@@ -176,17 +184,24 @@ async function freshPlayUrl(id: string, episode: number): Promise<string> {
     const response = await fetch(`${API}/api/videos/${id}/play?ep=${episode}`, {
       headers: HEADERS,
       signal: controller.signal,
-      cache: 'no-store',
       cf: { cacheTtl: 0, cacheEverything: false },
     } as RequestInit);
-    if (!response.ok) return '';
+    if (!response.ok) {
+      playWhy = `play-${response.status}`;
+      return '';
+    }
     const data = (await response.json()) as {
       data?: { video_url?: string };
       video_url?: string;
     };
     const url = data?.data?.video_url || data?.video_url || '';
-    return typeof url === 'string' ? url : '';
+    if (typeof url !== 'string' || !url) {
+      playWhy = 'play-empty';
+      return '';
+    }
+    return url;
   } catch {
+    playWhy = 'play-error';
     return '';
   } finally {
     clearTimeout(timer);
@@ -210,12 +225,34 @@ export async function readHuangguoPlayTarget(
     episode < 1 ||
     episode > 9999
   ) {
+    playWhy = 'bad-id';
     return '';
   }
-  const detail = await loadDetail(id);
-  if (!detail || !episodeNumbers(detail).includes(episode)) return '';
-  const target = playlistUrl(await freshPlayUrl(id, episode));
-  return target ? target.toString() : '';
+  playWhy = '';
+  let detail: HuangguoItem | null = null;
+  try {
+    detail = await loadDetail(id);
+  } catch {
+    playWhy = 'detail-error';
+    return '';
+  }
+  if (!detail) {
+    playWhy = 'detail-miss';
+    return '';
+  }
+  if (!episodeNumbers(detail).includes(episode)) {
+    playWhy = 'episode-miss';
+    return '';
+  }
+  const raw = await freshPlayUrl(id, episode);
+  if (!raw) return '';
+  const target = playlistUrl(raw);
+  if (!target) {
+    playWhy = 'bad-url';
+    return '';
+  }
+  playWhy = 'ok';
+  return target.toString();
 }
 
 async function readPlaylistBody(
@@ -259,7 +296,6 @@ export async function readHuangguoPlaylist(
   try {
     const response = await fetchPublic(target, {
       signal: controller.signal,
-      cache: 'no-store',
       headers: {
         Accept: 'application/vnd.apple.mpegurl,application/x-mpegURL,*/*',
         Referer: 'https://huangguoai.com/',
@@ -267,9 +303,15 @@ export async function readHuangguoPlaylist(
       },
       cf: { cacheTtl: 0, cacheEverything: false },
     } as RequestInit);
-    if (!response || !response.ok) return null;
-    return await readPlaylistBody(response);
+    if (!response || !response.ok) {
+      playWhy = response ? `list-${response.status}` : 'list-blocked';
+      return null;
+    }
+    const bytes = await readPlaylistBody(response);
+    if (!bytes) playWhy = 'list-body';
+    return bytes;
   } catch {
+    playWhy = 'list-error';
     return null;
   } finally {
     clearTimeout(timer);
