@@ -142,7 +142,7 @@ pnpm test
 
 ## 部署
 
-没有管理后台，配置靠环境变量和 `config.json`。
+没有管理后台，配置靠环境变量、`config.json` 和 `src/lib/gate-config.ts`。
 
 ### Cloudflare Pages
 
@@ -164,7 +164,6 @@ pnpm test
 
 | 变量                                            | 作用                                                    | 什么时候配                     |
 | ----------------------------------------------- | ------------------------------------------------------- | ------------------------------ |
-| `GATE_PASSWORD`、`GATE_SECRET`                  | 18+ 和 AI 黄果的口令与签名密钥，见「栏目口令」          | 要开这两个栏目时               |
 | `GATE_TRUST_COUNTRY_HEADER`                     | 设为 `true` 后读取 `CF-IPCountry`                       | 只限前面挂着 Cloudflare 的部署 |
 | `CRON_SECRET`                                   | `/api/cron` 的 Bearer 口令，没配时该接口一律 401        | 要定时刷新播放记录和收藏时     |
 | `NEXT_PUBLIC_STORAGE_TYPE`                      | `localstorage`（默认）、`d1`、`redis`、`upstash`        | 要把收藏和播放记录存到服务端时 |
@@ -194,30 +193,30 @@ Docker 部署由 `start.js` 自动调用，不需要外部定时器。
 
 ```bash
 docker build -t cktv .
-docker run -d -p 3000:3000 \
-  -e GATE_PASSWORD=你的口令 \
-  -e GATE_SECRET=至少32个字符的固定随机串 \
-  cktv
+docker run -d -p 3000:3000 cktv
 ```
 
 镜像用 Node 20 运行。`PORT` 默认 3000，`HOSTNAME` 默认 `0.0.0.0`。`CRON_SECRET` 没设时，`start.js` 生成一个只在本进程里有效的值，每小时调用一次 `/api/cron`，不用配。
 
-容器里拿不到 Cloudflare 的国家信息，18+ 和 AI 黄果默认关闭。确认前面挂着 Cloudflare 并且它会覆盖 `CF-IPCountry` 后，再加 `-e GATE_TRUST_COUNTRY_HEADER=true`。`GATE_SECRET` 要固定，每次启动都换会让已登录的 cookie 全部失效。
+容器里拿不到 Cloudflare 的国家信息，18+ 和 AI 黄果默认关闭。确认前面挂着 Cloudflare 并且它会覆盖 `CF-IPCountry` 后，再加 `-e GATE_TRUST_COUNTRY_HEADER=true`。
 
 Docker 默认是 `localstorage`。`NEXT_PUBLIC_` 开头的变量在 `docker build` 时就写进前端了，`docker run -e` 改不了它们。要换存储类型，得先在 Dockerfile 的构建阶段加上对应的 `ENV`，再重新构建。`d1` 只在 Cloudflare 上可用。
 
 ### 栏目口令
 
-18+ 和 AI 黄果只对国外网络开放，进入还要口令。口令和签名密钥只从环境变量读取，不写进代码。
+18+ 和 AI 黄果只对国外网络开放，进入还要口令。口令和签名密钥写在 `src/lib/gate-config.ts`，部署时不需要配置任何环境变量。
 
-| 变量                        | 说明                                                                                                                            |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `GATE_PASSWORD`             | 口令。不区分大小写，首尾空格忽略。                                                                                              |
-| `GATE_SECRET`               | 签 cookie 的密钥，至少 32 个字符，随机生成，例如 `openssl rand -hex 32`。                                                       |
-| `GATE_TRUST_COUNTRY_HEADER` | 默认不读 `CF-IPCountry`，因为访客自己也能带这个头。确认前面挂着 Cloudflare、且它会覆盖这个头时才设为 `true`。Pages 部署不用设。 |
+**仓库是公开的，所以口令等于公开。** 这是为了部署不用配变量做的取舍。门控仍然会检查国家，中国大陆、香港、澳门、台湾不能进入，但读代码的人能直接看到口令。
 
-- 任一项没配，两个栏目都关闭。`POST /api/gate` 返回 503，错误信息里写明缺哪一项。访问 `/api/gate` 也能看到 `problems` 数组，为空就是配好了。
-- cookie 有效 7 天，服务端每次请求都校验签名。换 `GATE_PASSWORD` 不会让已经通过的 cookie 失效；要让所有人重新输入，换一个 `GATE_SECRET`。
+| 位置                                     | 说明                                                                                                                            |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `gate-config.ts` 里的 `GATE_PASSWORD`    | 口令。不区分大小写，首尾空格忽略。                                                                                              |
+| `gate-config.ts` 里的 `GATE_SIGNING_KEY` | 签 cookie 的密钥，至少 32 个字符，不要和口令相同。                                                                              |
+| `GATE_TRUST_COUNTRY_HEADER`（环境变量）  | 默认不读 `CF-IPCountry`，因为访客自己也能带这个头。确认前面挂着 Cloudflare、且它会覆盖这个头时才设为 `true`。Pages 部署不用设。 |
+
+- 换口令：改 `GATE_PASSWORD`，提交并重新部署。已经通过的 cookie 在 7 天内仍然有效。
+- 换签名密钥：改 `GATE_SIGNING_KEY`，提交并重新部署。所有人都要重新输入口令。
+- cookie 有效 7 天，服务端每次请求都校验签名。
 - 同一个 IP 在 15 分钟内口令错 5 次，之后在这个窗口结束前不再接受尝试。计数只在单个实例里有效，正式环境还要在 Cloudflare 的限流规则里给 `POST /api/gate` 加一条。
 
 ## 边界

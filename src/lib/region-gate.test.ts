@@ -3,11 +3,11 @@
  */
 import { webcrypto } from 'node:crypto';
 
+import { GATE_PASSWORD, GATE_SIGNING_KEY } from './gate-config';
 import {
   countryOf,
   GATE_COOKIE,
   GATE_MAX_AGE_SECONDS,
-  gateConfigured,
   gateDenial,
   gateOpen,
   isForeignCountry,
@@ -21,8 +21,6 @@ Object.defineProperty(globalThis, 'crypto', {
   configurable: true,
 });
 
-const SECRET = 'a-random-secret-of-at-least-32-characters';
-const OTHER_SECRET = 'another-random-secret-of-32-characters-long';
 const T0 = 1_750_000_000_000;
 const PLATFORM = Symbol.for('__cloudflare-request-context__');
 
@@ -38,37 +36,27 @@ function requestOf({ cf, header, cookie }: Opts) {
   };
 }
 
-// 测试里签 cookie 时密钥一定已配置，拿不到说明测试环境有问题，直接报错
-async function tokenAt(now: number = Date.now()): Promise<string> {
-  const token = await issueGateCookie(now);
-  if (!token) throw new Error('gate secret is not configured in the test');
-  return token;
-}
+const savedTrust = process.env.GATE_TRUST_COUNTRY_HEADER;
 
-const saved = {
-  PASSWORD: process.env.GATE_PASSWORD,
-  SECRET: process.env.GATE_SECRET,
-  TRUST: process.env.GATE_TRUST_COUNTRY_HEADER,
-};
-
-function setEnv(
-  name: 'GATE_PASSWORD' | 'GATE_SECRET' | 'GATE_TRUST_COUNTRY_HEADER',
-  value: string | undefined
-) {
-  if (value === undefined) delete process.env[name];
-  else process.env[name] = value;
+function setTrust(value: string | undefined) {
+  if (value === undefined) delete process.env.GATE_TRUST_COUNTRY_HEADER;
+  else process.env.GATE_TRUST_COUNTRY_HEADER = value;
 }
 
 beforeEach(() => {
-  setEnv('GATE_PASSWORD', 'Open-Sesame');
-  setEnv('GATE_SECRET', SECRET);
-  setEnv('GATE_TRUST_COUNTRY_HEADER', undefined);
+  setTrust(undefined);
 });
 
 afterAll(() => {
-  setEnv('GATE_PASSWORD', saved.PASSWORD);
-  setEnv('GATE_SECRET', saved.SECRET);
-  setEnv('GATE_TRUST_COUNTRY_HEADER', saved.TRUST);
+  setTrust(savedTrust);
+});
+
+describe('built-in gate settings', () => {
+  it('has a password and a signing key that can be used', () => {
+    expect(GATE_PASSWORD.trim()).not.toBe('');
+    expect(GATE_SIGNING_KEY.length).toBeGreaterThanOrEqual(32);
+    expect(GATE_SIGNING_KEY).not.toBe(GATE_PASSWORD);
+  });
 });
 
 describe('country source', () => {
@@ -93,9 +81,9 @@ describe('country source', () => {
   });
 
   it('reads CF-IPCountry only when the deployment opts in', () => {
-    setEnv('GATE_TRUST_COUNTRY_HEADER', 'true');
+    setTrust('true');
     expect(countryOf(requestOf({ header: ' jp ' }))).toBe('JP');
-    setEnv('GATE_TRUST_COUNTRY_HEADER', 'yes');
+    setTrust('yes');
     expect(countryOf(requestOf({ header: 'JP' }))).toBe('');
   });
 });
@@ -118,37 +106,24 @@ describe('region rules', () => {
 });
 
 describe('password', () => {
-  it('never matches when GATE_PASSWORD is not set', async () => {
-    setEnv('GATE_PASSWORD', undefined);
+  it('matches the built-in password, ignoring case and spaces', async () => {
+    expect(await passwordMatches(GATE_PASSWORD)).toBe(true);
+    expect(await passwordMatches(`  ${GATE_PASSWORD.toUpperCase()}  `)).toBe(
+      true
+    );
+    expect(await passwordMatches(`${GATE_PASSWORD}x`)).toBe(false);
+    expect(await passwordMatches('chuankangkk')).toBe(false);
+  });
+
+  it('never matches an empty code', async () => {
     expect(await passwordMatches('')).toBe(false);
-    expect(await passwordMatches('chuankangkk')).toBe(false);
-  });
-
-  it('matches the configured password, ignoring case and spaces', async () => {
-    expect(await passwordMatches('open-sesame')).toBe(true);
-    expect(await passwordMatches('  OPEN-SESAME  ')).toBe(true);
-    expect(await passwordMatches('open-sesam')).toBe(false);
-    expect(await passwordMatches('chuankangkk')).toBe(false);
-  });
-
-  it('reports configured only when both password and secret are set', () => {
-    expect(gateConfigured()).toBe(true);
-    setEnv('GATE_SECRET', 'too-short');
-    expect(gateConfigured()).toBe(false);
-    setEnv('GATE_SECRET', SECRET);
-    setEnv('GATE_PASSWORD', undefined);
-    expect(gateConfigured()).toBe(false);
+    expect(await passwordMatches('   ')).toBe(false);
   });
 });
 
 describe('cookie', () => {
-  it('is not issued without a signing secret', async () => {
-    setEnv('GATE_SECRET', undefined);
-    expect(await issueGateCookie(T0)).toBeNull();
-  });
-
   it('opens a foreign request that carries a freshly issued cookie', async () => {
-    const token = await tokenAt(T0);
+    const token = await issueGateCookie(T0);
     expect(
       await gateOpen(requestOf({ cf: 'JP', cookie: token }), T0 + 60_000)
     ).toBe(true);
@@ -164,7 +139,7 @@ describe('cookie', () => {
   });
 
   it('expires after seven days on the server', async () => {
-    const token = await tokenAt(T0);
+    const token = await issueGateCookie(T0);
     const request = requestOf({ cf: 'JP', cookie: token });
     const maxMs = GATE_MAX_AGE_SECONDS * 1000;
     expect(await gateOpen(request, T0 + maxMs - 1000)).toBe(true);
@@ -172,31 +147,36 @@ describe('cookie', () => {
   });
 
   it('rejects an issue time edited to be later, since the signature covers it', async () => {
-    const token = await tokenAt(T0);
-    const [, mac] = token.split('.');
+    const token = await issueGateCookie(T0);
+    const mac = token.slice(token.indexOf('.') + 1);
     const forged = `${Math.floor(T0 / 1000) + 1000}.${mac}`;
     expect(
       await gateOpen(requestOf({ cf: 'JP', cookie: forged }), T0 + 1000 * 1000)
     ).toBe(false);
   });
 
-  it('rejects a cookie signed with a different secret', async () => {
-    const token = await tokenAt(T0);
-    setEnv('GATE_SECRET', OTHER_SECRET);
-    expect(await gateOpen(requestOf({ cf: 'JP', cookie: token }), T0)).toBe(
+  it('rejects a cookie whose signature was changed', async () => {
+    const token = await issueGateCookie(T0);
+    const dot = token.indexOf('.');
+    const mac = token.slice(dot + 1);
+    const last = mac.slice(-1);
+    const tampered = `${token.slice(0, dot)}.${mac.slice(0, -1)}${
+      last === '0' ? '1' : '0'
+    }`;
+    expect(await gateOpen(requestOf({ cf: 'JP', cookie: tampered }), T0)).toBe(
       false
     );
   });
 
   it('rejects a cookie that claims a time far in the future', async () => {
-    const token = await tokenAt(T0 + 10 * 60_000);
+    const token = await issueGateCookie(T0 + 10 * 60_000);
     expect(await gateOpen(requestOf({ cf: 'JP', cookie: token }), T0)).toBe(
       false
     );
   });
 
   it('keeps a valid cookie from opening a blocked region', async () => {
-    const token = await tokenAt(T0);
+    const token = await issueGateCookie(T0);
     const blocked = requestOf({ cf: 'CN', cookie: token });
     expect(await gateOpen(blocked, T0)).toBe(false);
     expect(await gateDenial(blocked)).toBe('region');
@@ -210,7 +190,7 @@ describe('cookie', () => {
   });
 
   it('lets a foreign request with a current cookie through', async () => {
-    const token = await tokenAt();
+    const token = await issueGateCookie();
     expect(await gateDenial(requestOf({ cf: 'JP', cookie: token }))).toBeNull();
   });
 });

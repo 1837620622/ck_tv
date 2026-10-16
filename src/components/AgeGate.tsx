@@ -23,7 +23,7 @@ export default function AgeGate({
 }) {
   const [code, setCode] = useState('');
   const [wrong, setWrong] = useState(false);
-  // 次数过多、或服务器还没配口令时，给出原因，不再统一显示成「口令不对」
+  // 次数过多时给出原因，不再统一显示成「口令不对」
   const [notice, setNotice] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -41,12 +41,6 @@ export default function AgeGate({
       });
       if (response.status === 429) {
         setNotice('尝试次数过多，请稍后再试');
-        return;
-      }
-      if (response.status === 503) {
-        // 服务器会说明缺的是哪一项，直接显示出来
-        const info = (await response.json()) as { error?: string };
-        setNotice(info.error || '站点还没有配置口令，暂时不能进入');
         return;
       }
       const data = (await response.json()) as { open?: boolean };
