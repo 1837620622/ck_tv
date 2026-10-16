@@ -283,6 +283,8 @@ function PlayPageClient() {
   // 倒计时蒙层挂在 ArtPlayer 自己的容器里，全屏时才会跟着显示
   const [overlayHost, setOverlayHost] = useState<HTMLElement | null>(null);
   const autoNextRef = useRef(true);
+  // 页面上「自动下一集」开关的显示状态。初始值固定为开，挂载后再读本机偏好，避免服务端和客户端渲染不一致
+  const [autoNextOn, setAutoNextOn] = useState(true);
   // 倒计时结束时调用最新的 handleNextEpisode，避免拿到旧闭包
   const nextRef = useRef<() => void>(() => undefined);
   // 睡眠定时：off / 15 / 30 / 60（分钟）/ episode（本集结束）
@@ -1067,6 +1069,48 @@ function PlayPageClient() {
     return () => window.clearTimeout(timer);
   }, [nextCountdown]);
 
+  // 挂载后读取上次的自动下一集设置（默认开启）
+  useEffect(() => {
+    const enabled = readAutoNext();
+    autoNextRef.current = enabled;
+    setAutoNextOn(enabled);
+  }, []);
+
+  // 自动下一集开关：和播放器设置菜单里的「自动连播」是同一个设置，两边保持一致
+  const setAutoNext = (
+    enabled: boolean,
+    options: { fromMenu?: boolean } = {}
+  ) => {
+    autoNextRef.current = enabled;
+    writeAutoNext(enabled);
+    setAutoNextOn(enabled);
+    if (!enabled) {
+      // 关掉时正在倒计时的话立即取消
+      setNextCountdown(null);
+    } else {
+      // 播完之后才打开：视频已经结束，这时不会再触发结束事件，直接开始倒计时。
+      // 睡眠定时选了「本集结束」时不切，和播完的处理保持一致。
+      const video = artPlayerRef.current?.video as HTMLVideoElement | undefined;
+      const d = detailRef.current;
+      const idx = currentEpisodeIndexRef.current;
+      if (
+        video?.ended &&
+        !sleepEndOfEpisodeRef.current &&
+        d &&
+        d.episodes &&
+        idx < d.episodes.length - 1
+      ) {
+        setNextCountdown(5);
+      }
+    }
+    // 从页面上切换时，同步播放器设置菜单里的开关。
+    // 找不到这一项时 update 会新增一个空菜单项，所以先确认它存在
+    const setting = artPlayerRef.current?.setting;
+    if (!options.fromMenu && setting?.find('自动连播')) {
+      setting.update({ name: '自动连播', switch: enabled });
+    }
+  };
+
   // ---------------------------------------------------------------------------
   // 键盘快捷键
   // ---------------------------------------------------------------------------
@@ -1760,9 +1804,8 @@ function PlayPageClient() {
             switch: autoNextRef.current,
             onSwitch: function (item: any) {
               const newVal = !item.switch;
-              autoNextRef.current = newVal;
-              writeAutoNext(newVal);
-              if (!newVal) setNextCountdown(null);
+              // 菜单自己已经切换了开关，这里不用再同步菜单
+              setAutoNext(newVal, { fromMenu: true });
               return newVal;
             },
           },
@@ -2191,17 +2234,42 @@ function PlayPageClient() {
         <div className='space-y-2'>
           {/* 控制栏：投屏按钮 + 折叠控制 */}
           <div className='flex items-center justify-between'>
-            {/* 投屏按钮 */}
-            <button
-              onClick={() => setIsTVCastModalOpen(true)}
-              className='flex items-center gap-1.5 border border-gray-300 px-3 py-1.5 text-xs text-gray-700 hover:border-green-600 hover:text-green-700 dark:border-gray-600 dark:text-gray-200'
-              title='电视投屏'
-            >
-              <svg className='w-4 h-4' viewBox='0 0 24 24' fill='currentColor'>
-                <path d='M1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11zm20-7H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z' />
-              </svg>
-              <span className='text-xs font-medium'>投屏</span>
-            </button>
+            <div className='flex items-center gap-2'>
+              {/* 投屏按钮 */}
+              <button
+                onClick={() => setIsTVCastModalOpen(true)}
+                className='flex items-center gap-1.5 border border-gray-300 px-3 py-1.5 text-xs text-gray-700 hover:border-green-600 hover:text-green-700 dark:border-gray-600 dark:text-gray-200'
+                title='电视投屏'
+              >
+                <svg
+                  className='w-4 h-4'
+                  viewBox='0 0 24 24'
+                  fill='currentColor'
+                >
+                  <path d='M1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11zm20-7H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z' />
+                </svg>
+                <span className='text-xs font-medium'>投屏</span>
+              </button>
+
+              {/* 自动下一集：播完自动播放下一集，倒计时 5 秒，期间可以取消 */}
+              <label
+                className='flex cursor-pointer items-center gap-2 border border-gray-300 px-3 py-1.5 text-xs text-gray-700 hover:border-green-600 dark:border-gray-600 dark:text-gray-200'
+                title='播完自动播放下一集（倒计时 5 秒，可取消）'
+              >
+                <span className='font-medium'>自动下一集</span>
+                <span className='relative inline-block'>
+                  <input
+                    type='checkbox'
+                    role='switch'
+                    className='peer sr-only'
+                    checked={autoNextOn}
+                    onChange={(e) => setAutoNext(e.target.checked)}
+                  />
+                  <span className='block h-4 w-8 rounded-full bg-gray-300 transition-colors peer-checked:bg-green-500 dark:bg-gray-600' />
+                  <span className='absolute left-0.5 top-0.5 h-3 w-3 rounded-full bg-white transition-transform peer-checked:translate-x-4' />
+                </span>
+              </label>
+            </div>
 
             {/* 折叠控制 - 仅在 lg 及以上屏幕显示 */}
             <button
