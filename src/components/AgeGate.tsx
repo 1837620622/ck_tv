@@ -44,7 +44,9 @@ export default function AgeGate({
         return;
       }
       if (response.status === 503) {
-        setNotice('站点还没有配置口令，暂时不能进入');
+        // 服务器会说明缺的是哪一项，直接显示出来
+        const info = (await response.json()) as { error?: string };
+        setNotice(info.error || '站点还没有配置口令，暂时不能进入');
         return;
       }
       const data = (await response.json()) as { open?: boolean };
