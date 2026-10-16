@@ -33,16 +33,16 @@ CKTV 由个人维护。域名、Pages 和接口巡检没有团队。用得顺手
 
 ## 技术栈
 
-| 层       | 选择                                                |
-| -------- | --------------------------------------------------- |
-| 界面     | Next.js 14 App Router，React 18，Tailwind CSS       |
-| 接口     | `src/app/api/*`，`export const runtime = 'edge'`    |
-| 托管     | Cloudflare Pages，`@cloudflare/next-on-pages`       |
-| 点播     | ArtPlayer，HLS 由 hls.js 或浏览器原生播放           |
-| 直播     | hls.js，固定清单优先，失败再向央视网页接口要新地址  |
-| 片源     | `config.json` 里的 Apple CMS，`api.php/provide/vod` |
-| 本机数据 | `localStorage`：收藏、进度、跳过片头片尾、代理开关  |
-| 包管理   | pnpm                                                |
+| 层       | 选择                                                                                                                         |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| 界面     | Next.js 14 App Router，React 18，Tailwind CSS                                                                                |
+| 接口     | `src/app/api/*`，`export const runtime = 'edge'`                                                                             |
+| 托管     | Cloudflare Pages，`@cloudflare/next-on-pages`                                                                                |
+| 点播     | ArtPlayer，HLS 由 hls.js 或浏览器原生播放                                                                                    |
+| 直播     | hls.js，固定清单优先，失败再向央视网页接口要新地址                                                                           |
+| 片源     | `config.json` 里的 Apple CMS，`api.php/provide/vod`                                                                          |
+| 个人数据 | 默认 `localStorage`：收藏、进度、跳过设置、代理开关。`NEXT_PUBLIC_STORAGE_TYPE` 设为 `d1`、`redis` 或 `upstash` 后存到服务端 |
+| 包管理   | pnpm                                                                                                                         |
 
 ## 请求怎么走
 
@@ -135,31 +135,90 @@ pnpm dev
 ```bash
 pnpm lint:strict
 pnpm typecheck
+pnpm test
 ```
+
+本地环境变量写在 `.env.local`，这个文件已经被 `.gitignore` 忽略。本地拿不到 Cloudflare 的国家信息，18+ 和 AI 黄果保持关闭，见「栏目口令」。
 
 ## 部署
 
-Cloudflare Pages 项目 `ck-tv`。生产域名 `tv.chuankangkk.top`，同时保留 `ck-tv.pages.dev`。
+没有管理后台，配置靠环境变量和 `config.json`。
 
-构建命令：
+### Cloudflare Pages
+
+项目名 `ck-tv`，生产域名 `tv.chuankangkk.top`，同时保留 `ck-tv.pages.dev`。
+
+| 项目         | 设置                                                                    |
+| ------------ | ----------------------------------------------------------------------- |
+| 构建命令     | `pnpm install --frozen-lockfile && pnpm run pages:build`                |
+| 构建输出目录 | `.vercel/output/static`                                                 |
+| 构建变量     | `NODE_VERSION` = `20`，和仓库里的 `.nvmrc` 一致                         |
+| 兼容性标志   | 生产和预览都开启 `nodejs_compat`，必需                                  |
+| D1 绑定      | 用 D1 存数据时添加，变量名 `DB`。建表语句见 [D1 初始化.md](D1初始化.md) |
+
+`pages:build` 依次执行 `gen:runtime`、`gen:manifest`、`next build` 和 `@cloudflare/next-on-pages`。输出目录名里的 `vercel` 是 next-on-pages 的中间格式。`vercel` 包只在本地构建时被调用，用来生成这个目录，部署不经过 Vercel。
+
+改了 `NEXT_PUBLIC_` 开头的变量，或者改了 Pages 环境变量，都要重新部署才生效。`NEXT_PUBLIC_` 的值在构建时写进前端代码。
+
+### 环境变量
+
+| 变量                                            | 作用                                                    | 什么时候配                     |
+| ----------------------------------------------- | ------------------------------------------------------- | ------------------------------ |
+| `GATE_PASSWORD`、`GATE_SECRET`                  | 18+ 和 AI 黄果的口令与签名密钥，见「栏目口令」          | 要开这两个栏目时               |
+| `GATE_TRUST_COUNTRY_HEADER`                     | 设为 `true` 后读取 `CF-IPCountry`                       | 只限前面挂着 Cloudflare 的部署 |
+| `CRON_SECRET`                                   | `/api/cron` 的 Bearer 口令，没配时该接口一律 401        | 要定时刷新播放记录和收藏时     |
+| `NEXT_PUBLIC_STORAGE_TYPE`                      | `localstorage`（默认）、`d1`、`redis`、`upstash`        | 要把收藏和播放记录存到服务端时 |
+| `REDIS_URL`                                     | Redis 连接地址                                          | `redis` 模式                   |
+| `UPSTASH_URL`、`UPSTASH_TOKEN`                  | Upstash 的 REST 地址和令牌                              | `upstash` 模式                 |
+| `CLOUDFLARE_ACCOUNT_ID`、`CLOUDFLARE_API_TOKEN` | 调用 Workers AI 生成字幕                                | 要用 AI 字幕时                 |
+| `SITE_NAME`                                     | 站点名称，默认 `CKTV-传康播放器`                        | 想改名字时                     |
+| `ANNOUNCEMENT`                                  | 公告文字                                                | 想发公告时                     |
+| `NEXT_PUBLIC_IMAGE_PROXY`                       | 图片代理地址。豆瓣图片不配也会走本站 `/api/image-proxy` | 可选                           |
+| `NEXT_PUBLIC_DOUBAN_PROXY`                      | 豆瓣数据请求的代理地址                                  | 可选                           |
+
+`d1` 模式需要 D1 绑定 `DB`，`redis` 和 `upstash` 模式需要对应的地址和令牌。
+
+### 定时刷新
+
+Pages 没有内置定时任务。用外部定时器（cron-job.org、GitHub Actions 等）每天请求一次：
 
 ```bash
-pnpm install --frozen-lockfile && pnpm run pages:build
+curl -H "Authorization: Bearer $CRON_SECRET" https://tv.chuankangkk.top/api/cron
 ```
 
-`pages:build` 依次执行 `gen:runtime`、`gen:manifest`、`next build`、`@cloudflare/next-on-pages`。输出目录是 `.vercel/output/static`。
+接口会回源重新取详情，集数变了就更新播放记录和收藏。`NEXT_PUBLIC_STORAGE_TYPE` 是 `localstorage` 时直接跳过。
 
-没有管理后台。`/admin` 返回 404。收藏和设置留在浏览器本地。
+Docker 部署由 `start.js` 自动调用，不需要外部定时器。
+
+### Docker
+
+```bash
+docker build -t cktv .
+docker run -d -p 3000:3000 \
+  -e GATE_PASSWORD=你的口令 \
+  -e GATE_SECRET=至少32个字符的固定随机串 \
+  cktv
+```
+
+镜像用 Node 20 运行。`PORT` 默认 3000，`HOSTNAME` 默认 `0.0.0.0`。`CRON_SECRET` 没设时，`start.js` 生成一个只在本进程里有效的值，每小时调用一次 `/api/cron`，不用配。
+
+容器里拿不到 Cloudflare 的国家信息，18+ 和 AI 黄果默认关闭。确认前面挂着 Cloudflare 并且它会覆盖 `CF-IPCountry` 后，再加 `-e GATE_TRUST_COUNTRY_HEADER=true`。`GATE_SECRET` 要固定，每次启动都换会让已登录的 cookie 全部失效。
+
+Docker 默认是 `localstorage`。`NEXT_PUBLIC_` 开头的变量在 `docker build` 时就写进前端了，`docker run -e` 改不了它们。要换存储类型，得先在 Dockerfile 的构建阶段加上对应的 `ENV`，再重新构建。`d1` 只在 Cloudflare 上可用。
 
 ### 栏目口令
 
-| 变量                        | 说明                                                                                   |
-| --------------------------- | -------------------------------------------------------------------------------------- |
-| `GATE_PASSWORD`             | 18+ 和 AI 黄果的口令。只从环境变量读取，不写进代码。                                   |
-| `GATE_SECRET`               | 签名 cookie 的密钥，至少 32 个字符，随机生成，例如 `openssl rand -hex 32`。            |
-| `GATE_TRUST_COUNTRY_HEADER` | 只在前面挂着 Cloudflare、并且它会覆盖 `CF-IPCountry` 时设为 `true`。Pages 部署不需要。 |
+18+ 和 AI 黄果只对国外网络开放，进入还要口令。口令和签名密钥只从环境变量读取，不写进代码。
 
-`GATE_PASSWORD` 或 `GATE_SECRET` 没配，这两个栏目一律关闭，接口返回 503。cookie 有效 7 天，服务端每次校验签名。改口令不会让已登录的 cookie 失效，要让所有人重新输入，换一个 `GATE_SECRET`。连续 5 次口令错误后，同一个 IP 要等 15 分钟。计数只在单个实例里有效，正式环境还要在 Cloudflare 上给 `POST /api/gate` 加一条限流规则。
+| 变量                        | 说明                                                                                                                            |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `GATE_PASSWORD`             | 口令。不区分大小写，首尾空格忽略。                                                                                              |
+| `GATE_SECRET`               | 签 cookie 的密钥，至少 32 个字符，随机生成，例如 `openssl rand -hex 32`。                                                       |
+| `GATE_TRUST_COUNTRY_HEADER` | 默认不读 `CF-IPCountry`，因为访客自己也能带这个头。确认前面挂着 Cloudflare、且它会覆盖这个头时才设为 `true`。Pages 部署不用设。 |
+
+- 任一项没配，两个栏目都关闭。`POST /api/gate` 返回 503，错误信息里写明缺哪一项。访问 `/api/gate` 也能看到 `problems` 数组，为空就是配好了。
+- cookie 有效 7 天，服务端每次请求都校验签名。换 `GATE_PASSWORD` 不会让已经通过的 cookie 失效；要让所有人重新输入，换一个 `GATE_SECRET`。
+- 同一个 IP 在 15 分钟内口令错 5 次，之后在这个窗口结束前不再接受尝试。计数只在单个实例里有效，正式环境还要在 Cloudflare 的限流规则里给 `POST /api/gate` 加一条。
 
 ## 边界
 
