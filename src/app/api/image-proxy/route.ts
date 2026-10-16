@@ -143,7 +143,6 @@ export async function GET(request: Request) {
       'public, max-age=15720000, s-maxage=15720000'
     );
     resHeaders.set('CDN-Cache-Control', 'public, s-maxage=15720000');
-    resHeaders.set('Vercel-CDN-Cache-Control', 'public, s-maxage=15720000');
     resHeaders.set('x-ck-cache', 'MISS');
 
     // 读取时同样限制大小，超限或长时间没有新数据就中断
