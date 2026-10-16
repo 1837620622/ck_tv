@@ -1385,6 +1385,9 @@ function PlayPageClient() {
         autoNextRef.current = enabled;
         writeAutoNext(enabled);
         autoNextSetting.switch = enabled;
+        // 控制栏切换时也要把菜单里的「自动连播」图标改过来；菜单项是 ArtPlayer 持有的对象，要改它本身
+        const menuItem = artPlayerRef.current?.setting?.find('自动连播');
+        if (menuItem) menuItem.switch = enabled;
         paintAutoNext(enabled);
       };
       Artplayer.PLAYBACK_RATE = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
