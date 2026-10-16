@@ -72,7 +72,7 @@ function clampTime(value: number): number {
   return Number.isFinite(value) && value > 0 ? value : 0;
 }
 
-// 只接受电视能直接访问的绝对地址；站内代理地址（相对路径）带着登录 Cookie，电视没有。
+// 只接受电视能直接访问的绝对地址。相对路径电视打不开。
 export function buildCastRequest(
   input: CastRequestInput
 ): CastRequestPlan | null {

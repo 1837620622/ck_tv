@@ -36,7 +36,7 @@ require('./server.js');
 // 每 1 秒轮询一次，直到请求成功
 const TARGET_URL = `http://${process.env.HOSTNAME || 'localhost'}:${
   process.env.PORT || 3000
-}/login`;
+}/`;
 
 const intervalId = setInterval(() => {
   console.log(`Fetching ${TARGET_URL} ...`);

@@ -2,7 +2,7 @@
 
 'use client';
 
-import { LogOut, Settings, User, X } from 'lucide-react';
+import { Settings, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -115,18 +115,6 @@ export const UserMenu: React.FC = () => {
 
   const handleCloseMenu = () => {
     setIsOpen(false);
-  };
-
-  const handleLogout = async () => {
-    try {
-      await fetch('/api/logout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      });
-    } catch (error) {
-      console.error('注销请求失败:', error);
-    }
-    window.location.href = '/';
   };
 
   const handleSettings = () => {
@@ -242,18 +230,6 @@ export const UserMenu: React.FC = () => {
           >
             <Settings className='w-4 h-4 text-gray-500 dark:text-gray-400' />
             <span className='font-medium'>设置</span>
-          </button>
-
-          {/* 分割线 */}
-          <div className='my-1 border-t border-gray-200 dark:border-gray-700'></div>
-
-          {/* 登出按钮 */}
-          <button
-            onClick={handleLogout}
-            className='w-full px-3 py-2 text-left flex items-center gap-2.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-sm'
-          >
-            <LogOut className='w-4 h-4' />
-            <span className='font-medium'>登出</span>
           </button>
 
           {/* 分割线 */}
@@ -517,9 +493,9 @@ export const UserMenu: React.FC = () => {
         <button
           onClick={handleMenuClick}
           className='w-10 h-10 p-2 rounded-full flex items-center justify-center text-gray-600 hover:bg-gray-200/50 dark:text-gray-300 dark:hover:bg-gray-700/50 transition-colors'
-          aria-label='User Menu'
+          aria-label='设置'
         >
-          <User className='w-full h-full' />
+          <Settings className='w-full h-full' />
         </button>
         {updateStatus === UpdateStatus.HAS_UPDATE && (
           <div className='absolute top-[2px] right-[2px] w-2 h-2 bg-yellow-500 rounded-full'></div>

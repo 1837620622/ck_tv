@@ -2,7 +2,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
-import { getAuthInfoFromCookie, LOCAL_AUTH_SUBJECT } from '@/lib/auth';
+import { LOCAL_AUTH_SUBJECT } from '@/lib/auth';
 import { DEFAULT_JSON_BODY_BYTES, readJsonBody } from '@/lib/body';
 import { db, hasServerStorage } from '@/lib/db';
 
@@ -15,18 +15,13 @@ const HISTORY_LIMIT = 20;
  * GET /api/searchhistory
  * 返回 string[]
  */
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
-    // 从 cookie 获取用户信息
     if (!hasServerStorage()) {
       return NextResponse.json(
         { error: '本地存储模式不提供服务端数据接口' },
         { status: 400 }
       );
-    }
-    const authInfo = getAuthInfoFromCookie(request);
-    if (!authInfo) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const history = await db.getSearchHistory(LOCAL_AUTH_SUBJECT);
@@ -46,16 +41,11 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   try {
-    // 从 cookie 获取用户信息
     if (!hasServerStorage()) {
       return NextResponse.json(
         { error: '本地存储模式不提供服务端数据接口' },
         { status: 400 }
       );
-    }
-    const authInfo = getAuthInfoFromCookie(request);
-    if (!authInfo) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const parsed = await readJsonBody(request, DEFAULT_JSON_BODY_BYTES);
@@ -98,16 +88,11 @@ export async function POST(request: NextRequest) {
  */
 export async function DELETE(request: NextRequest) {
   try {
-    // 从 cookie 获取用户信息
     if (!hasServerStorage()) {
       return NextResponse.json(
         { error: '本地存储模式不提供服务端数据接口' },
         { status: 400 }
       );
-    }
-    const authInfo = getAuthInfoFromCookie(request);
-    if (!authInfo) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const { searchParams } = new URL(request.url);

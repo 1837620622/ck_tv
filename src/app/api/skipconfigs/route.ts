@@ -2,7 +2,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
-import { getAuthInfoFromCookie, LOCAL_AUTH_SUBJECT } from '@/lib/auth';
+import { LOCAL_AUTH_SUBJECT } from '@/lib/auth';
 import { DEFAULT_JSON_BODY_BYTES, readJsonBody } from '@/lib/body';
 import { db, hasServerStorage } from '@/lib/db';
 import { SkipConfig } from '@/lib/types';
@@ -17,11 +17,6 @@ export async function GET(request: NextRequest) {
         { status: 400 }
       );
     }
-    const authInfo = getAuthInfoFromCookie(request);
-    if (!authInfo) {
-      return NextResponse.json({ error: '未登录' }, { status: 401 });
-    }
-
     const { searchParams } = new URL(request.url);
     const source = searchParams.get('source');
     const id = searchParams.get('id');
@@ -52,11 +47,6 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-    const authInfo = getAuthInfoFromCookie(request);
-    if (!authInfo) {
-      return NextResponse.json({ error: '未登录' }, { status: 401 });
-    }
-
     const parsed = await readJsonBody(request, DEFAULT_JSON_BODY_BYTES);
     if (!parsed.ok) {
       return NextResponse.json(
@@ -106,11 +96,6 @@ export async function DELETE(request: NextRequest) {
         { status: 400 }
       );
     }
-    const authInfo = getAuthInfoFromCookie(request);
-    if (!authInfo) {
-      return NextResponse.json({ error: '未登录' }, { status: 401 });
-    }
-
     const { searchParams } = new URL(request.url);
     const key = searchParams.get('key');
 

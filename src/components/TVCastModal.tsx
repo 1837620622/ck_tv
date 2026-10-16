@@ -243,7 +243,7 @@ export default function TVCastModal({
   })();
 
   const handleChromecast = async () => {
-    // 黄果的站内清单带着登录态，电视打不开。点投屏时再换一条刚签发的绝对地址。
+    // 黄果的站内清单是相对地址，电视打不开。点投屏时再换一条刚签发的绝对地址。
     const direct = parseHuangguoPlaylist(videoUrl)
       ? await freshHuangguoDirectUrl(videoUrl)
       : videoUrl;

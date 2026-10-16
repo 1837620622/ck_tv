@@ -14,7 +14,7 @@
  * 如后续需要在客户端读取收藏等其它数据，可按同样方式在此文件中补充实现。
  */
 
-import { getAuthInfoFromBrowserCookie, LOCAL_AUTH_SUBJECT } from './auth';
+import { LOCAL_AUTH_SUBJECT } from './auth';
 import { SkipConfig } from './types';
 
 // 全局错误触发函数
@@ -108,10 +108,10 @@ class HybridCacheManager {
   }
 
   /**
-   * 获取当前分区名：站点只有一个口令，登录后固定为 LOCAL_AUTH_SUBJECT
+   * 站点没有账号。服务端存储模式共用这一个分区。
    */
-  private getCurrentUsername(): string | null {
-    return getAuthInfoFromBrowserCookie() ? LOCAL_AUTH_SUBJECT : null;
+  private getCurrentUsername(): string {
+    return LOCAL_AUTH_SUBJECT;
   }
 
   /**
@@ -403,7 +403,7 @@ if (typeof window !== 'undefined') {
 
 // ---- 工具函数 ----
 /**
- * 通用的 fetch 函数，处理 401 状态码自动跳转登录
+ * 带状态检查的 fetch。失败时抛出，不跳转页面。
  */
 async function fetchWithAuth(
   url: string,
@@ -411,14 +411,6 @@ async function fetchWithAuth(
 ): Promise<Response> {
   const res = await fetch(url, options);
   if (!res.ok) {
-    // 如果是 401 未授权，跳转到登录页面
-    if (res.status === 401) {
-      const currentUrl = window.location.pathname + window.location.search;
-      const loginUrl = new URL('/login', window.location.origin);
-      loginUrl.searchParams.set('redirect', currentUrl);
-      window.location.href = loginUrl.toString();
-      throw new Error('用户未授权，已跳转到登录页面');
-    }
     throw new Error(`请求 ${url} 失败: ${res.status}`);
   }
   return res;
@@ -1264,13 +1256,12 @@ export function getCacheStatus(): {
     };
   }
 
-  const authInfo = getAuthInfoFromBrowserCookie();
   return {
     hasPlayRecords: !!cacheManager.getCachedPlayRecords(),
     hasFavorites: !!cacheManager.getCachedFavorites(),
     hasSearchHistory: !!cacheManager.getCachedSearchHistory(),
     hasSkipConfigs: !!cacheManager.getCachedSkipConfigs(),
-    username: authInfo ? LOCAL_AUTH_SUBJECT : null,
+    username: LOCAL_AUTH_SUBJECT,
   };
 }
 
