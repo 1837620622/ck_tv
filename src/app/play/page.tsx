@@ -7,7 +7,6 @@ import Hls from 'hls.js';
 import { Heart } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 
 import {
   isAirPlaying,
@@ -278,13 +277,7 @@ function PlayPageClient() {
   // 离开页面时 DOM ref 已经空了，播放中的节点要另外留住。
   const playingNodeRef = useRef<HTMLVideoElement | null>(null);
   const artRef = useRef<HTMLDivElement | null>(null);
-  // 自动连播倒计时（秒）；null 表示没有在倒计时
-  const [nextCountdown, setNextCountdown] = useState<number | null>(null);
-  // 倒计时蒙层挂在 ArtPlayer 自己的容器里，全屏时才会跟着显示
-  const [overlayHost, setOverlayHost] = useState<HTMLElement | null>(null);
   const autoNextRef = useRef(true);
-  // 倒计时结束时调用最新的 handleNextEpisode，避免拿到旧闭包
-  const nextRef = useRef<() => void>(() => undefined);
   // 睡眠定时：off / 15 / 30 / 60（分钟）/ episode（本集结束）
   const sleepTimerRef = useRef<number>(0);
   const sleepEndOfEpisodeRef = useRef(false);
@@ -308,8 +301,6 @@ function PlayPageClient() {
       sleepTimerRef.current = window.setTimeout(() => {
         sleepTimerRef.current = 0;
         sleepChoiceRef.current = 'off';
-        // 定时到了就不再自动连播
-        setNextCountdown(null);
         // 离开页面后画中画里的视频也要能被暂停，所以两边都试
         const player = artPlayerRef.current;
         const video =
@@ -1030,8 +1021,6 @@ function PlayPageClient() {
   // ---------------------------------------------------------------------------
   // 处理集数切换
   const handleEpisodeChange = (episodeNumber: number) => {
-    // 手动换集后，倒计时要作废，否则会再切走一集
-    setNextCountdown(null);
     if (episodeNumber >= 0 && episodeNumber < totalEpisodes) {
       // 在更换集数前保存当前播放进度（播放中或暂停中都要存）
       saveCurrentPlayProgress();
@@ -1040,7 +1029,6 @@ function PlayPageClient() {
   };
 
   const handlePreviousEpisode = () => {
-    setNextCountdown(null);
     const d = detailRef.current;
     const idx = currentEpisodeIndexRef.current;
     if (d && d.episodes && idx > 0) {
@@ -1050,7 +1038,6 @@ function PlayPageClient() {
   };
 
   const handleNextEpisode = () => {
-    setNextCountdown(null);
     const d = detailRef.current;
     const idx = currentEpisodeIndexRef.current;
     if (d && d.episodes && idx < d.episodes.length - 1) {
@@ -1058,24 +1045,6 @@ function PlayPageClient() {
       setCurrentEpisodeIndex(idx + 1);
     }
   };
-
-  // 每次渲染都更新，倒计时结束时调到的是最新的「下一集」
-  nextRef.current = handleNextEpisode;
-
-  // 自动连播倒计时：每秒减一，到 0 切到下一集
-  useEffect(() => {
-    if (nextCountdown === null) return;
-    if (nextCountdown <= 0) {
-      setNextCountdown(null);
-      nextRef.current();
-      return;
-    }
-    const timer = window.setTimeout(
-      () => setNextCountdown(nextCountdown - 1),
-      1000
-    );
-    return () => window.clearTimeout(timer);
-  }, [nextCountdown]);
 
   // ---------------------------------------------------------------------------
   // 键盘快捷键
@@ -1415,7 +1384,6 @@ function PlayPageClient() {
       const applyAutoNext = (enabled: boolean) => {
         autoNextRef.current = enabled;
         writeAutoNext(enabled);
-        if (!enabled) setNextCountdown(null);
         autoNextSetting.switch = enabled;
         paintAutoNext(enabled);
       };
@@ -1993,16 +1961,8 @@ function PlayPageClient() {
         failOverRef.current();
       });
 
-      setOverlayHost(
-        (artRef.current?.querySelector(
-          '.art-video-player'
-        ) as HTMLElement | null) ?? null
-      );
-
       // 播放与暂停：同步锁屏状态，并在播放时保持屏幕常亮
       artPlayerRef.current.on('video:play', () => {
-        // 倒计时期间用户又按了播放，就是不想切集了
-        setNextCountdown(null);
         setMediaPlaybackState('playing');
         wakeLockRef.current?.enable();
       });
@@ -2303,40 +2263,6 @@ function PlayPageClient() {
                   ref={artRef}
                   className='bg-black w-full h-full rounded-xl overflow-hidden shadow-lg'
                 ></div>
-
-                {nextCountdown !== null &&
-                  overlayHost &&
-                  createPortal(
-                    <div className='absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 rounded-xl bg-black/75 px-6 text-center text-white'>
-                      <p className='text-base sm:text-lg'>
-                        {nextCountdown} 秒后播放下一集
-                        {detail?.episodes &&
-                        currentEpisodeIndex + 1 < detail.episodes.length
-                          ? '（第 ' + (currentEpisodeIndex + 2) + ' 集）'
-                          : ''}
-                      </p>
-                      <div className='flex gap-3'>
-                        <button
-                          type='button'
-                          onClick={() => {
-                            setNextCountdown(null);
-                            handleNextEpisode();
-                          }}
-                          className='rounded-lg bg-green-600 px-4 py-2 text-sm font-medium hover:bg-green-500'
-                        >
-                          立即播放
-                        </button>
-                        <button
-                          type='button'
-                          onClick={() => setNextCountdown(null)}
-                          className='rounded-lg bg-white/15 px-4 py-2 text-sm font-medium hover:bg-white/25'
-                        >
-                          取消
-                        </button>
-                      </div>
-                    </div>,
-                    overlayHost
-                  )}
 
                 {/* Cloudflare AI 字幕 */}
                 <CloudflareAISubtitle

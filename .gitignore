@@ -42,6 +42,7 @@ sitemap-*.xml
 
 # generated files
 src/lib/runtime.ts
+api-test-report.json
 public/manifest.json
 public/sw.js
 public/workbox-*.js
