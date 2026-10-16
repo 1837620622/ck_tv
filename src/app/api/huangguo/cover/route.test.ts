@@ -28,6 +28,8 @@ jest.mock('@/lib/edge-cache', () => ({
   writeCached: jest.fn(),
 }));
 
+import { GATE_COOKIE, GATE_TOKEN } from '@/lib/region-gate';
+
 import { GET } from './route';
 
 // jsdom 测试环境没有 Response；路由在边缘运行时用它写缓存，这里只需要能构造
@@ -83,7 +85,14 @@ function upstream(status: number, bytes: Buffer) {
   };
 }
 
-const request = (url: string) => ({ url } as unknown as Request);
+const request = (url: string) =>
+  ({
+    url,
+    headers: new Headers({
+      'cf-ipcountry': 'JP',
+      cookie: `${GATE_COOKIE}=${GATE_TOKEN}`,
+    }),
+  } as unknown as Request);
 const coverUrl = `https://localhost/api/huangguo/cover?u=${encodeURIComponent(
   TARGET
 )}`;

@@ -631,6 +631,7 @@ function PlayPageClient() {
 
   // 进入页面时直接获取全部源信息
   useEffect(() => {
+    let blocked = false;
     const fetchSourceDetail = async (
       source: string,
       id: string
@@ -641,6 +642,10 @@ function PlayPageClient() {
             source === 'huangguo' ? '&hv=2' : ''
           }`
         );
+        if (detailResponse.status === 403) {
+          blocked = true;
+          return [];
+        }
         if (!detailResponse.ok) {
           throw new Error('获取视频详情失败');
         }
@@ -756,6 +761,11 @@ function PlayPageClient() {
       if (currentSource && currentId) {
         userChoseRef.current = true;
         const quick = await fetchSourceDetail(currentSource, currentId);
+        if (blocked) {
+          setError('禁止国内访问。中国大陆、香港、台湾不能进入。');
+          setLoading(false);
+          return;
+        }
         const quickDetail = quick[0];
         if (quickDetail?.episodes?.length) {
           sourcesInfo = [quickDetail];

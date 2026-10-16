@@ -31,6 +31,7 @@ import {
 } from 'react';
 
 import { useSite } from './SiteProvider';
+import { isRestrictedColumn, useForeignColumns } from './useForeignColumns';
 
 interface SidebarContextType {
   isCollapsed: boolean;
@@ -73,6 +74,7 @@ const Sidebar = ({ onToggle, activePath = '/' }: SidebarProps) => {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const foreignColumns = useForeignColumns();
   // 若同一次 SPA 会话中已经读取过折叠状态，则直接复用，避免闪烁
   const [isCollapsed, setIsCollapsed] = useState<boolean>(() => {
     if (
@@ -290,6 +292,9 @@ const Sidebar = ({ onToggle, activePath = '/' }: SidebarProps) => {
             <div className='sidebar-scroll flex-1 overflow-y-auto px-2 pt-4'>
               <div className='space-y-1'>
                 {menuItems.map((item) => {
+                  if (!foreignColumns && isRestrictedColumn(item.href)) {
+                    return null;
+                  }
                   // 检查当前路径是否匹配这个菜单项
                   const typeMatch = item.href.match(/type=([^&]+)/)?.[1];
                   const subMatch = item.href.match(/sub=([^&]+)/)?.[1];

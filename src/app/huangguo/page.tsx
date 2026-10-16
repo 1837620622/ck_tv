@@ -8,7 +8,7 @@ import { Suspense, useEffect, useRef, useState } from 'react';
 import { HUANGGUO_CATEGORIES } from '@/lib/huangguo';
 import { isUnderageLabel } from '@/lib/yellow';
 
-import AgeGate, { AgeNotice, readAgeGate } from '@/components/AgeGate';
+import AgeGate, { AgeNotice } from '@/components/AgeGate';
 import { choiceClass } from '@/components/ChoiceRow';
 import PageLayout from '@/components/PageLayout';
 import PagePager from '@/components/PagePager';
@@ -36,6 +36,7 @@ function scrollPageTop() {
 
 function HuangguoClient() {
   const [ready, setReady] = useState(false);
+  const [foreign, setForeign] = useState(false);
   const [unlocked, setUnlocked] = useState(false);
   const [category, setCategory] = useState('hot');
   const [videos, setVideos] = useState<CardItem[]>([]);
@@ -49,8 +50,25 @@ function HuangguoClient() {
   const pageCountRef = useRef(1);
 
   useEffect(() => {
-    setUnlocked(readAgeGate());
-    setReady(true);
+    let gone = false;
+    fetch('/api/gate', { cache: 'no-store' })
+      .then((response) => response.json())
+      .then((data: { foreign?: boolean; open?: boolean }) => {
+        if (gone) return;
+        setForeign(data.foreign === true);
+        setUnlocked(data.open === true);
+      })
+      .catch(() => {
+        if (gone) return;
+        setForeign(false);
+        setUnlocked(false);
+      })
+      .finally(() => {
+        if (!gone) setReady(true);
+      });
+    return () => {
+      gone = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -123,7 +141,11 @@ function HuangguoClient() {
     <PageLayout activePath='/huangguo'>
       {!ready ? <div className='min-h-svh' /> : null}
       {ready && !unlocked ? (
-        <AgeGate title='AI黄果' onUnlock={() => setUnlocked(true)} />
+        <AgeGate
+          title='AI黄果'
+          foreign={foreign}
+          onUnlock={() => setUnlocked(true)}
+        />
       ) : null}
       {ready && unlocked ? (
         <div className='min-h-svh max-w-full overflow-x-hidden px-3 py-4 pb-8 sm:px-10 sm:py-8'>

@@ -11,6 +11,13 @@ jest.mock('next/server', () => ({
       this.status = init?.status ?? 200;
       this.headers = init?.headers ?? {};
     }
+
+    static json(
+      body: unknown,
+      init?: { status?: number; headers?: Record<string, string> }
+    ) {
+      return new this(JSON.stringify(body), init);
+    }
   },
 }));
 
@@ -33,12 +40,20 @@ jest.mock('@/lib/huangguo-socket', () => ({
 }));
 
 import { readHuangguoPlaylist } from '@/lib/huangguo-socket';
+import { GATE_COOKIE, GATE_TOKEN } from '@/lib/region-gate';
 
 import { GET } from './route';
 
 const playlistMock = readHuangguoPlaylist as unknown as jest.Mock;
 
-const request = (url: string) => ({ url } as unknown as Request);
+const request = (url: string) =>
+  ({
+    url,
+    headers: new Headers({
+      'cf-ipcountry': 'JP',
+      cookie: `${GATE_COOKIE}=${GATE_TOKEN}`,
+    }),
+  } as unknown as Request);
 const playlist = (query: string) =>
   request(`https://localhost/api/huangguo/media/playlist.m3u8?${query}`);
 
@@ -117,6 +132,22 @@ describe('GET /api/huangguo/media/playlist.m3u8', () => {
     expect(playlistMock).toHaveBeenCalledTimes(2);
   });
 
+  it('rejects mainland China, Hong Kong, and Taiwan before opening a playlist', async () => {
+    global.fetch = jest.fn() as unknown as typeof fetch;
+    for (const country of ['CN', 'HK', 'TW']) {
+      const res = (await GET({
+        url: 'https://localhost/api/huangguo/media/playlist.m3u8?id=12&ep=1',
+        headers: new Headers({
+          'cf-ipcountry': country,
+          cookie: `${GATE_COOKIE}=${GATE_TOKEN}`,
+        }),
+      } as unknown as Request)) as unknown as { status: number };
+      expect(res.status).toBe(403);
+    }
+    expect(playlistMock).not.toHaveBeenCalled();
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
   it('returns only the absolute url when format=url', async () => {
     global.fetch = jest
       .fn()
@@ -135,7 +166,7 @@ describe('GET /api/huangguo/media/playlist.m3u8', () => {
       headers: Record<string, string>;
     };
     expect(res.status).toBe(200);
-    expect(res.headers['Cache-Control']).toBe('no-store');
+    expect(res.headers['Cache-Control']).toBe('private, no-store');
     expect(JSON.parse(res.body)).toEqual({
       url: 'https://cdn.example/videos/ep2.m3u8?auth_key=2',
     });

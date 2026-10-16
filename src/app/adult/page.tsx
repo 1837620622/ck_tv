@@ -8,7 +8,7 @@ import { Suspense, useEffect, useRef, useState } from 'react';
 import { SearchResult } from '@/lib/types';
 import { isUnderageLabel } from '@/lib/yellow';
 
-import AgeGate, { AgeNotice, readAgeGate } from '@/components/AgeGate';
+import AgeGate, { AgeNotice } from '@/components/AgeGate';
 import { choiceClass } from '@/components/ChoiceRow';
 import PageLayout from '@/components/PageLayout';
 import PagePager from '@/components/PagePager';
@@ -44,6 +44,7 @@ function keepAdultItem(item: SearchResult): boolean {
 
 function AdultPageClient() {
   const [ready, setReady] = useState(false);
+  const [foreign, setForeign] = useState(false);
   const [unlocked, setUnlocked] = useState(false);
   const [sources, setSources] = useState<SourceOption[]>([]);
   const [activeSource, setActiveSource] = useState('zy91md');
@@ -60,8 +61,25 @@ function AdultPageClient() {
   const categoryCache = useRef<Record<string, CategoryOption[]>>({});
 
   useEffect(() => {
-    setUnlocked(readAgeGate());
-    setReady(true);
+    let gone = false;
+    fetch('/api/gate', { cache: 'no-store' })
+      .then((response) => response.json())
+      .then((data: { foreign?: boolean; open?: boolean }) => {
+        if (gone) return;
+        setForeign(data.foreign === true);
+        setUnlocked(data.open === true);
+      })
+      .catch(() => {
+        if (gone) return;
+        setForeign(false);
+        setUnlocked(false);
+      })
+      .finally(() => {
+        if (!gone) setReady(true);
+      });
+    return () => {
+      gone = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -207,7 +225,11 @@ function AdultPageClient() {
     <PageLayout activePath='/adult'>
       {!ready ? <div className='min-h-svh' /> : null}
       {ready && !unlocked ? (
-        <AgeGate title='18+ 专区' onUnlock={() => setUnlocked(true)} />
+        <AgeGate
+          title='18+ 专区'
+          foreign={foreign}
+          onUnlock={() => setUnlocked(true)}
+        />
       ) : null}
       {ready && unlocked ? (
         <div className='min-h-svh max-w-full overflow-x-hidden px-3 py-4 pb-8 sm:px-10 sm:py-8'>

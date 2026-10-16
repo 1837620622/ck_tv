@@ -1,17 +1,14 @@
 import { getOptionalRequestContext } from '@cloudflare/next-on-pages';
 import { NextResponse } from 'next/server';
 
-import {
-  jsonCacheHeaders,
-  readJsonCache,
-  writeJsonCache,
-} from '@/lib/edge-cache';
+import { readJsonCache, writeJsonCache } from '@/lib/edge-cache';
 import {
   detailHuangguo,
   HUANGGUO_CATEGORIES,
   listHuangguo,
   searchHuangguo,
 } from '@/lib/huangguo';
+import { gateDenyInit, PRIVATE_HEADERS } from '@/lib/region-gate';
 
 export const runtime = 'edge';
 
@@ -24,6 +21,13 @@ function asPage(value: unknown): number {
 }
 
 export async function GET(request: Request) {
+  const denied = gateDenyInit(request);
+  if (denied) {
+    return NextResponse.json(denied.body, {
+      status: denied.status,
+      headers: denied.headers,
+    });
+  }
   const ctx = (() => {
     try {
       return getOptionalRequestContext()?.ctx;
@@ -45,7 +49,7 @@ export async function GET(request: Request) {
     if (detailHit) {
       return new NextResponse(await detailHit.text(), {
         headers: {
-          ...jsonCacheHeaders(EDGE_SECONDS, BROWSER_SECONDS),
+          ...PRIVATE_HEADERS,
           'content-type': 'application/json; charset=utf-8',
           'x-ck-cache': 'HIT',
         },
@@ -65,9 +69,7 @@ export async function GET(request: Request) {
       }
       return new NextResponse(body, {
         headers: {
-          ...(detail.episodes.length > 0
-            ? jsonCacheHeaders(EDGE_SECONDS, BROWSER_SECONDS)
-            : { 'Cache-Control': 'no-store' }),
+          ...PRIVATE_HEADERS,
           'content-type': 'application/json; charset=utf-8',
           'x-ck-cache': 'MISS',
         },
@@ -75,7 +77,7 @@ export async function GET(request: Request) {
     } catch (error) {
       return NextResponse.json(
         { error: (error as Error).message, episodes: [] },
-        { status: 404, headers: { 'Cache-Control': 'no-store' } }
+        { status: 404, headers: PRIVATE_HEADERS }
       );
     }
   }
@@ -88,7 +90,7 @@ export async function GET(request: Request) {
   if (hit) {
     return new NextResponse(await hit.text(), {
       headers: {
-        ...jsonCacheHeaders(EDGE_SECONDS, BROWSER_SECONDS),
+        ...PRIVATE_HEADERS,
         'x-ck-cache': 'HIT',
       },
     });
@@ -107,7 +109,7 @@ export async function GET(request: Request) {
       return new NextResponse(body, {
         headers: {
           'content-type': 'application/json; charset=utf-8',
-          'Cache-Control': 'no-store',
+          ...PRIVATE_HEADERS,
           'x-ck-cache': 'EMPTY',
         },
       });
@@ -115,7 +117,7 @@ export async function GET(request: Request) {
     writeJsonCache(ctx, cacheUrl, body, EDGE_SECONDS, BROWSER_SECONDS);
     return new NextResponse(body, {
       headers: {
-        ...jsonCacheHeaders(EDGE_SECONDS, BROWSER_SECONDS),
+        ...PRIVATE_HEADERS,
         'content-type': 'application/json; charset=utf-8',
         'x-ck-cache': 'MISS',
       },
@@ -129,7 +131,7 @@ export async function GET(request: Request) {
         categories: HUANGGUO_CATEGORIES,
         error: (error as Error).message,
       },
-      { status: 200, headers: { 'Cache-Control': 'no-store' } }
+      { status: 200, headers: PRIVATE_HEADERS }
     );
   }
 }
