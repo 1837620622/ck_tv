@@ -5,7 +5,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { LOCAL_AUTH_SUBJECT } from '@/lib/auth';
 import { DEFAULT_JSON_BODY_BYTES, readJsonBody } from '@/lib/body';
 import { db, hasServerStorage } from '@/lib/db';
+import { gateClosedFor, isGatedKey } from '@/lib/record-gate';
+import { gateDenial } from '@/lib/region-gate';
 import { Favorite } from '@/lib/types';
+import { isAdultSource } from '@/lib/yellow';
 
 export const runtime = 'edge';
 
@@ -38,12 +41,28 @@ export async function GET(request: NextRequest) {
         );
       }
       const fav = await db.getFavorite(LOCAL_AUTH_SUBJECT, source, id);
+      // 没通过门控时，成人源和黄果的收藏当作不存在
+      if (
+        fav &&
+        isAdultSource({ key: source }) &&
+        (await gateDenial(request)) !== null
+      ) {
+        return NextResponse.json(null, { status: 200 });
+      }
       return NextResponse.json(fav, { status: 200 });
     }
 
-    // 查询全部收藏
+    // 查询全部收藏；没通过门控的访客看不到成人源和黄果的收藏
     const favorites = await db.getAllFavorites(LOCAL_AUTH_SUBJECT);
-    return NextResponse.json(favorites, { status: 200 });
+    if ((await gateDenial(request)) === null) {
+      return NextResponse.json(favorites, { status: 200 });
+    }
+    const visible = Object.fromEntries(
+      Object.entries(favorites).filter(
+        ([favKey]) => !isAdultSource({ key: favKey.split('+')[0] })
+      )
+    );
+    return NextResponse.json(visible, { status: 200 });
   } catch (err) {
     console.error('获取收藏失败', err);
     return NextResponse.json(
@@ -101,6 +120,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // 成人源和黄果的收藏，没通过门控不能写入
+    if (isGatedKey(key) && (await gateClosedFor(request))) {
+      return NextResponse.json({ error: '需要通过栏目口令' }, { status: 403 });
+    }
+
     const finalFavorite = {
       ...favorite,
       save_time: favorite.save_time ?? Date.now(),
@@ -146,14 +170,24 @@ export async function DELETE(request: NextRequest) {
           { status: 400 }
         );
       }
+      if (isGatedKey(key) && (await gateClosedFor(request))) {
+        return NextResponse.json(
+          { error: '需要通过栏目口令' },
+          { status: 403 }
+        );
+      }
       await db.deleteFavorite(username, source, id);
     } else {
       // 清空全部
       const all = await db.getAllFavorites(username);
+      // 没通过门控时，成人源和黄果的收藏留着，不替别人删
+      const closed = await gateClosedFor(request);
       await Promise.all(
         Object.keys(all).map(async (k) => {
           const [s, i] = k.split('+');
-          if (s && i) await db.deleteFavorite(username, s, i);
+          if (s && i && !(closed && isGatedKey(k))) {
+            await db.deleteFavorite(username, s, i);
+          }
         })
       );
     }

@@ -7,6 +7,7 @@ import {
   coverContentType,
   decryptHuangguoCover,
 } from '@/lib/huangguo-image';
+import { gateDenyInit, PRIVATE_HEADERS } from '@/lib/region-gate';
 
 export const runtime = 'edge';
 
@@ -87,6 +88,13 @@ async function fetchCover(start: string): Promise<Response | null> {
 }
 
 export async function GET(request: Request) {
+  const denied = await gateDenyInit(request);
+  if (denied) {
+    return NextResponse.json(denied.body, {
+      status: denied.status,
+      headers: denied.headers,
+    });
+  }
   const target = allowedCoverUrl(
     new URL(request.url).searchParams.get('u') || ''
   );
@@ -107,6 +115,8 @@ export async function GET(request: Request) {
   const hit = await readJsonCache(cacheUrl);
   if (hit) {
     const headers = new Headers(hit.headers);
+    headers.set('Cache-Control', PRIVATE_HEADERS['Cache-Control']);
+    headers.set('CDN-Cache-Control', PRIVATE_HEADERS['CDN-Cache-Control']);
     headers.set('x-ck-cache', 'HIT');
     return new NextResponse(hit.body, { headers });
   }
@@ -136,8 +146,8 @@ export async function GET(request: Request) {
     }
     const headers = {
       'Content-Type': type,
-      'Cache-Control': `public, max-age=86400, s-maxage=${COVER_SECONDS}`,
-      'CDN-Cache-Control': `public, s-maxage=${COVER_SECONDS}`,
+      'Cache-Control': PRIVATE_HEADERS['Cache-Control'],
+      'CDN-Cache-Control': PRIVATE_HEADERS['CDN-Cache-Control'],
       'X-Content-Type-Options': 'nosniff',
       'x-ck-cache': 'MISS',
     };

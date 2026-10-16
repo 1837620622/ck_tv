@@ -19,6 +19,8 @@ import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 
+import { isRestrictedColumn, useForeignColumns } from './useForeignColumns';
+
 interface MobileBottomNavProps {
   /**
    * 主动指定当前激活的路径。当未提供时，自动使用 usePathname() 获取的路径。
@@ -29,6 +31,7 @@ interface MobileBottomNavProps {
 const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const foreignColumns = useForeignColumns();
 
   // 构建完整的当前 URL（包含查询参数）
   const currentUrl = searchParams.toString()
@@ -142,6 +145,7 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
           className='flex items-center overflow-x-auto scrollbar-hide'
         >
           {navItems.map((item) => {
+            if (!foreignColumns && isRestrictedColumn(item.href)) return null;
             const active = isActive(item.href);
             return (
               <li

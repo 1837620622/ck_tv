@@ -5,11 +5,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { LOCAL_AUTH_SUBJECT } from '@/lib/auth';
 import { DEFAULT_JSON_BODY_BYTES, readJsonBody } from '@/lib/body';
 import { db, hasServerStorage } from '@/lib/db';
+import { gateClosedFor, isGatedKey } from '@/lib/record-gate';
+import { gateDenial } from '@/lib/region-gate';
 import { PlayRecord } from '@/lib/types';
+import { isAdultSource } from '@/lib/yellow';
 
 export const runtime = 'edge';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     if (!hasServerStorage()) {
       return NextResponse.json(
@@ -19,7 +22,16 @@ export async function GET() {
     }
 
     const records = await db.getAllPlayRecords(LOCAL_AUTH_SUBJECT);
-    return NextResponse.json(records, { status: 200 });
+    // 没通过门控的访客看不到成人源和黄果的记录（key 形如 source+id）
+    if ((await gateDenial(request)) === null) {
+      return NextResponse.json(records, { status: 200 });
+    }
+    const visible = Object.fromEntries(
+      Object.entries(records).filter(
+        ([key]) => !isAdultSource({ key: key.split('+')[0] })
+      )
+    );
+    return NextResponse.json(visible, { status: 200 });
   } catch (err) {
     console.error('获取播放记录失败', err);
     return NextResponse.json(
@@ -74,6 +86,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // 成人源和黄果的记录，没通过门控不能写入
+    if (isGatedKey(key) && (await gateClosedFor(request))) {
+      return NextResponse.json({ error: '需要通过栏目口令' }, { status: 403 });
+    }
+
     const finalRecord = {
       ...record,
       save_time: record.save_time ?? Date.now(),
@@ -114,15 +131,26 @@ export async function DELETE(request: NextRequest) {
         );
       }
 
+      if (isGatedKey(key) && (await gateClosedFor(request))) {
+        return NextResponse.json(
+          { error: '需要通过栏目口令' },
+          { status: 403 }
+        );
+      }
+
       await db.deletePlayRecord(username, source, id);
     } else {
       // 未提供 key，则清空全部播放记录
       // 目前 DbManager 没有对应方法，这里直接遍历删除
       const all = await db.getAllPlayRecords(username);
+      // 没通过门控时，成人源和黄果的记录留着，不替别人删
+      const closed = await gateClosedFor(request);
       await Promise.all(
         Object.keys(all).map(async (k) => {
           const [s, i] = k.split('+');
-          if (s && i) await db.deletePlayRecord(username, s, i);
+          if (s && i && !(closed && isGatedKey(k))) {
+            await db.deletePlayRecord(username, s, i);
+          }
         })
       );
     }

@@ -28,7 +28,32 @@ jest.mock('@/lib/edge-cache', () => ({
   writeCached: jest.fn(),
 }));
 
+import { webcrypto } from 'node:crypto';
+import { TextEncoder as NodeTextEncoder } from 'node:util';
+
+import { GATE_COOKIE, issueGateCookie } from '@/lib/region-gate';
+
 import { GET } from './route';
+
+// 门控的签名用 Web Crypto；jsdom 环境里没有 subtle 和 TextEncoder，这里补上
+if (!globalThis.crypto?.subtle) {
+  Object.defineProperty(globalThis, 'crypto', {
+    value: webcrypto,
+    configurable: true,
+  });
+}
+if (typeof globalThis.TextEncoder === 'undefined') {
+  (globalThis as unknown as { TextEncoder?: unknown }).TextEncoder =
+    NodeTextEncoder;
+}
+
+// 门控 cookie 用签名密钥现签，测试开始前配好环境变量
+let gateCookie = '';
+beforeAll(async () => {
+  process.env.GATE_PASSWORD = 'route-test-password';
+  process.env.GATE_SECRET = 'route-test-secret-of-at-least-32-chars';
+  gateCookie = (await issueGateCookie()) ?? '';
+});
 
 // jsdom 测试环境没有 Response；路由在边缘运行时用它写缓存，这里只需要能构造
 if (typeof (globalThis as { Response?: unknown }).Response === 'undefined') {
@@ -83,7 +108,12 @@ function upstream(status: number, bytes: Buffer) {
   };
 }
 
-const request = (url: string) => ({ url } as unknown as Request);
+const request = (url: string) =>
+  ({
+    url,
+    cf: { country: 'JP' },
+    headers: new Headers({ cookie: `${GATE_COOKIE}=${gateCookie}` }),
+  } as unknown as Request);
 const coverUrl = `https://localhost/api/huangguo/cover?u=${encodeURIComponent(
   TARGET
 )}`;

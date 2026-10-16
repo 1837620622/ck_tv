@@ -21,6 +21,7 @@ import CapsuleSwitch from '@/components/CapsuleSwitch';
 import ContinueWatching from '@/components/ContinueWatching';
 import PageLayout from '@/components/PageLayout';
 import ScrollableRow from '@/components/ScrollableRow';
+import { useForeignColumns } from '@/components/useForeignColumns';
 import VideoCard from '@/components/VideoCard';
 
 const POSTER_CARD =
@@ -212,6 +213,7 @@ function HomeClient() {
   const [bilibiliRow, setBilibiliRow] = useState<DoubanItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [catalogLoading, setCatalogLoading] = useState(true);
+  const foreignColumns = useForeignColumns();
 
   // 收藏夹数据
   type FavoriteItem = {
@@ -406,18 +408,22 @@ function HomeClient() {
                     {item.label}
                   </Link>
                 ))}
-                <Link
-                  href='/adult'
-                  className='ml-1 shrink-0 border-l border-gray-200 px-3 py-1.5 text-gray-500 hover:text-gray-700 dark:border-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
-                >
-                  18+
-                </Link>
-                <Link
-                  href='/huangguo'
-                  className='shrink-0 px-3 py-1.5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
-                >
-                  AI黄果
-                </Link>
+                {foreignColumns ? (
+                  <>
+                    <Link
+                      href='/adult'
+                      className='ml-1 shrink-0 border-l border-gray-200 px-3 py-1.5 text-gray-500 hover:text-gray-700 dark:border-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                    >
+                      18+
+                    </Link>
+                    <Link
+                      href='/huangguo'
+                      className='shrink-0 px-3 py-1.5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                    >
+                      AI黄果
+                    </Link>
+                  </>
+                ) : null}
               </nav>
 
               <ContinueWatching />

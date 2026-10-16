@@ -16,6 +16,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { DEFAULT_JSON_BODY_BYTES, readJsonBody } from '@/lib/body';
+import { clientIp, isCrossSite, takeQuota } from '@/lib/request-guard';
 import { fetchPublic, publicHttpUrl } from '@/lib/safe-url';
 
 // Cloudflare Pages 需要 Edge Runtime
@@ -251,6 +252,23 @@ function checkAndUpdateQuota(audioDurationMinutes: number): {
 }
 
 export async function POST(request: NextRequest) {
+  // 转写要消耗 Cloudflare 的免费额度：跨站页面不能借用；同一 IP 每小时有上限，
+  // 拿不到 IP 时所有请求共用一个计数
+  if (isCrossSite(request)) {
+    return NextResponse.json({ error: '不允许跨站调用' }, { status: 403 });
+  }
+  const wait = takeQuota(
+    `sub:${clientIp(request) ?? 'unknown'}`,
+    30,
+    60 * 60 * 1000
+  );
+  if (wait > 0) {
+    return NextResponse.json(
+      { error: '请求太频繁，请稍后再试' },
+      { status: 429, headers: { 'Retry-After': String(wait) } }
+    );
+  }
+
   try {
     const parsed = await readJsonBody(request, DEFAULT_JSON_BODY_BYTES);
     if (!parsed.ok) {

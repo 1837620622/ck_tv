@@ -4,13 +4,9 @@ import { NextResponse } from 'next/server';
 
 import { getAdultApiSites, getConfig } from '@/lib/config';
 import { extractPlayUrls, searchFromApi } from '@/lib/downstream';
-import {
-  edgeFetchInit,
-  jsonCacheHeaders,
-  readJsonCache,
-  writeJsonCache,
-} from '@/lib/edge-cache';
+import { edgeFetchInit, readJsonCache, writeJsonCache } from '@/lib/edge-cache';
 import { repairTitle } from '@/lib/match-title';
+import { gateDenyInit, PRIVATE_HEADERS } from '@/lib/region-gate';
 import { settleWithin } from '@/lib/settle';
 import { SearchResult } from '@/lib/types';
 import { cleanHtmlTags } from '@/lib/utils';
@@ -42,12 +38,19 @@ const ADULT_BROWSER_SECONDS = 60;
 
 function adultCacheHeaders(state: string) {
   return {
-    ...jsonCacheHeaders(ADULT_EDGE_SECONDS, ADULT_BROWSER_SECONDS),
+    ...PRIVATE_HEADERS,
     'x-ck-cache': state,
   };
 }
 
 export async function GET(request: Request) {
+  const denied = await gateDenyInit(request);
+  if (denied) {
+    return NextResponse.json(denied.body, {
+      status: denied.status,
+      headers: denied.headers,
+    });
+  }
   const ctx = (() => {
     try {
       return getOptionalRequestContext()?.ctx;

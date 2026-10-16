@@ -7,7 +7,6 @@ import Hls from 'hls.js';
 import { Heart } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 
 import {
   isAirPlaying,
@@ -278,15 +277,7 @@ function PlayPageClient() {
   // 离开页面时 DOM ref 已经空了，播放中的节点要另外留住。
   const playingNodeRef = useRef<HTMLVideoElement | null>(null);
   const artRef = useRef<HTMLDivElement | null>(null);
-  // 自动连播倒计时（秒）；null 表示没有在倒计时
-  const [nextCountdown, setNextCountdown] = useState<number | null>(null);
-  // 倒计时蒙层挂在 ArtPlayer 自己的容器里，全屏时才会跟着显示
-  const [overlayHost, setOverlayHost] = useState<HTMLElement | null>(null);
   const autoNextRef = useRef(true);
-  // 页面上「自动下一集」开关的显示状态。初始值固定为开，挂载后再读本机偏好，避免服务端和客户端渲染不一致
-  const [autoNextOn, setAutoNextOn] = useState(true);
-  // 倒计时结束时调用最新的 handleNextEpisode，避免拿到旧闭包
-  const nextRef = useRef<() => void>(() => undefined);
   // 睡眠定时：off / 15 / 30 / 60（分钟）/ episode（本集结束）
   const sleepTimerRef = useRef<number>(0);
   const sleepEndOfEpisodeRef = useRef(false);
@@ -310,8 +301,6 @@ function PlayPageClient() {
       sleepTimerRef.current = window.setTimeout(() => {
         sleepTimerRef.current = 0;
         sleepChoiceRef.current = 'off';
-        // 定时到了就不再自动连播
-        setNextCountdown(null);
         // 离开页面后画中画里的视频也要能被暂停，所以两边都试
         const player = artPlayerRef.current;
         const video =
@@ -633,6 +622,7 @@ function PlayPageClient() {
 
   // 进入页面时直接获取全部源信息
   useEffect(() => {
+    let blocked = false;
     const fetchSourceDetail = async (
       source: string,
       id: string
@@ -643,6 +633,10 @@ function PlayPageClient() {
             source === 'huangguo' ? '&hv=2' : ''
           }`
         );
+        if (detailResponse.status === 403) {
+          blocked = true;
+          return [];
+        }
         if (!detailResponse.ok) {
           throw new Error('获取视频详情失败');
         }
@@ -758,6 +752,11 @@ function PlayPageClient() {
       if (currentSource && currentId) {
         userChoseRef.current = true;
         const quick = await fetchSourceDetail(currentSource, currentId);
+        if (blocked) {
+          setError('禁止国内访问。中国大陆、香港、澳门、台湾不能进入。');
+          setLoading(false);
+          return;
+        }
         const quickDetail = quick[0];
         if (quickDetail?.episodes?.length) {
           sourcesInfo = [quickDetail];
@@ -1022,8 +1021,6 @@ function PlayPageClient() {
   // ---------------------------------------------------------------------------
   // 处理集数切换
   const handleEpisodeChange = (episodeNumber: number) => {
-    // 手动换集后，倒计时要作废，否则会再切走一集
-    setNextCountdown(null);
     if (episodeNumber >= 0 && episodeNumber < totalEpisodes) {
       // 在更换集数前保存当前播放进度（播放中或暂停中都要存）
       saveCurrentPlayProgress();
@@ -1032,7 +1029,6 @@ function PlayPageClient() {
   };
 
   const handlePreviousEpisode = () => {
-    setNextCountdown(null);
     const d = detailRef.current;
     const idx = currentEpisodeIndexRef.current;
     if (d && d.episodes && idx > 0) {
@@ -1042,72 +1038,11 @@ function PlayPageClient() {
   };
 
   const handleNextEpisode = () => {
-    setNextCountdown(null);
     const d = detailRef.current;
     const idx = currentEpisodeIndexRef.current;
     if (d && d.episodes && idx < d.episodes.length - 1) {
       saveCurrentPlayProgress();
       setCurrentEpisodeIndex(idx + 1);
-    }
-  };
-
-  // 每次渲染都更新，倒计时结束时调到的是最新的「下一集」
-  nextRef.current = handleNextEpisode;
-
-  // 自动连播倒计时：每秒减一，到 0 切到下一集
-  useEffect(() => {
-    if (nextCountdown === null) return;
-    if (nextCountdown <= 0) {
-      setNextCountdown(null);
-      nextRef.current();
-      return;
-    }
-    const timer = window.setTimeout(
-      () => setNextCountdown(nextCountdown - 1),
-      1000
-    );
-    return () => window.clearTimeout(timer);
-  }, [nextCountdown]);
-
-  // 挂载后读取上次的自动下一集设置（默认开启）
-  useEffect(() => {
-    const enabled = readAutoNext();
-    autoNextRef.current = enabled;
-    setAutoNextOn(enabled);
-  }, []);
-
-  // 自动下一集开关：和播放器设置菜单里的「自动连播」是同一个设置，两边保持一致
-  const setAutoNext = (
-    enabled: boolean,
-    options: { fromMenu?: boolean } = {}
-  ) => {
-    autoNextRef.current = enabled;
-    writeAutoNext(enabled);
-    setAutoNextOn(enabled);
-    if (!enabled) {
-      // 关掉时正在倒计时的话立即取消
-      setNextCountdown(null);
-    } else {
-      // 播完之后才打开：视频已经结束，这时不会再触发结束事件，直接开始倒计时。
-      // 睡眠定时选了「本集结束」时不切，和播完的处理保持一致。
-      const video = artPlayerRef.current?.video as HTMLVideoElement | undefined;
-      const d = detailRef.current;
-      const idx = currentEpisodeIndexRef.current;
-      if (
-        video?.ended &&
-        !sleepEndOfEpisodeRef.current &&
-        d &&
-        d.episodes &&
-        idx < d.episodes.length - 1
-      ) {
-        setNextCountdown(5);
-      }
-    }
-    // 从页面上切换时，同步播放器设置菜单里的开关。
-    // 找不到这一项时 update 会新增一个空菜单项，所以先确认它存在
-    const setting = artPlayerRef.current?.setting;
-    if (!options.fromMenu && setting?.find('自动连播')) {
-      setting.update({ name: '自动连播', switch: enabled });
     }
   };
 
@@ -1428,6 +1363,33 @@ function PlayPageClient() {
       const savedVolume = readVolume();
       lastVolumeRef.current = savedVolume;
       autoNextRef.current = readAutoNext();
+      // 控制栏开关和设置里的「自动连播」共用这一项。开：本集结束就进下一集。关：停在当前这一集。
+      let autoNextButton: HTMLElement | null = null;
+      const autoNextSetting: any = {
+        switch: autoNextRef.current,
+        onSwitch(item: any) {
+          const enabled = !item.switch;
+          applyAutoNext(enabled);
+          return enabled;
+        },
+      };
+      const paintAutoNext = (enabled: boolean) => {
+        if (!autoNextButton) return;
+        autoNextButton.dataset.on = enabled ? '1' : '0';
+        autoNextButton.style.color = enabled
+          ? '#16a34a'
+          : 'rgba(255,255,255,0.55)';
+        autoNextButton.textContent = enabled ? '连播开' : '连播关';
+      };
+      const applyAutoNext = (enabled: boolean) => {
+        autoNextRef.current = enabled;
+        writeAutoNext(enabled);
+        autoNextSetting.switch = enabled;
+        // 控制栏切换时也要把菜单里的「自动连播」图标改过来；菜单项是 ArtPlayer 持有的对象，要改它本身
+        const menuItem = artPlayerRef.current?.setting?.find('自动连播');
+        if (menuItem) menuItem.switch = enabled;
+        paintAutoNext(enabled);
+      };
       Artplayer.PLAYBACK_RATE = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
       Artplayer.USE_RAF = true;
 
@@ -1801,13 +1763,8 @@ function PlayPageClient() {
             name: '自动连播',
             html: '自动连播',
             icon: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 5l9 7-9 7V5z" fill="#ffffff"/><path d="M17 5v14" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/></svg>',
-            switch: autoNextRef.current,
-            onSwitch: function (item: any) {
-              const newVal = !item.switch;
-              // 菜单自己已经切换了开关，这里不用再同步菜单
-              setAutoNext(newVal, { fromMenu: true });
-              return newVal;
-            },
+            switch: autoNextSetting.switch,
+            onSwitch: autoNextSetting.onSwitch,
           },
           {
             name: '单集循环',
@@ -1869,6 +1826,27 @@ function PlayPageClient() {
             tooltip: '播放下一集',
             click: function () {
               handleNextEpisode();
+            },
+          },
+          {
+            name: 'auto-next',
+            position: 'right',
+            index: 12,
+            html: `<span class="ck-autonext">${
+              autoNextRef.current ? '连播开' : '连播关'
+            }</span>`,
+            tooltip: '本集结束后自动播放下一集',
+            style: {
+              padding: '0 6px',
+              fontSize: '12px',
+              cursor: 'pointer',
+            },
+            mounted(element: HTMLElement) {
+              autoNextButton = element.querySelector('.ck-autonext');
+              paintAutoNext(autoNextRef.current);
+            },
+            click() {
+              applyAutoNext(!autoNextRef.current);
             },
           },
         ],
@@ -1968,16 +1946,19 @@ function PlayPageClient() {
             artPlayerRef.current.duration + skipConfigRef.current.outro_time
         ) {
           if (
+            autoNextRef.current &&
             currentEpisodeIndexRef.current <
-            (detailRef.current?.episodes?.length || 1) - 1
+              (detailRef.current?.episodes?.length || 1) - 1
           ) {
             handleNextEpisode();
+            artPlayerRef.current.notice.show = `已跳过片尾 (${formatTime(
+              skipConfigRef.current.outro_time
+            )})`;
           } else {
+            // 连播关着或已是最后一集：停在片尾，不说「已跳过」
             artPlayerRef.current.pause();
+            artPlayerRef.current.notice.show = '已到片尾，已暂停播放';
           }
-          artPlayerRef.current.notice.show = `已跳过片尾 (${formatTime(
-            skipConfigRef.current.outro_time
-          )})`;
         }
       });
 
@@ -1985,16 +1966,8 @@ function PlayPageClient() {
         failOverRef.current();
       });
 
-      setOverlayHost(
-        (artRef.current?.querySelector(
-          '.art-video-player'
-        ) as HTMLElement | null) ?? null
-      );
-
       // 播放与暂停：同步锁屏状态，并在播放时保持屏幕常亮
       artPlayerRef.current.on('video:play', () => {
-        // 倒计时期间用户又按了播放，就是不想切集了
-        setNextCountdown(null);
         setMediaPlaybackState('playing');
         wakeLockRef.current?.enable();
       });
@@ -2037,7 +2010,7 @@ function PlayPageClient() {
         }
       });
 
-      // 播放结束：先看睡眠定时的「本集结束」，再看是否开启自动连播（倒计时，可以取消）
+      // 播放结束：睡眠定时优先。连播开着就进下一集，关着就停在当前这一集。
       artPlayerRef.current.on('video:ended', () => {
         wakeLockRef.current?.disable();
         setMediaPlaybackState('paused');
@@ -2049,13 +2022,13 @@ function PlayPageClient() {
         const d = detailRef.current;
         const idx = currentEpisodeIndexRef.current;
         if (
-          autoNextRef.current &&
-          d &&
-          d.episodes &&
-          idx < d.episodes.length - 1
+          !autoNextRef.current ||
+          !d?.episodes ||
+          idx >= d.episodes.length - 1
         ) {
-          setNextCountdown(5);
+          return;
         }
+        handleNextEpisode();
       });
 
       artPlayerRef.current.on('video:timeupdate', () => {
@@ -2234,42 +2207,17 @@ function PlayPageClient() {
         <div className='space-y-2'>
           {/* 控制栏：投屏按钮 + 折叠控制 */}
           <div className='flex items-center justify-between'>
-            <div className='flex items-center gap-2'>
-              {/* 投屏按钮 */}
-              <button
-                onClick={() => setIsTVCastModalOpen(true)}
-                className='flex items-center gap-1.5 border border-gray-300 px-3 py-1.5 text-xs text-gray-700 hover:border-green-600 hover:text-green-700 dark:border-gray-600 dark:text-gray-200'
-                title='电视投屏'
-              >
-                <svg
-                  className='w-4 h-4'
-                  viewBox='0 0 24 24'
-                  fill='currentColor'
-                >
-                  <path d='M1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11zm20-7H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z' />
-                </svg>
-                <span className='text-xs font-medium'>投屏</span>
-              </button>
-
-              {/* 自动下一集：播完自动播放下一集，倒计时 5 秒，期间可以取消 */}
-              <label
-                className='flex cursor-pointer items-center gap-2 border border-gray-300 px-3 py-1.5 text-xs text-gray-700 hover:border-green-600 dark:border-gray-600 dark:text-gray-200'
-                title='播完自动播放下一集（倒计时 5 秒，可取消）'
-              >
-                <span className='font-medium'>自动下一集</span>
-                <span className='relative inline-block'>
-                  <input
-                    type='checkbox'
-                    role='switch'
-                    className='peer sr-only'
-                    checked={autoNextOn}
-                    onChange={(e) => setAutoNext(e.target.checked)}
-                  />
-                  <span className='block h-4 w-8 rounded-full bg-gray-300 transition-colors peer-checked:bg-green-500 dark:bg-gray-600' />
-                  <span className='absolute left-0.5 top-0.5 h-3 w-3 rounded-full bg-white transition-transform peer-checked:translate-x-4' />
-                </span>
-              </label>
-            </div>
+            {/* 投屏按钮 */}
+            <button
+              onClick={() => setIsTVCastModalOpen(true)}
+              className='flex items-center gap-1.5 border border-gray-300 px-3 py-1.5 text-xs text-gray-700 hover:border-green-600 hover:text-green-700 dark:border-gray-600 dark:text-gray-200'
+              title='电视投屏'
+            >
+              <svg className='w-4 h-4' viewBox='0 0 24 24' fill='currentColor'>
+                <path d='M1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11zm20-7H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z' />
+              </svg>
+              <span className='text-xs font-medium'>投屏</span>
+            </button>
 
             {/* 折叠控制 - 仅在 lg 及以上屏幕显示 */}
             <button
@@ -2320,40 +2268,6 @@ function PlayPageClient() {
                   ref={artRef}
                   className='bg-black w-full h-full rounded-xl overflow-hidden shadow-lg'
                 ></div>
-
-                {nextCountdown !== null &&
-                  overlayHost &&
-                  createPortal(
-                    <div className='absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 rounded-xl bg-black/75 px-6 text-center text-white'>
-                      <p className='text-base sm:text-lg'>
-                        {nextCountdown} 秒后播放下一集
-                        {detail?.episodes &&
-                        currentEpisodeIndex + 1 < detail.episodes.length
-                          ? '（第 ' + (currentEpisodeIndex + 2) + ' 集）'
-                          : ''}
-                      </p>
-                      <div className='flex gap-3'>
-                        <button
-                          type='button'
-                          onClick={() => {
-                            setNextCountdown(null);
-                            handleNextEpisode();
-                          }}
-                          className='rounded-lg bg-green-600 px-4 py-2 text-sm font-medium hover:bg-green-500'
-                        >
-                          立即播放
-                        </button>
-                        <button
-                          type='button'
-                          onClick={() => setNextCountdown(null)}
-                          className='rounded-lg bg-white/15 px-4 py-2 text-sm font-medium hover:bg-white/25'
-                        >
-                          取消
-                        </button>
-                      </div>
-                    </div>,
-                    overlayHost
-                  )}
 
                 {/* Cloudflare AI 字幕 */}
                 <CloudflareAISubtitle

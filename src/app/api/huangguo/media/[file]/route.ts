@@ -3,10 +3,14 @@ import { NextResponse } from 'next/server';
 import { huangguoPlayWhy, readHuangguoPlayTarget } from '@/lib/huangguo';
 import { huangguoUpstreamPath } from '@/lib/huangguo-playlist';
 import { readHuangguoPlaylist } from '@/lib/huangguo-socket';
+import { gateDenyInit } from '@/lib/region-gate';
 
 export const runtime = 'edge';
 
-const NO_STORE = { 'Cache-Control': 'no-store' };
+const NO_STORE = {
+  'Cache-Control': 'private, no-store',
+  'CDN-Cache-Control': 'private, no-store',
+};
 
 function fail(status: number, why = '') {
   return new NextResponse(null, {
@@ -16,6 +20,13 @@ function fail(status: number, why = '') {
 }
 
 export async function GET(request: Request) {
+  const denied = await gateDenyInit(request);
+  if (denied) {
+    return NextResponse.json(denied.body, {
+      status: denied.status,
+      headers: denied.headers,
+    });
+  }
   const url = new URL(request.url);
   if (url.pathname !== '/api/huangguo/media/playlist.m3u8') return fail(404);
   const id = url.searchParams.get('id') || '';

@@ -9,6 +9,7 @@ import {
   writeJsonCache,
 } from '@/lib/edge-cache';
 import { detailHuangguo } from '@/lib/huangguo';
+import { gateDenyInit, PRIVATE_HEADERS } from '@/lib/region-gate';
 
 export const runtime = 'edge';
 
@@ -36,18 +37,25 @@ export async function GET(request: Request) {
   }
 
   if (sourceCode === 'huangguo') {
+    const denied = await gateDenyInit(request);
+    if (denied) {
+      return NextResponse.json(denied.body, {
+        status: denied.status,
+        headers: denied.headers,
+      });
+    }
     try {
       const result = await detailHuangguo(id);
       return NextResponse.json(result, {
         headers: {
-          ...jsonCacheHeaders(DETAIL_EDGE_SECONDS, DETAIL_BROWSER_SECONDS),
+          ...PRIVATE_HEADERS,
           'content-type': 'application/json; charset=utf-8',
         },
       });
     } catch (error) {
       return NextResponse.json(
         { error: (error as Error).message },
-        { status: 404 }
+        { status: 404, headers: PRIVATE_HEADERS }
       );
     }
   }
@@ -56,9 +64,21 @@ export async function GET(request: Request) {
     const apiSites = await getAvailableApiSites();
     let apiSite = apiSites.find((site) => site.key === sourceCode);
 
+    let adultSource = false;
     if (!apiSite) {
       const adultSites = await getAdultApiSites();
       apiSite = adultSites.find((site) => site.key === sourceCode);
+      adultSource = Boolean(apiSite);
+    }
+
+    if (adultSource) {
+      const denied = await gateDenyInit(request);
+      if (denied) {
+        return NextResponse.json(denied.body, {
+          status: denied.status,
+          headers: denied.headers,
+        });
+      }
     }
 
     if (!apiSite) {
@@ -72,7 +92,9 @@ export async function GET(request: Request) {
     if (hit) {
       return new NextResponse(await hit.text(), {
         headers: {
-          ...jsonCacheHeaders(DETAIL_EDGE_SECONDS, DETAIL_BROWSER_SECONDS),
+          ...(adultSource
+            ? PRIVATE_HEADERS
+            : jsonCacheHeaders(DETAIL_EDGE_SECONDS, DETAIL_BROWSER_SECONDS)),
           'x-ck-cache': 'HIT',
         },
       });
@@ -92,7 +114,9 @@ export async function GET(request: Request) {
 
     return new NextResponse(body, {
       headers: {
-        ...jsonCacheHeaders(DETAIL_EDGE_SECONDS, DETAIL_BROWSER_SECONDS),
+        ...(adultSource
+          ? PRIVATE_HEADERS
+          : jsonCacheHeaders(DETAIL_EDGE_SECONDS, DETAIL_BROWSER_SECONDS)),
         'content-type': 'application/json; charset=utf-8',
         'x-ck-cache': 'MISS',
       },
