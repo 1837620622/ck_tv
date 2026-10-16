@@ -6,8 +6,8 @@ export const GATE_COOKIE = 'cktv-gate';
 // 通过口令后写入的会话标记。和口令本身不是同一串。
 export const GATE_TOKEN = 'b7e1c4a09d6f4e2a8c5d17f03b6a9e84';
 
-// 中国大陆、香港、台湾。代码来自 Cloudflare 的国家字段，不看访客自己填的地区。
-const BLOCKED_COUNTRIES = new Set(['CN', 'HK', 'TW']);
+// 中国大陆、香港、澳门、台湾。代码来自 Cloudflare 的国家字段，不看访客自己填的地区。
+const BLOCKED_COUNTRIES = new Set(['CN', 'HK', 'MO', 'TW']);
 
 export const PRIVATE_HEADERS = {
   'Cache-Control': 'private, no-store',

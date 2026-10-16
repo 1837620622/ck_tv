@@ -132,9 +132,9 @@ describe('GET /api/huangguo/media/playlist.m3u8', () => {
     expect(playlistMock).toHaveBeenCalledTimes(2);
   });
 
-  it('rejects mainland China, Hong Kong, and Taiwan before opening a playlist', async () => {
+  it('rejects mainland China, Hong Kong, Macau, and Taiwan before opening a playlist', async () => {
     global.fetch = jest.fn() as unknown as typeof fetch;
-    for (const country of ['CN', 'HK', 'TW']) {
+    for (const country of ['CN', 'HK', 'MO', 'TW']) {
       const res = (await GET({
         url: 'https://localhost/api/huangguo/media/playlist.m3u8?id=12&ep=1',
         headers: new Headers({

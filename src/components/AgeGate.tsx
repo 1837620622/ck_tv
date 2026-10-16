@@ -6,7 +6,7 @@ import { useState } from 'react';
 export function AgeNotice() {
   return (
     <p className='mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400'>
-      免责声明：禁止国内访问。中国大陆、香港、台湾不能进入。仅限年满 18
+      免责声明：禁止国内访问。中国大陆、香港、澳门、台湾不能进入。仅限年满 18
       周岁。本站不制作、不存储、不传播这些影片，只做播放优化。片源在第三方。
     </p>
   );
@@ -63,17 +63,13 @@ export default function AgeGate({
             {title}
           </h1>
           <div className='mt-3 space-y-2 text-sm leading-6 text-gray-600 dark:text-gray-300'>
-            <p>中国大陆、香港、台湾的网络不能进入这个栏目。</p>
+            <p>中国大陆、香港、澳门、台湾的网络不能进入这个栏目。</p>
             <p>
               免责声明：本站不制作、不存储、不传播淫秽内容。这里只是把第三方公开接口接到播放器里，优化站点的浏览和播放。视频在对方服务器，本站不留副本。
             </p>
             <p>
               只给年满 18 周岁、并且人在上述地区以外的访客。未满 18
               周岁请直接离开。你自己进入、自己观看，后果由你承担。
-            </p>
-            <p>
-              权利人认为某个链接不该出现，发邮件到
-              2040168455@qq.com，核实后去掉。
             </p>
           </div>
           {foreign ? (

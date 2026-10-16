@@ -762,7 +762,7 @@ function PlayPageClient() {
         userChoseRef.current = true;
         const quick = await fetchSourceDetail(currentSource, currentId);
         if (blocked) {
-          setError('禁止国内访问。中国大陆、香港、台湾不能进入。');
+          setError('禁止国内访问。中国大陆、香港、澳门、台湾不能进入。');
           setLoading(false);
           return;
         }
@@ -1394,6 +1394,31 @@ function PlayPageClient() {
       const savedVolume = readVolume();
       lastVolumeRef.current = savedVolume;
       autoNextRef.current = readAutoNext();
+      // 控制栏开关和设置里的「自动连播」共用这一项。开：本集结束就进下一集。关：停在当前这一集。
+      let autoNextButton: HTMLElement | null = null;
+      const autoNextSetting: any = {
+        switch: autoNextRef.current,
+        onSwitch(item: any) {
+          const enabled = !item.switch;
+          applyAutoNext(enabled);
+          return enabled;
+        },
+      };
+      const paintAutoNext = (enabled: boolean) => {
+        if (!autoNextButton) return;
+        autoNextButton.dataset.on = enabled ? '1' : '0';
+        autoNextButton.style.color = enabled
+          ? '#16a34a'
+          : 'rgba(255,255,255,0.55)';
+        autoNextButton.textContent = enabled ? '连播开' : '连播关';
+      };
+      const applyAutoNext = (enabled: boolean) => {
+        autoNextRef.current = enabled;
+        writeAutoNext(enabled);
+        if (!enabled) setNextCountdown(null);
+        autoNextSetting.switch = enabled;
+        paintAutoNext(enabled);
+      };
       Artplayer.PLAYBACK_RATE = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
       Artplayer.USE_RAF = true;
 
@@ -1767,14 +1792,8 @@ function PlayPageClient() {
             name: '自动连播',
             html: '自动连播',
             icon: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M5 5l9 7-9 7V5z" fill="#ffffff"/><path d="M17 5v14" stroke="#ffffff" stroke-width="2" stroke-linecap="round"/></svg>',
-            switch: autoNextRef.current,
-            onSwitch: function (item: any) {
-              const newVal = !item.switch;
-              autoNextRef.current = newVal;
-              writeAutoNext(newVal);
-              if (!newVal) setNextCountdown(null);
-              return newVal;
-            },
+            switch: autoNextSetting.switch,
+            onSwitch: autoNextSetting.onSwitch,
           },
           {
             name: '单集循环',
@@ -1836,6 +1855,27 @@ function PlayPageClient() {
             tooltip: '播放下一集',
             click: function () {
               handleNextEpisode();
+            },
+          },
+          {
+            name: 'auto-next',
+            position: 'right',
+            index: 12,
+            html: `<span class="ck-autonext">${
+              autoNextRef.current ? '连播开' : '连播关'
+            }</span>`,
+            tooltip: '本集结束后自动播放下一集',
+            style: {
+              padding: '0 6px',
+              fontSize: '12px',
+              cursor: 'pointer',
+            },
+            mounted(element: HTMLElement) {
+              autoNextButton = element.querySelector('.ck-autonext');
+              paintAutoNext(autoNextRef.current);
+            },
+            click() {
+              applyAutoNext(!autoNextRef.current);
             },
           },
         ],
@@ -1935,8 +1975,9 @@ function PlayPageClient() {
             artPlayerRef.current.duration + skipConfigRef.current.outro_time
         ) {
           if (
+            autoNextRef.current &&
             currentEpisodeIndexRef.current <
-            (detailRef.current?.episodes?.length || 1) - 1
+              (detailRef.current?.episodes?.length || 1) - 1
           ) {
             handleNextEpisode();
           } else {
@@ -2004,7 +2045,7 @@ function PlayPageClient() {
         }
       });
 
-      // 播放结束：先看睡眠定时的「本集结束」，再看是否开启自动连播（倒计时，可以取消）
+      // 播放结束：睡眠定时优先。连播开着就进下一集，关着就停在当前这一集。
       artPlayerRef.current.on('video:ended', () => {
         wakeLockRef.current?.disable();
         setMediaPlaybackState('paused');
@@ -2016,13 +2057,13 @@ function PlayPageClient() {
         const d = detailRef.current;
         const idx = currentEpisodeIndexRef.current;
         if (
-          autoNextRef.current &&
-          d &&
-          d.episodes &&
-          idx < d.episodes.length - 1
+          !autoNextRef.current ||
+          !d?.episodes ||
+          idx >= d.episodes.length - 1
         ) {
-          setNextCountdown(5);
+          return;
         }
+        handleNextEpisode();
       });
 
       artPlayerRef.current.on('video:timeupdate', () => {

@@ -19,14 +19,14 @@ function requestOf(header: string | null, platform?: string) {
 }
 
 describe('column region gate', () => {
-  it('blocks mainland China, Hong Kong, and Taiwan', () => {
-    for (const code of ['CN', 'HK', 'TW', 'cn', 'hk', 'tw']) {
+  it('blocks mainland China, Hong Kong, Macau, and Taiwan', () => {
+    for (const code of ['CN', 'HK', 'MO', 'TW', 'cn', 'hk', 'mo', 'tw']) {
       expect(isForeignCountry(code.trim().toUpperCase())).toBe(false);
     }
   });
 
   it('allows other countries and rejects unknown codes', () => {
-    for (const code of ['US', 'JP', 'SG', 'GB', 'DE', 'MO']) {
+    for (const code of ['US', 'JP', 'SG', 'GB', 'DE']) {
       expect(isForeignCountry(code)).toBe(true);
     }
     for (const code of ['', 'XX', 'T1', 'CHINA', 'CNH', 'A']) {
