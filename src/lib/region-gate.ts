@@ -122,9 +122,21 @@ function configuredSecret(): string {
   return secret.length >= 32 ? secret : '';
 }
 
+// 配置缺了什么，给人看的说明；全部配好时返回空数组。
+export function gateConfigProblems(): string[] {
+  const problems: string[] = [];
+  if (configuredPassword() === '') {
+    problems.push('GATE_PASSWORD 没有设置');
+  }
+  if (configuredSecret() === '') {
+    problems.push('GATE_SECRET 没有设置，或者少于 32 个字符');
+  }
+  return problems;
+}
+
 // 口令和签名密钥都配好了，门控才会工作。
 export function gateConfigured(): boolean {
-  return configuredPassword() !== '' && configuredSecret() !== '';
+  return gateConfigProblems().length === 0;
 }
 
 async function sign(message: string): Promise<string> {
