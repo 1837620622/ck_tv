@@ -37,7 +37,7 @@ export async function GET(request: Request) {
   }
 
   if (sourceCode === 'huangguo') {
-    const denied = gateDenyInit(request);
+    const denied = await gateDenyInit(request);
     if (denied) {
       return NextResponse.json(denied.body, {
         status: denied.status,
@@ -72,7 +72,7 @@ export async function GET(request: Request) {
     }
 
     if (adultSource) {
-      const denied = gateDenyInit(request);
+      const denied = await gateDenyInit(request);
       if (denied) {
         return NextResponse.json(denied.body, {
           status: denied.status,

@@ -23,12 +23,15 @@ export default function AgeGate({
 }) {
   const [code, setCode] = useState('');
   const [wrong, setWrong] = useState(false);
+  // 次数过多、或服务器还没配口令时，给出原因，不再统一显示成「口令不对」
+  const [notice, setNotice] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!foreign || submitting) return;
     setSubmitting(true);
+    setNotice('');
     try {
       const response = await fetch('/api/gate', {
         method: 'POST',
@@ -36,6 +39,14 @@ export default function AgeGate({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code }),
       });
+      if (response.status === 429) {
+        setNotice('尝试次数过多，请稍后再试');
+        return;
+      }
+      if (response.status === 503) {
+        setNotice('站点还没有配置口令，暂时不能进入');
+        return;
+      }
       const data = (await response.json()) as { open?: boolean };
       if (data.open) {
         onUnlock();
@@ -93,6 +104,9 @@ export default function AgeGate({
               />
               {wrong ? (
                 <p className='mt-2 text-sm text-red-600'>口令不对</p>
+              ) : null}
+              {notice ? (
+                <p className='mt-2 text-sm text-red-600'>{notice}</p>
               ) : null}
               <button
                 type='submit'

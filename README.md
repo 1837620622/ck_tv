@@ -108,7 +108,7 @@ Pages Function 的响应默认是动态的，`Cache-Control` 不会自动进边�
 | 18+                | `/adult`              | 只使用 `adult_api_site`，不参与全站搜索                                                     |
 | AI 黄果            | `/huangguo`           | 独立接口。封面经 `/api/huangguo/cover` 解密后显示，密钥不返回浏览器                         |
 
-18+ 和 AI 黄果只在国外网络显示入口。中国大陆、香港、澳门、台湾不出现这两个栏目，首页、搜索、点播、直播等其它栏目照常打开。直接输入地址也进不去：国家以 Cloudflare 边缘看到的来源为准，改请求头无效，带上会话标记也不能换成国内网络进入。国外网络还要口令正确。口令不写在页面上。地区不符或口令不对时，列表、封面和播放地址都不会返回。
+18+ 和 AI 黄果只在国外网络显示入口。中国大陆、香港、澳门、台湾不出现这两个栏目，首页、搜索、点播、直播等其它栏目照常打开。国家只认 Cloudflare 平台给出的来源（Pages 的平台信息，或 Worker 的 `request.cf`），访客自己带的 `CF-IPCountry` 不算。本地和 Docker 部署拿不到这些信息，两个栏目默认关闭。国外网络还要口令正确，口令和签名密钥见下面的「栏目口令」。地区不符或口令不对时，列表、封面、播放地址，以及播放记录和收藏里的成人内容都不会返回。
 
 ## 目录
 
@@ -150,6 +150,16 @@ pnpm install --frozen-lockfile && pnpm run pages:build
 `pages:build` 依次执行 `gen:runtime`、`gen:manifest`、`next build`、`@cloudflare/next-on-pages`。输出目录是 `.vercel/output/static`。
 
 没有管理后台。`/admin` 返回 404。收藏和设置留在浏览器本地。
+
+### 栏目口令
+
+| 变量                        | 说明                                                                                   |
+| --------------------------- | -------------------------------------------------------------------------------------- |
+| `GATE_PASSWORD`             | 18+ 和 AI 黄果的口令。只从环境变量读取，不写进代码。                                   |
+| `GATE_SECRET`               | 签名 cookie 的密钥，至少 32 个字符，随机生成，例如 `openssl rand -hex 32`。            |
+| `GATE_TRUST_COUNTRY_HEADER` | 只在前面挂着 Cloudflare、并且它会覆盖 `CF-IPCountry` 时设为 `true`。Pages 部署不需要。 |
+
+`GATE_PASSWORD` 或 `GATE_SECRET` 没配，这两个栏目一律关闭，接口返回 503。cookie 有效 7 天，服务端每次校验签名。改口令不会让已登录的 cookie 失效，要让所有人重新输入，换一个 `GATE_SECRET`。连续 5 次口令错误后，同一个 IP 要等 15 分钟。计数只在单个实例里有效，正式环境还要在 Cloudflare 上给 `POST /api/gate` 加一条限流规则。
 
 ## 边界
 

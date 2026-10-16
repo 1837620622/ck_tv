@@ -5,7 +5,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { LOCAL_AUTH_SUBJECT } from '@/lib/auth';
 import { DEFAULT_JSON_BODY_BYTES, readJsonBody } from '@/lib/body';
 import { db, hasServerStorage } from '@/lib/db';
+import { gateDenial } from '@/lib/region-gate';
 import { Favorite } from '@/lib/types';
+import { isAdultSource } from '@/lib/yellow';
 
 export const runtime = 'edge';
 
@@ -38,12 +40,28 @@ export async function GET(request: NextRequest) {
         );
       }
       const fav = await db.getFavorite(LOCAL_AUTH_SUBJECT, source, id);
+      // 没通过门控时，成人源和黄果的收藏当作不存在
+      if (
+        fav &&
+        isAdultSource({ key: source }) &&
+        (await gateDenial(request)) !== null
+      ) {
+        return NextResponse.json(null, { status: 200 });
+      }
       return NextResponse.json(fav, { status: 200 });
     }
 
-    // 查询全部收藏
+    // 查询全部收藏；没通过门控的访客看不到成人源和黄果的收藏
     const favorites = await db.getAllFavorites(LOCAL_AUTH_SUBJECT);
-    return NextResponse.json(favorites, { status: 200 });
+    if ((await gateDenial(request)) === null) {
+      return NextResponse.json(favorites, { status: 200 });
+    }
+    const visible = Object.fromEntries(
+      Object.entries(favorites).filter(
+        ([favKey]) => !isAdultSource({ key: favKey.split('+')[0] })
+      )
+    );
+    return NextResponse.json(visible, { status: 200 });
   } catch (err) {
     console.error('获取收藏失败', err);
     return NextResponse.json(

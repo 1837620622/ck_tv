@@ -99,11 +99,22 @@ const nextConfig = {
   },
 };
 
+// 门控后的接口只给通过门控的访客看。它们不能进 Service Worker 的运行时缓存：
+// 缓存会在断网或超时时把之前的响应再端出来，等于绕过门控。这些路径一律只走网络。
+const defaultRuntimeCaching = require('next-pwa/cache');
+const gatedApiCaching = {
+  urlPattern:
+    /^https?:\/\/[^/]+\/api\/(adult|huangguo|detail|gate)(?=[/?#]|$)/i,
+  handler: 'NetworkOnly',
+  method: 'GET',
+};
+
 const withPWA = require('next-pwa')({
   dest: 'public',
   disable: process.env.NODE_ENV === 'development',
   register: true,
   skipWaiting: true,
+  runtimeCaching: [gatedApiCaching, ...defaultRuntimeCaching],
 });
 
 module.exports = withPWA(nextConfig);

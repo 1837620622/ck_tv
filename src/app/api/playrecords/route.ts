@@ -5,11 +5,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { LOCAL_AUTH_SUBJECT } from '@/lib/auth';
 import { DEFAULT_JSON_BODY_BYTES, readJsonBody } from '@/lib/body';
 import { db, hasServerStorage } from '@/lib/db';
+import { gateDenial } from '@/lib/region-gate';
 import { PlayRecord } from '@/lib/types';
+import { isAdultSource } from '@/lib/yellow';
 
 export const runtime = 'edge';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     if (!hasServerStorage()) {
       return NextResponse.json(
@@ -19,7 +21,16 @@ export async function GET() {
     }
 
     const records = await db.getAllPlayRecords(LOCAL_AUTH_SUBJECT);
-    return NextResponse.json(records, { status: 200 });
+    // 没通过门控的访客看不到成人源和黄果的记录（key 形如 source+id）
+    if ((await gateDenial(request)) === null) {
+      return NextResponse.json(records, { status: 200 });
+    }
+    const visible = Object.fromEntries(
+      Object.entries(records).filter(
+        ([key]) => !isAdultSource({ key: key.split('+')[0] })
+      )
+    );
+    return NextResponse.json(visible, { status: 200 });
   } catch (err) {
     console.error('获取播放记录失败', err);
     return NextResponse.json(

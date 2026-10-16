@@ -88,7 +88,7 @@ async function fetchCover(start: string): Promise<Response | null> {
 }
 
 export async function GET(request: Request) {
-  const denied = gateDenyInit(request);
+  const denied = await gateDenyInit(request);
   if (denied) {
     return NextResponse.json(denied.body, {
       status: denied.status,

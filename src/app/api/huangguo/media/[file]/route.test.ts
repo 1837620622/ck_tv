@@ -39,20 +39,41 @@ jest.mock('@/lib/huangguo-socket', () => ({
   }),
 }));
 
+import { webcrypto } from 'node:crypto';
+import { TextEncoder as NodeTextEncoder } from 'node:util';
+
 import { readHuangguoPlaylist } from '@/lib/huangguo-socket';
-import { GATE_COOKIE, GATE_TOKEN } from '@/lib/region-gate';
+import { GATE_COOKIE, issueGateCookie } from '@/lib/region-gate';
 
 import { GET } from './route';
+
+// 门控的签名用 Web Crypto；jsdom 环境里没有 subtle 和 TextEncoder，这里补上
+if (!globalThis.crypto?.subtle) {
+  Object.defineProperty(globalThis, 'crypto', {
+    value: webcrypto,
+    configurable: true,
+  });
+}
+if (typeof globalThis.TextEncoder === 'undefined') {
+  (globalThis as unknown as { TextEncoder?: unknown }).TextEncoder =
+    NodeTextEncoder;
+}
+
+// 门控 cookie 用签名密钥现签，测试开始前配好环境变量
+let gateCookie = '';
+beforeAll(async () => {
+  process.env.GATE_PASSWORD = 'route-test-password';
+  process.env.GATE_SECRET = 'route-test-secret-of-at-least-32-chars';
+  gateCookie = (await issueGateCookie()) ?? '';
+});
 
 const playlistMock = readHuangguoPlaylist as unknown as jest.Mock;
 
 const request = (url: string) =>
   ({
     url,
-    headers: new Headers({
-      'cf-ipcountry': 'JP',
-      cookie: `${GATE_COOKIE}=${GATE_TOKEN}`,
-    }),
+    cf: { country: 'JP' },
+    headers: new Headers({ cookie: `${GATE_COOKIE}=${gateCookie}` }),
   } as unknown as Request);
 const playlist = (query: string) =>
   request(`https://localhost/api/huangguo/media/playlist.m3u8?${query}`);
@@ -137,10 +158,8 @@ describe('GET /api/huangguo/media/playlist.m3u8', () => {
     for (const country of ['CN', 'HK', 'MO', 'TW']) {
       const res = (await GET({
         url: 'https://localhost/api/huangguo/media/playlist.m3u8?id=12&ep=1',
-        headers: new Headers({
-          'cf-ipcountry': country,
-          cookie: `${GATE_COOKIE}=${GATE_TOKEN}`,
-        }),
+        cf: { country },
+        headers: new Headers({ cookie: `${GATE_COOKIE}=${gateCookie}` }),
       } as unknown as Request)) as unknown as { status: number };
       expect(res.status).toBe(403);
     }
