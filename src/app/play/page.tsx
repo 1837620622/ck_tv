@@ -1951,12 +1951,14 @@ function PlayPageClient() {
               (detailRef.current?.episodes?.length || 1) - 1
           ) {
             handleNextEpisode();
+            artPlayerRef.current.notice.show = `已跳过片尾 (${formatTime(
+              skipConfigRef.current.outro_time
+            )})`;
           } else {
+            // 连播关着或已是最后一集：停在片尾，不说「已跳过」
             artPlayerRef.current.pause();
+            artPlayerRef.current.notice.show = '已到片尾，已暂停播放';
           }
-          artPlayerRef.current.notice.show = `已跳过片尾 (${formatTime(
-            skipConfigRef.current.outro_time
-          )})`;
         }
       });
 

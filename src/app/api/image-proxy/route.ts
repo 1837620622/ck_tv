@@ -2,6 +2,7 @@ import { getOptionalRequestContext } from '@cloudflare/next-on-pages';
 
 import { readJsonCache, writeCached } from '@/lib/edge-cache';
 import { limitStream } from '@/lib/limit-stream';
+import { clientIp, isCrossSite, takeQuota } from '@/lib/request-guard';
 import { fetchPublic, publicHttpUrl } from '@/lib/safe-url';
 
 export const runtime = 'edge';
@@ -42,6 +43,22 @@ function fallback() {
 
 // OrionTV 兼容与防盗链代理接口
 export async function GET(request: Request) {
+  // 跨站页面不能借用这个代理做盗链。同一 IP 每分钟有上限；拿不到 IP 的部署（如 Docker）不限流，
+  // 否则所有访客会共用一个计数
+  if (isCrossSite(request)) {
+    return new Response('Forbidden', { status: 403 });
+  }
+  const ip = clientIp(request);
+  if (ip) {
+    const wait = takeQuota(`img:${ip}`, 600, 60_000);
+    if (wait > 0) {
+      return new Response('Too Many Requests', {
+        status: 429,
+        headers: { 'Retry-After': String(wait) },
+      });
+    }
+  }
+
   const { searchParams } = new URL(request.url);
   const imageUrl = searchParams.get('url');
 
