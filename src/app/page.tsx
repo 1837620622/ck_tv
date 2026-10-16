@@ -215,6 +215,11 @@ function HomeClient() {
   const [catalogLoading, setCatalogLoading] = useState(true);
   const foreignColumns = useForeignColumns();
 
+  useEffect(() => {
+    // 打开首页就巡检普通片源。搜索读这份结果，不通的源不占快速名额。
+    fetch('/api/upstream', { cache: 'no-store' }).catch(() => undefined);
+  }, []);
+
   // 收藏夹数据
   type FavoriteItem = {
     id: string;

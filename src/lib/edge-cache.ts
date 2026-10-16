@@ -26,12 +26,19 @@ export function edgeFetchInit(
   } as RequestInit;
 }
 
-export function jsonCacheHeaders(edgeSeconds: number, browserSeconds: number) {
+export function jsonCacheHeaders(
+  edgeSeconds: number,
+  browserSeconds: number,
+  // 不传时保持原来的陈旧窗口。传 0 表示过期就重新回源，不再把旧 JSON 继续发出去。
+  swrSeconds?: number
+) {
+  const swr = swrSeconds === undefined ? edgeSeconds : swrSeconds;
+  const cdnSwr = swrSeconds === undefined ? edgeSeconds * 2 : swrSeconds;
+  const swrPart = swr > 0 ? `, stale-while-revalidate=${swr}` : '';
+  const cdnSwrPart = cdnSwr > 0 ? `, stale-while-revalidate=${cdnSwr}` : '';
   return {
-    'Cache-Control': `public, max-age=${browserSeconds}, s-maxage=${edgeSeconds}, stale-while-revalidate=${edgeSeconds}`,
-    'CDN-Cache-Control': `public, s-maxage=${edgeSeconds}, stale-while-revalidate=${
-      edgeSeconds * 2
-    }`,
+    'Cache-Control': `public, max-age=${browserSeconds}, s-maxage=${edgeSeconds}${swrPart}`,
+    'CDN-Cache-Control': `public, s-maxage=${edgeSeconds}${cdnSwrPart}`,
   };
 }
 
@@ -118,13 +125,13 @@ async function readBounded(
   return out.buffer as ArrayBuffer;
 }
 
-function memoryPut(cacheUrl: string, response: Response) {
+function memoryPut(cacheUrl: string, response: Response): Promise<void> {
   const ttl = memoryTtlSeconds(response.headers);
-  if (response.status !== 200 || ttl <= 0) return;
+  if (response.status !== 200 || ttl <= 0) return Promise.resolve();
   // 声明了长度且超过上限的直接不收；长度未知的边读边限
   const declared = Number(response.headers.get('content-length') || 0);
-  if (declared > MEMORY_MAX_ENTRY_BYTES) return;
-  void readBounded(response.clone(), MEMORY_MAX_ENTRY_BYTES)
+  if (declared > MEMORY_MAX_ENTRY_BYTES) return Promise.resolve();
+  return readBounded(response.clone(), MEMORY_MAX_ENTRY_BYTES)
     .then((body) => {
       if (!body) return;
       memoryDrop(cacheUrl);
@@ -176,7 +183,7 @@ export function writeCached(
 ) {
   const cache = cacheStorage();
   if (!cache) {
-    memoryPut(cacheUrl, response);
+    void memoryPut(cacheUrl, response);
     return;
   }
   const task = cache
@@ -194,10 +201,11 @@ export function writeJsonCache(
   cacheUrl: string,
   body: string,
   edgeSeconds: number,
-  browserSeconds: number
-) {
-  if (!body) return;
-  const headers = jsonCacheHeaders(edgeSeconds, browserSeconds);
+  browserSeconds: number,
+  swrSeconds?: number
+): Promise<void> {
+  if (!body) return Promise.resolve();
+  const headers = jsonCacheHeaders(edgeSeconds, browserSeconds, swrSeconds);
   const response = new Response(body, {
     status: 200,
     headers: {
@@ -208,16 +216,11 @@ export function writeJsonCache(
     },
   });
   const cache = cacheStorage();
-  if (!cache) {
-    memoryPut(cacheUrl, response);
-    return;
-  }
+  if (!cache) return memoryPut(cacheUrl, response);
   const task = cache
     .put(new Request(cacheUrl, { method: 'GET' }), response)
+    .then(() => undefined)
     .catch(() => undefined);
-  if (ctx) {
-    ctx.waitUntil(task);
-    return;
-  }
-  void task;
+  if (ctx) ctx.waitUntil(task);
+  return task;
 }

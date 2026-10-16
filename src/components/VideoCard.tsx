@@ -24,6 +24,7 @@ interface VideoCardProps {
   query?: string;
   poster?: string;
   episodes?: number;
+  remarks?: string;
   source_name?: string;
   progress?: number;
   year?: string;
@@ -42,6 +43,7 @@ export default function VideoCard({
   query = '',
   poster = '',
   episodes,
+  remarks = '',
   source,
   source_name,
   progress = 0,
@@ -89,10 +91,21 @@ export default function VideoCard({
       return result;
     };
 
+    let newestRemarks = '';
+    let newestEpisodes = -1;
+    items.forEach((item) => {
+      const len = item.episode_count ?? item.episodes?.length ?? 0;
+      if (len > newestEpisodes) {
+        newestEpisodes = len;
+        newestRemarks = item.remarks || '';
+      }
+    });
+
     return {
       first: items[0],
       mostFrequentDoubanId: getMostFrequent(countMap),
       mostFrequentEpisodes: getMostFrequent(episodeCountMap) || 0,
+      remarks: newestRemarks,
     };
   }, [isAggregate, items]);
 
@@ -104,6 +117,7 @@ export default function VideoCard({
     aggregateData?.mostFrequentDoubanId ?? douban_id
   );
   const actualEpisodes = aggregateData?.mostFrequentEpisodes ?? episodes;
+  const actualRemarks = aggregateData?.remarks || remarks;
   const actualYear = aggregateData?.first.year ?? year;
   const actualQuery = query || '';
   const aggregateEpisodes = aggregateData?.mostFrequentEpisodes ?? 0;
@@ -466,6 +480,11 @@ export default function VideoCard({
             </span>
           </span>
         )}
+        {from === 'search' && actualRemarks ? (
+          <span className='mt-1 block truncate text-xs text-gray-500 dark:text-gray-400'>
+            {actualRemarks}
+          </span>
+        ) : null}
       </div>
     </div>
   );

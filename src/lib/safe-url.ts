@@ -118,6 +118,30 @@ function embeddedIPv4Blocked(host: string): boolean {
   return false;
 }
 
+// 测速只接受播放清单。任意公网地址不能借这个接口去探。
+export function publicPlaylistUrl(raw: string): URL | null {
+  const url = publicHttpUrl(raw);
+  if (!url) return null;
+  if (!url.pathname.toLowerCase().includes('.m3u8')) return null;
+  return url;
+}
+
+// 字幕转写只接受常见音视频后缀，避免被拿来拉取任意网页。
+const MEDIA_PATH = /\.(m3u8|mp4|m4a|mp3|aac|wav|ogg|flac|webm|mkv|ts)$/i;
+
+export function publicMediaUrl(raw: string): URL | null {
+  const url = publicHttpUrl(raw);
+  if (!url) return null;
+  let path = url.pathname;
+  try {
+    path = decodeURIComponent(url.pathname);
+  } catch {
+    return null;
+  }
+  if (!MEDIA_PATH.test(path.toLowerCase())) return null;
+  return url;
+}
+
 export function publicHttpUrl(raw: string): URL | null {
   let url: URL;
   try {

@@ -75,6 +75,8 @@ export interface SearchResult {
   poster: string;
   episodes: string[];
   episode_count?: number;
+  // 采集站的更新说明，例如「更新至12集」。列表页不带播放地址，靠它看出有没有新集。
+  remarks?: string;
   source: string;
   source_name: string;
   class?: string;

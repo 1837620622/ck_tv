@@ -17,7 +17,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { DEFAULT_JSON_BODY_BYTES, readJsonBody } from '@/lib/body';
 import { clientIp, isCrossSite, takeQuota } from '@/lib/request-guard';
-import { fetchPublic, publicHttpUrl } from '@/lib/safe-url';
+import { fetchPublic, publicMediaUrl } from '@/lib/safe-url';
 
 // Cloudflare Pages 需要 Edge Runtime
 export const runtime = 'edge';
@@ -284,7 +284,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 只接受公网 http(s)，避免被拿来请求内网或任意非网页地址
-    const videoUrl = typeof url === 'string' ? publicHttpUrl(url) : null;
+    const videoUrl = typeof url === 'string' ? publicMediaUrl(url) : null;
     if (!videoUrl) {
       return NextResponse.json({ error: '视频 URL 无效' }, { status: 400 });
     }

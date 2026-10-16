@@ -19,6 +19,7 @@ import {
   titleRank,
   workKey,
 } from '@/lib/match-title';
+import { SEARCH_CACHE_VERSION, shouldReplaceListing } from '@/lib/search-cache';
 import { SearchResult } from '@/lib/types';
 import { isAdultContent } from '@/lib/yellow';
 
@@ -244,7 +245,7 @@ function SearchPageClient() {
     const seq = ++searchSeq.current;
     const searchUrl = `/api/search?q=${encodeURIComponent(
       query.trim()
-    )}&slim=1&v=12`;
+    )}&slim=1&v=${SEARCH_CACHE_VERSION}`;
     try {
       setIsLoading(true);
       const response = await fetch(searchUrl, { cache: 'no-store' });
@@ -260,8 +261,9 @@ function SearchPageClient() {
       setSearchFailed(false);
       setSearchResults(sortResults(results, query));
       setShowResults(true);
-      // 首包只有排序靠前的片源。等边缘把其余源写入缓存后再拉一次完整结果。
-      if (response.headers.get('x-ck-cache') === 'PARTIAL') {
+      // 首包可能只有一部分源，或者还是过期列表。集数变了也要换上，不能只看条数。
+      const state = response.headers.get('x-ck-cache');
+      if (state === 'PARTIAL' || state === 'STALE') {
         window.setTimeout(async () => {
           if (seq !== searchSeq.current) return;
           try {
@@ -274,7 +276,7 @@ function SearchPageClient() {
                 ...result,
                 title: repairTitle(result.title),
               }));
-            if (more.length > results.length) {
+            if (shouldReplaceListing(results, more)) {
               setSearchResults(sortResults(more, query));
             }
             if (again.headers.get('x-ck-cache') === 'PARTIAL') {
@@ -290,7 +292,7 @@ function SearchPageClient() {
                       ...result,
                       title: repairTitle(result.title),
                     }));
-                  if (full.length > more.length) {
+                  if (shouldReplaceListing(more, full)) {
                     setSearchResults(sortResults(full, query));
                   }
                 } catch {
@@ -428,6 +430,7 @@ function SearchPageClient() {
                           title={item.title}
                           poster={item.poster}
                           episodes={item.episode_count ?? item.episodes.length}
+                          remarks={item.remarks}
                           source={item.source}
                           source_name={item.source_name}
                           douban_id={item.douban_id?.toString()}

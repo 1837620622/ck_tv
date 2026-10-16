@@ -45,6 +45,11 @@ import {
   writeVolume,
 } from '@/lib/player-prefs';
 import { releaseMedia, silenceOtherMedia } from '@/lib/release-media';
+import {
+  DETAIL_CACHE_VERSION,
+  SEARCH_CACHE_VERSION,
+  shouldReplaceListing,
+} from '@/lib/search-cache';
 import { SearchResult } from '@/lib/types';
 import { processImageUrl } from '@/lib/utils';
 import { type ScreenWakeLock, createScreenWakeLock } from '@/lib/wake-lock';
@@ -629,7 +634,7 @@ function PlayPageClient() {
     ): Promise<SearchResult[]> => {
       try {
         const detailResponse = await fetch(
-          `/api/detail?source=${source}&id=${id}${
+          `/api/detail?source=${source}&id=${id}&v=${DETAIL_CACHE_VERSION}${
             source === 'huangguo' ? '&hv=2' : ''
           }`
         );
@@ -658,7 +663,7 @@ function PlayPageClient() {
       try {
         const searchUrl = `/api/search?q=${encodeURIComponent(
           query.trim()
-        )}&v=12`;
+        )}&v=${SEARCH_CACHE_VERSION}`;
         const response = await fetch(searchUrl, { cache: 'no-store' });
         if (!response.ok) {
           throw new Error('搜索失败');
@@ -696,7 +701,7 @@ function PlayPageClient() {
                 if (!again.ok) return;
                 const againData = await again.json();
                 const more = matchList(againData.results);
-                if (more.length > results.length) {
+                if (shouldReplaceListing(results, more)) {
                   results = more;
                   setAvailableSources((current) => {
                     const seen = new Set(
