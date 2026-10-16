@@ -195,13 +195,15 @@ export async function GET(request: Request) {
         startFill(cacheUrl, refresh);
         const pending = inflight.get(cacheUrl);
         if (pending) ctx?.waitUntil(pending.catch(() => undefined));
-        if (pending) {
+        // 新鲜期已过就后台刷新。只有明确要求等待时才堵住这次请求。
+        // 等到时限仍可能读回旧条目，不能把旧正文标成刚刚刷新完。
+        if (budget.waitStaleMs > 0 && pending) {
           await Promise.race([
             pending.catch(() => undefined),
             new Promise((resolve) => setTimeout(resolve, budget.waitStaleMs)),
           ]);
           const newer = await readJsonCache(cacheUrl);
-          if (newer) {
+          if (newer && newer !== hit) {
             return new NextResponse(await newer.text(), {
               headers: searchCacheHeaders(
                 'FRESH',
@@ -211,10 +213,17 @@ export async function GET(request: Request) {
             });
           }
         }
+        return new NextResponse(text, {
+          headers: searchCacheHeaders(
+            'STALE',
+            budget.edgeSeconds,
+            budget.browserSeconds
+          ),
+        });
       }
       return new NextResponse(text, {
         headers: searchCacheHeaders(
-          age >= budget.freshSeconds ? 'STALE' : 'HIT',
+          'HIT',
           budget.edgeSeconds,
           budget.browserSeconds
         ),

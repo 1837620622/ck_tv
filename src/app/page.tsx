@@ -216,7 +216,7 @@ function HomeClient() {
   const foreignColumns = useForeignColumns();
 
   useEffect(() => {
-    // 打开首页就巡检普通片源。搜索读这份结果，不通的源不占快速名额。
+    // 打开首页就排一小批片源巡检。不等结果，不挡页面。不通的源不占搜索的快速名额。
     fetch('/api/upstream', { cache: 'no-store' }).catch(() => undefined);
   }, []);
 

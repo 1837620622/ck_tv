@@ -98,9 +98,9 @@ Pages Function 的响应默认是动态的，`Cache-Control` 不会自动进边�
 
 不设置自定义 `cacheKey`。
 
-搜索和详情大约每 20 秒重新回源。边缘里的旧列表过了新鲜期后，这次搜索会多等一会儿，尽量直接带回新集数。某个源这次没答上，就保留它上一次的结果；答上来的源用新集数覆盖，不会因为总条数变少把更新丢掉。
+搜索和详情的聚合结果在边缘保留一刻钟。写完大约十分钟后开始在后台回源，这一次点击直接返回已有列表，不再空等。某个源这次没答上，就保留它上一次的结果；答上来的源用新集数覆盖，不会因为总条数变少把更新丢掉。采集站自己的响应缓存短于这个新鲜期，后台刷新不会读到刚写过的旧 JSON。
 
-`/api/upstream` 巡检 `config.json` 里的普通源。用的是各源现有的苹果 CMS 地址，只请求列表，不拉播放地址。打开首页或搜索会触发巡检，大约 20 秒一轮；巡检判定不通的源不占搜索的快速名额。配置了 `CRON_SECRET` 时，`/api/cron` 也会跑同一轮巡检。首页「热门剧集」来自豆瓣榜，不是采集站的更新列表。
+`/api/upstream` 巡检 `config.json` 里的普通源。用的是各源现有的苹果 CMS 地址，只请求列表，不拉播放地址。打开首页或搜索会排一小批到后台，一刻钟内不重复探；巡检判定不通的源不占搜索的快速名额。配置了 `CRON_SECRET` 时，`/api/cron` 会把源再探一遍。首页「热门剧集」来自豆瓣榜，不是采集站的更新列表。
 
 ## 栏目隔离
 
@@ -166,18 +166,17 @@ pnpm test
 
 ### 环境变量
 
-| 变量                                            | 作用                                                    | 什么时候配                     |
-| ----------------------------------------------- | ------------------------------------------------------- | ------------------------------ |
-| `GATE_TRUST_COUNTRY_HEADER`                     | 设为 `true` 后读取 `CF-IPCountry`                       | 只限前面挂着 Cloudflare 的部署 |
-| `CRON_SECRET`                                   | `/api/cron` 的 Bearer 口令，没配时该接口一律 401        | 要定时刷新播放记录和收藏时     |
-| `NEXT_PUBLIC_STORAGE_TYPE`                      | `localstorage`（默认）、`d1`、`redis`、`upstash`        | 要把收藏和播放记录存到服务端时 |
-| `REDIS_URL`                                     | Redis 连接地址                                          | `redis` 模式                   |
-| `UPSTASH_URL`、`UPSTASH_TOKEN`                  | Upstash 的 REST 地址和令牌                              | `upstash` 模式                 |
-| `CLOUDFLARE_ACCOUNT_ID`、`CLOUDFLARE_API_TOKEN` | 调用 Workers AI 生成字幕                                | 要用 AI 字幕时                 |
-| `SITE_NAME`                                     | 站点名称，默认 `CKTV-传康播放器`                        | 想改名字时                     |
-| `ANNOUNCEMENT`                                  | 公告文字                                                | 想发公告时                     |
-| `NEXT_PUBLIC_IMAGE_PROXY`                       | 图片代理地址。豆瓣图片不配也会走本站 `/api/image-proxy` | 可选                           |
-| `NEXT_PUBLIC_DOUBAN_PROXY`                      | 豆瓣数据请求的代理地址                                  | 可选                           |
+| 变量                           | 作用                                                    | 什么时候配                     |
+| ------------------------------ | ------------------------------------------------------- | ------------------------------ |
+| `GATE_TRUST_COUNTRY_HEADER`    | 设为 `true` 后读取 `CF-IPCountry`                       | 只限前面挂着 Cloudflare 的部署 |
+| `CRON_SECRET`                  | `/api/cron` 的 Bearer 口令，没配时该接口一律 401        | 要定时刷新播放记录和收藏时     |
+| `NEXT_PUBLIC_STORAGE_TYPE`     | `localstorage`（默认）、`d1`、`redis`、`upstash`        | 要把收藏和播放记录存到服务端时 |
+| `REDIS_URL`                    | Redis 连接地址                                          | `redis` 模式                   |
+| `UPSTASH_URL`、`UPSTASH_TOKEN` | Upstash 的 REST 地址和令牌                              | `upstash` 模式                 |
+| `SITE_NAME`                    | 站点名称，默认 `CKTV-传康播放器`                        | 想改名字时                     |
+| `ANNOUNCEMENT`                 | 公告文字                                                | 想发公告时                     |
+| `NEXT_PUBLIC_IMAGE_PROXY`      | 图片代理地址。豆瓣图片不配也会走本站 `/api/image-proxy` | 可选                           |
+| `NEXT_PUBLIC_DOUBAN_PROXY`     | 豆瓣数据请求的代理地址                                  | 可选                           |
 
 `d1` 模式需要 D1 绑定 `DB`，`redis` 和 `upstash` 模式需要对应的地址和令牌。
 

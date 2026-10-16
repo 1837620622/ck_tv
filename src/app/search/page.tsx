@@ -261,9 +261,9 @@ function SearchPageClient() {
       setSearchFailed(false);
       setSearchResults(sortResults(results, query));
       setShowResults(true);
-      // 首包可能只有一部分源，或者还是过期列表。集数变了也要换上，不能只看条数。
+      // 冷搜索的首包只有一部分源。过期列表已在后台刷新，不再为了它马上重拉。
       const state = response.headers.get('x-ck-cache');
-      if (state === 'PARTIAL' || state === 'STALE') {
+      if (state === 'PARTIAL') {
         window.setTimeout(async () => {
           if (seq !== searchSeq.current) return;
           try {
@@ -279,31 +279,10 @@ function SearchPageClient() {
             if (shouldReplaceListing(results, more)) {
               setSearchResults(sortResults(more, query));
             }
-            if (again.headers.get('x-ck-cache') === 'PARTIAL') {
-              window.setTimeout(async () => {
-                if (seq !== searchSeq.current) return;
-                try {
-                  const third = await fetch(searchUrl, { cache: 'no-store' });
-                  const thirdData = await third.json();
-                  if (seq !== searchSeq.current) return;
-                  const full = (thirdData.results || [])
-                    .filter((result: SearchResult) => !isAdultContent(result))
-                    .map((result: SearchResult) => ({
-                      ...result,
-                      title: repairTitle(result.title),
-                    }));
-                  if (shouldReplaceListing(more, full)) {
-                    setSearchResults(sortResults(full, query));
-                  }
-                } catch {
-                  // 第二次补全失败时保留当前结果
-                }
-              }, 2000);
-            }
           } catch {
             // 补全失败时保留已经显示的首批结果
           }
-        }, 1800);
+        }, 2200);
       }
     } catch (error) {
       if (seq === searchSeq.current) {
@@ -325,12 +304,13 @@ function SearchPageClient() {
     setIsLoading(true);
     setShowResults(true);
 
+    const current = searchParams.get('q');
     router.push(`/search?q=${encodeURIComponent(trimmed)}`);
-    // 直接发请求
-    fetchSearchResults(trimmed);
-
-    // 保存到搜索历史 (事件监听会自动更新界面)
-    addSearchHistory(trimmed);
+    // 关键词变了会由地址栏的 effect 再搜一次。这里只补「还是同一个词」的情况，避免同一次搜索打两遍。
+    if (current === trimmed) {
+      fetchSearchResults(trimmed);
+      addSearchHistory(trimmed);
+    }
   };
 
   // 返回顶部功能

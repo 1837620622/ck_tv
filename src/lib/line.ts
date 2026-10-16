@@ -26,24 +26,24 @@ export function sourceRank(site: RankedSite, line: LineMode): number {
 }
 
 // 国内出口先只等最靠前的一批国内源，页面先出来，其余源在后台补进边缘缓存。
-// 新鲜期过了就在这次搜索里多等一会儿，把新集数带回页面，而不是继续交旧列表。
+// 列表在边缘留一刻钟。过了新鲜期只在后台回源，这次点击直接交已有结果，避免搜索卡住。
 export function lineBudget(line: LineMode) {
+  const cache = {
+    edgeSeconds: 900,
+    browserSeconds: 60,
+    freshSeconds: 600,
+    waitStaleMs: 0,
+  };
   if (line === 'cn') {
     return {
-      edgeSeconds: 40,
-      browserSeconds: 10,
-      freshSeconds: 20,
-      waitStaleMs: 700,
+      ...cache,
       deadlineMs: 900,
       fastCount: 8,
       timeoutMs: 1800,
     };
   }
   return {
-    edgeSeconds: 30,
-    browserSeconds: 10,
-    freshSeconds: 15,
-    waitStaleMs: 800,
+    ...cache,
     deadlineMs: 1200,
     fastCount: 12,
     timeoutMs: 2200,

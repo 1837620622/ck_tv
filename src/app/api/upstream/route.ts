@@ -4,7 +4,12 @@ import { NextResponse } from 'next/server';
 import { getSearchApiSites } from '@/lib/config';
 import { viewerLine } from '@/lib/line';
 import { clientIp, isCrossSite, takeQuota } from '@/lib/request-guard';
-import { loadSourceWatch, SourceWatch } from '@/lib/source-watch';
+import {
+  readSourceWatch,
+  scheduleSourceWatch,
+  SourceWatch,
+  watchBatch,
+} from '@/lib/source-watch';
 
 export const runtime = 'edge';
 
@@ -31,7 +36,8 @@ function present(watch: SourceWatch | null) {
   };
 }
 
-// 巡检普通片源的最新列表。不返回采集地址。首页和搜索也会触发同一轮巡检。
+// 巡检普通片源的最新列表。不返回采集地址。
+// 这次请求只排一小批到后台，不等探活结束。
 export async function GET(request: Request) {
   if (isCrossSite(request)) {
     return NextResponse.json(
@@ -58,10 +64,11 @@ export async function GET(request: Request) {
     }
   })();
   const sites = await getSearchApiSites(viewerLine(request));
-  const watch = await loadSourceWatch(sites, ctx);
+  scheduleSourceWatch(watchBatch(sites), ctx);
+  const watch = await readSourceWatch();
   return NextResponse.json(present(watch), {
     headers: {
-      'Cache-Control': 'private, max-age=15',
+      'Cache-Control': 'private, max-age=60',
       'CDN-Cache-Control': 'no-store',
     },
   });

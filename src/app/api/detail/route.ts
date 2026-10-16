@@ -15,10 +15,9 @@ import { DETAIL_CACHE_VERSION } from '@/lib/search-cache';
 
 export const runtime = 'edge';
 
-const DETAIL_EDGE_SECONDS = 60;
-const DETAIL_BROWSER_SECONDS = 10;
-const DETAIL_FRESH_SECONDS = 20;
-const DETAIL_WAIT_MS = 500;
+const DETAIL_EDGE_SECONDS = 900;
+const DETAIL_BROWSER_SECONDS = 60;
+const DETAIL_FRESH_SECONDS = 600;
 
 const detailInflight = new Map<string, Promise<void>>();
 
@@ -137,18 +136,7 @@ export async function GET(request: Request) {
         startDetail(cacheUrl, refresh);
         const pending = detailInflight.get(cacheUrl);
         if (pending) ctx?.waitUntil(pending.catch(() => undefined));
-        if (pending) {
-          await Promise.race([
-            pending.catch(() => undefined),
-            new Promise((resolve) => setTimeout(resolve, DETAIL_WAIT_MS)),
-          ]);
-          const newer = await readJsonCache(cacheUrl);
-          if (newer) {
-            return new NextResponse(await newer.text(), {
-              headers: headersFor('FRESH'),
-            });
-          }
-        }
+        return new NextResponse(text, { headers: headersFor('STALE') });
       }
       return new NextResponse(text, { headers: headersFor('HIT') });
     }

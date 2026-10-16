@@ -22,9 +22,9 @@ interface ApiSearchItem {
 // 最近失败过的源（超时、网络错误、非 200、返回的不是 JSON）。
 // 同一个实例里暂时不占快速查询名额，5 分钟后自动恢复。
 const FAILURE_MEMO_MS = 5 * 60 * 1000;
-// 回源缓存只留很短时间。半小时的话，采集站加了集，搜索仍会拿到旧 JSON。
-const SEARCH_UPSTREAM_TTL = 30;
-const DETAIL_UPSTREAM_TTL = 30;
+// 回源缓存短于列表新鲜期。后台刷新时这份缓存已经过期，才能看到采集站的新集。
+const SEARCH_UPSTREAM_TTL = 300;
+const DETAIL_UPSTREAM_TTL = 300;
 const failedSites = new Map<string, number>();
 
 export function recentlyFailed(siteKey: string): boolean {

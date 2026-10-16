@@ -22,7 +22,7 @@ function sourceKey(source: SearchResult): string {
 type LineProbe = {
   ms: number;
   height: number;
-  state: 'ok' | 'cors' | 'dead';
+  state: 'ok' | 'cors' | 'dead' | 'later';
 };
 
 // 只请求 m3u8 清单。能读到正文就解析清晰度；跨域时改用 no-cors 记往返，再让边缘确认是不是清单。
@@ -84,6 +84,7 @@ async function probeLine(url: string, parent: AbortSignal): Promise<LineProbe> {
 function probeLabel(probe: LineProbe | undefined, playing: boolean): string {
   if (!probe) return playing ? '正在播放' : '测速中';
   const quality = qualityText(probe.height);
+  if (probe.state === 'later') return '未测';
   if (probe.state === 'dead') return '源头不通';
   const speed = probe.ms > 0 ? `${probe.ms} ms` : '';
   if (probe.state === 'cors') {
@@ -152,7 +153,12 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
   const [latencyMs, setLatencyMs] = useState<Record<string, LineProbe>>({});
   const probedRef = useRef<Set<string>>(new Set());
   const sourceSignature = availableSources
-    .map((source) => sourceKey(source))
+    .map(
+      (source) =>
+        `${sourceKey(source)}:${
+          source.episodes?.some((item) => item.includes('.m3u8')) ? '1' : '0'
+        }`
+    )
     .join('|');
 
   // 只在打开换源标签时才测线路。播放中测清单会和正片抢带宽，直接导致缓冲。
@@ -173,12 +179,17 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
           missed[key] = { ms: 0, height: 0, state: 'ok' };
         } else if (url) {
           jobs.push({ key, url });
+        } else if ((source.episode_count ?? 0) > 0) {
+          // 列表还没带播放地址。不能标成不通，换到这条线取到清单后再测。
+          missed[key] = { ms: 0, height: 0, state: 'later' };
         } else {
           // 分享页没有清单，标成源头不通，避免一直停在测速中。
           missed[key] = { ms: 0, height: 0, state: 'dead' };
         }
       });
-      Object.keys(missed).forEach((key) => probedRef.current.add(key));
+      Object.keys(missed).forEach((key) => {
+        if (missed[key].state !== 'later') probedRef.current.add(key);
+      });
       if (Object.keys(missed).length > 0) {
         setLatencyMs((current) => ({ ...current, ...missed }));
       }

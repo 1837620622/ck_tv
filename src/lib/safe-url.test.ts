@@ -1,4 +1,4 @@
-import { publicHttpUrl, publicMediaUrl, publicPlaylistUrl } from './safe-url';
+import { publicHttpUrl, publicPlaylistUrl } from './safe-url';
 
 describe('publicHttpUrl', () => {
   it('allows ordinary public http and https addresses', () => {
@@ -28,7 +28,7 @@ describe('publicHttpUrl', () => {
     expect(publicHttpUrl('http://1.10.0.0.1.nip.io/')).toBeNull();
   });
 
-  it('only allows playlist and media paths for the probe helpers', () => {
+  it('only allows playlist paths for the probe helper', () => {
     expect(
       publicPlaylistUrl('https://cdn.example.com/a/index.m3u8?token=1')
         ?.pathname
@@ -38,11 +38,6 @@ describe('publicHttpUrl', () => {
     ).not.toBeNull();
     expect(publicPlaylistUrl('https://example.com/admin?x=.m3u8')).toBeNull();
     expect(publicPlaylistUrl('http://127.0.0.1/a.m3u8')).toBeNull();
-    expect(
-      publicMediaUrl('https://cdn.example.com/a/video.mp4')
-    ).not.toBeNull();
-    expect(publicMediaUrl('https://example.com/page.html')).toBeNull();
-    expect(publicMediaUrl('https://example.com/file.mp4?.html')).not.toBeNull();
   });
 
   it('blocks localhost, internal names, credentials and other schemes', () => {

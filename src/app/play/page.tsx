@@ -54,7 +54,6 @@ import { SearchResult } from '@/lib/types';
 import { processImageUrl } from '@/lib/utils';
 import { type ScreenWakeLock, createScreenWakeLock } from '@/lib/wake-lock';
 
-import CloudflareAISubtitle from '@/components/CloudflareAISubtitle';
 import EpisodeSelector from '@/components/EpisodeSelector';
 import PageLayout from '@/components/PageLayout';
 import ScamNotice from '@/components/ScamNotice';
@@ -140,20 +139,6 @@ function PlayPageClient() {
   useEffect(() => {
     subtitleEnabledRef.current = subtitleEnabled;
   }, [subtitleEnabled]);
-
-  // AI 字幕开关（从 localStorage 继承，默认 false）
-  const [aiSubtitleEnabled, setAiSubtitleEnabled] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      const v = localStorage.getItem('enable_ai_subtitle');
-      if (v !== null) return v === 'true';
-    }
-    return false;
-  });
-
-  // 当前播放时间（用于 AI 字幕同步）
-
-  // 当前视频 URL（用于 AI 字幕）
-  const [currentVideoUrl, setCurrentVideoUrl] = useState('');
 
   // 视频基本信息
   const [videoTitle, setVideoTitle] = useState(searchParams.get('title') || '');
@@ -283,6 +268,10 @@ function PlayPageClient() {
   const playingNodeRef = useRef<HTMLVideoElement | null>(null);
   const artRef = useRef<HTMLDivElement | null>(null);
   const autoNextRef = useRef(true);
+  // 自动进下一集后短时间不再连跳。旧画面还停在片尾时，结束事件会再触发一次。
+  const autoNextHoldRef = useRef(0);
+  // 按住连播时记下要等的集数。新的一集真正开播才松开；暂停后在当前集点播放不能松开。
+  const autoNextHoldEpisodeRef = useRef(-1);
   // 睡眠定时：off / 15 / 30 / 60（分钟）/ episode（本集结束）
   const sleepTimerRef = useRef<number>(0);
   const sleepEndOfEpisodeRef = useRef(false);
@@ -636,7 +625,8 @@ function PlayPageClient() {
         const detailResponse = await fetch(
           `/api/detail?source=${source}&id=${id}&v=${DETAIL_CACHE_VERSION}${
             source === 'huangguo' ? '&hv=2' : ''
-          }`
+          }`,
+          { cache: 'no-store' }
         );
         if (detailResponse.status === 403) {
           blocked = true;
@@ -661,9 +651,9 @@ function PlayPageClient() {
     ): Promise<SearchResult[]> => {
       // 根据搜索词获取全部源信息
       try {
-        const searchUrl = `/api/search?q=${encodeURIComponent(
-          query.trim()
-        )}&v=${SEARCH_CACHE_VERSION}`;
+        const searchUrl = `/api/search?q=${encodeURIComponent(query.trim())}${
+          background ? '&slim=1' : ''
+        }&v=${SEARCH_CACHE_VERSION}`;
         const response = await fetch(searchUrl, { cache: 'no-store' });
         if (!response.ok) {
           throw new Error('搜索失败');
@@ -679,8 +669,8 @@ function PlayPageClient() {
           );
         let results = matchList(data.results);
         const partial = response.headers.get('x-ck-cache') === 'PARTIAL';
-        // 首批源还没凑齐时先等一次完整结果，避免页面先报没找到。
-        if (partial && results.length === 0) {
+        // 还没开播、首批又是空的，才等一次完整结果，避免页面先报没找到。
+        if (partial && results.length === 0 && !background) {
           await new Promise((resolve) => window.setTimeout(resolve, 1600));
           try {
             const again = await fetch(searchUrl, { cache: 'no-store' });
@@ -693,40 +683,38 @@ function PlayPageClient() {
             // 补搜失败时沿用第一批
           }
         } else if (partial) {
-          // 首包是快的那几条。完整片源写进缓存还要几秒，这里最多再拉两次。
-          const mergeLater = (delay: number) => {
-            window.setTimeout(async () => {
-              try {
-                const again = await fetch(searchUrl, { cache: 'no-store' });
-                if (!again.ok) return;
-                const againData = await again.json();
-                const more = matchList(againData.results);
-                if (shouldReplaceListing(results, more)) {
-                  results = more;
-                  setAvailableSources((current) => {
-                    const seen = new Set(
-                      more.map(
-                        (item: SearchResult) => `${item.source}:${item.id}`
-                      )
-                    );
-                    const kept = current.filter(
-                      (item) => !seen.has(`${item.source}:${item.id}`)
-                    );
-                    return [...more, ...kept];
-                  });
-                }
-                if (
-                  again.headers.get('x-ck-cache') === 'PARTIAL' &&
-                  delay < 4000
-                ) {
-                  mergeLater(delay + 2200);
-                }
-              } catch {
-                // 线路补全失败时继续用已经开播的源
-              }
-            }, delay);
-          };
-          mergeLater(1800);
+          // 首包是快的那几条。只再拉一次，已经取过播放地址的线路不要被瘦身结果盖掉。
+          window.setTimeout(async () => {
+            try {
+              const again = await fetch(searchUrl, { cache: 'no-store' });
+              if (!again.ok) return;
+              const againData = await again.json();
+              const more = matchList(againData.results);
+              if (!shouldReplaceListing(results, more)) return;
+              results = more;
+              setAvailableSources((current) => {
+                const hydrated = new Map(
+                  current
+                    .filter((item) => item.episodes?.length)
+                    .map((item) => [`${item.source}:${item.id}`, item])
+                );
+                const merged = more.map(
+                  (item) => hydrated.get(`${item.source}:${item.id}`) || item
+                );
+                const seen = new Set(
+                  merged.map((item) => `${item.source}:${item.id}`)
+                );
+                const kept = current.filter(
+                  (item) =>
+                    item.episodes?.length &&
+                    !seen.has(`${item.source}:${item.id}`)
+                );
+                return [...merged, ...kept];
+              });
+            } catch {
+              // 线路补全失败时继续用已经开播的源
+            }
+          }, 2200);
         }
         if (!background) setAvailableSources(results);
         return results;
@@ -770,14 +758,29 @@ function PlayPageClient() {
             void fetchSourcesData(videoTitle || searchTitle, true).then(
               (results) => {
                 if (results.length === 0) return;
-                const hasCurrent = results.some(
-                  (source) =>
-                    String(source.source) === String(currentSource) &&
-                    String(source.id) === String(currentId)
-                );
-                setAvailableSources(
-                  hasCurrent ? results : [quickDetail, ...results]
-                );
+                setAvailableSources((current) => {
+                  const hydrated = new Map(
+                    current
+                      .filter((item) => item.episodes?.length)
+                      .map((item) => [`${item.source}:${item.id}`, item])
+                  );
+                  if (quickDetail.episodes?.length) {
+                    hydrated.set(
+                      `${quickDetail.source}:${quickDetail.id}`,
+                      quickDetail
+                    );
+                  }
+                  const merged = results.map(
+                    (item) => hydrated.get(`${item.source}:${item.id}`) || item
+                  );
+                  const seen = new Set(
+                    merged.map((item) => `${item.source}:${item.id}`)
+                  );
+                  const kept = Array.from(hydrated.values()).filter(
+                    (item) => !seen.has(`${item.source}:${item.id}`)
+                  );
+                  return [...merged, ...kept];
+                });
               }
             );
           }
@@ -930,15 +933,52 @@ function PlayPageClient() {
         }
       }
 
-      const newDetail = availableSources.find(
+      let newDetail = availableSources.find(
         (source) =>
           String(source.source) === String(newSource) &&
           String(source.id) === String(newId)
       );
       if (!newDetail) {
+        sourceSwitchingRef.current = false;
         setIsVideoLoading(false);
         setError('未找到匹配结果');
         return;
+      }
+      // 后台搜索不带播放地址。换到这条线时再拉它自己的详情。
+      if (!newDetail.episodes?.length) {
+        const detailResponse = await fetch(
+          `/api/detail?source=${encodeURIComponent(
+            newSource
+          )}&id=${encodeURIComponent(newId)}&v=${DETAIL_CACHE_VERSION}`,
+          { cache: 'no-store' }
+        );
+        if (!detailResponse.ok) {
+          sourceSwitchingRef.current = false;
+          setIsVideoLoading(false);
+          setError('换源失败');
+          return;
+        }
+        const filled = (await detailResponse.json()) as SearchResult;
+        if (!filled.episodes?.length) {
+          sourceSwitchingRef.current = false;
+          setIsVideoLoading(false);
+          setError('这条线路暂时没有可播放的集');
+          return;
+        }
+        newDetail = {
+          ...newDetail,
+          ...filled,
+          episodes: filled.episodes,
+        };
+        const hydrated = newDetail;
+        setAvailableSources((current) =>
+          current.map((item) =>
+            String(item.source) === String(newSource) &&
+            String(item.id) === String(newId)
+              ? hydrated
+              : item
+          )
+        );
       }
 
       // 尝试跳转到当前正在播放的集数
@@ -974,7 +1014,8 @@ function PlayPageClient() {
       setDetail(newDetail);
       setCurrentEpisodeIndex(targetIndex);
     } catch (err) {
-      // 隐藏换源加载状态
+      // 隐藏换源加载状态。失败后允许再换下一条。
+      sourceSwitchingRef.current = false;
       setIsVideoLoading(false);
       setError(err instanceof Error ? err.message : '换源失败');
     }
@@ -983,9 +1024,12 @@ function PlayPageClient() {
   // 挑下一条可用线路：有 m3u8、没有失败过、排名最靠前
   const pickNextSource = () =>
     [...availableSourcesRef.current]
-      .filter((source) =>
-        source.episodes?.some((episode) => episode.includes('.m3u8'))
-      )
+      .filter((source) => {
+        const episodes = source.episodes || [];
+        if (episodes.some((episode) => episode.includes('.m3u8'))) return true;
+        // 瘦身列表只有集数。换线时再取这一条的播放地址。
+        return episodes.length === 0 && (source.episode_count ?? 0) > 0;
+      })
       .filter(
         (source) =>
           !failedSourceKeysRef.current.has(`${source.source}:${source.id}`)
@@ -1046,6 +1090,9 @@ function PlayPageClient() {
     const d = detailRef.current;
     const idx = currentEpisodeIndexRef.current;
     if (d && d.episodes && idx < d.episodes.length - 1) {
+      // 旧画面还在片尾时，结束和跳过片尾都会再进来一次。先按住，避免连跳两集。
+      autoNextHoldRef.current = Date.now() + 8000;
+      autoNextHoldEpisodeRef.current = idx + 1;
       saveCurrentPlayProgress();
       setCurrentEpisodeIndex(idx + 1);
     }
@@ -1647,27 +1694,6 @@ function PlayPageClient() {
             },
           },
           {
-            name: 'AI字幕',
-            html: 'AI字幕',
-            icon: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="4" width="20" height="16" rx="2" stroke="#ffffff" stroke-width="2"/><text x="12" y="14" font-size="8" font-weight="bold" text-anchor="middle" fill="#ffffff">AI</text></svg>',
-            switch: aiSubtitleEnabled,
-            onSwitch: function (item: any) {
-              const newVal = !item.switch;
-              try {
-                localStorage.setItem('enable_ai_subtitle', String(newVal));
-                setAiSubtitleEnabled(newVal);
-                // 同步更新设置面板的 switch 状态
-                artPlayerRef.current?.setting?.update({
-                  name: 'AI字幕',
-                  switch: newVal,
-                });
-              } catch (_) {
-                // ignore
-              }
-              return newVal;
-            },
-          },
-          {
             html: '去广告',
             icon: '<text x="50%" y="50%" font-size="20" font-weight="bold" text-anchor="middle" dominant-baseline="middle" fill="#ffffff">AD</text>',
             tooltip: blockAdEnabled ? '已开启' : '已关闭',
@@ -1950,6 +1976,16 @@ function PlayPageClient() {
           currentTime >
             artPlayerRef.current.duration + skipConfigRef.current.outro_time
         ) {
+          if (Date.now() < autoNextHoldRef.current) return;
+          // 睡眠定时「本集结束」优先于连播。暂停后结束事件仍可能再来，按住避免接着跳集。
+          if (sleepEndOfEpisodeRef.current) {
+            autoNextHoldRef.current = Date.now() + 15000;
+            autoNextHoldEpisodeRef.current = -1;
+            artPlayerRef.current.pause();
+            applySleepTimer('off');
+            artPlayerRef.current.notice.show = '本集已播完，睡眠定时已暂停播放';
+            return;
+          }
           if (
             autoNextRef.current &&
             currentEpisodeIndexRef.current <
@@ -1973,6 +2009,13 @@ function PlayPageClient() {
 
       // 播放与暂停：同步锁屏状态，并在播放时保持屏幕常亮
       artPlayerRef.current.on('video:play', () => {
+        // 等到的那一集已经开播。当前集暂停后再播放不能松开，否则片尾会接着跳。
+        if (
+          autoNextHoldEpisodeRef.current >= 0 &&
+          currentEpisodeIndexRef.current === autoNextHoldEpisodeRef.current
+        ) {
+          autoNextHoldRef.current = 0;
+        }
         setMediaPlaybackState('playing');
         wakeLockRef.current?.enable();
       });
@@ -1995,6 +2038,8 @@ function PlayPageClient() {
           loopVideo.duration > 0 &&
           loopVideo.currentTime >= loopVideo.duration - 0.5
         ) {
+          autoNextHoldRef.current = Date.now() + 15000;
+          autoNextHoldEpisodeRef.current = -1;
           loopVideo.pause();
           applySleepTimer('off');
           artPlayerRef.current.notice.show = '本集已播完，睡眠定时已暂停播放';
@@ -2019,7 +2064,10 @@ function PlayPageClient() {
       artPlayerRef.current.on('video:ended', () => {
         wakeLockRef.current?.disable();
         setMediaPlaybackState('paused');
+        if (Date.now() < autoNextHoldRef.current) return;
         if (sleepEndOfEpisodeRef.current) {
+          autoNextHoldRef.current = Date.now() + 15000;
+          autoNextHoldEpisodeRef.current = -1;
           applySleepTimer('off');
           artPlayerRef.current.notice.show = '本集已播完，睡眠定时已暂停播放';
           return;
@@ -2050,9 +2098,6 @@ function PlayPageClient() {
           lastSaveTimeRef.current = now;
         }
       });
-
-      // 设置当前视频 URL（用于 AI 字幕）
-      setCurrentVideoUrl(videoUrl);
 
       artPlayerRef.current.on('pause', () => {
         saveCurrentPlayProgress();
@@ -2273,13 +2318,6 @@ function PlayPageClient() {
                   ref={artRef}
                   className='bg-black w-full h-full rounded-xl overflow-hidden shadow-lg'
                 ></div>
-
-                {/* Cloudflare AI 字幕 */}
-                <CloudflareAISubtitle
-                  enabled={aiSubtitleEnabled}
-                  videoUrl={currentVideoUrl}
-                  language='zh'
-                />
 
                 {/* 换源加载蒙层 */}
                 {isVideoLoading && (

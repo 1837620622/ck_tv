@@ -6,9 +6,9 @@ import { readJsonCache, writeJsonCache } from '@/lib/edge-cache';
 import { isAdultContent, isUnderageLabel } from '@/lib/yellow';
 
 const WATCH_URL = 'https://cktv-cache.local/source-watch?v=1';
-// 缓存还能用，但超过这个秒数就在后台再探一遍。
-const FRESH_SECONDS = 20;
-const CACHE_SECONDS = 45;
+// 一刻钟内不重复探活。缓存留得更久，过期前仍能知道哪些源上次不通。
+const FRESH_SECONDS = 900;
+const CACHE_SECONDS = 1800;
 const PROBE_TIMEOUT_MS = 2200;
 const SAMPLE_LIMIT = 6;
 
@@ -126,7 +126,7 @@ export function withChanges(
   });
 }
 
-// 搜索请求里只探一小批，避免和回源抢子请求。大约 20 秒换下一批。
+// 搜索请求里只探一小批，避免和回源抢子请求。新鲜期内换下一批。
 export function watchBatch(sites: WatchSite[], size = 6): WatchSite[] {
   if (sites.length <= size) return sites;
   const steps = Math.ceil(sites.length / size);
@@ -253,7 +253,7 @@ export function scheduleSourceWatch(sites: WatchSite[], ctx?: WaitCtx) {
   if (ctx) ctx.waitUntil(task.catch(() => undefined));
 }
 
-// 巡检接口自己调用：尽量等这一轮写完再读。
+// 要等这一轮写完再读结果时用。首页的状态接口不等它。
 export async function loadSourceWatch(
   sites: WatchSite[],
   ctx?: WaitCtx
