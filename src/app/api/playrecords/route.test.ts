@@ -81,9 +81,7 @@ const record = {
 
 let gateCookie = '';
 beforeAll(async () => {
-  process.env.GATE_PASSWORD = 'records-test-password';
-  process.env.GATE_SECRET = 'records-test-secret-of-at-least-32-chars';
-  gateCookie = `cktv-gate=${(await issueGateCookie()) ?? ''}`;
+  gateCookie = `cktv-gate=${await issueGateCookie()}`;
 });
 
 beforeEach(() => {

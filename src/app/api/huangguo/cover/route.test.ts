@@ -47,12 +47,10 @@ if (typeof globalThis.TextEncoder === 'undefined') {
     NodeTextEncoder;
 }
 
-// 门控 cookie 用签名密钥现签，测试开始前配好环境变量
+// 门控 cookie 用内置的签名密钥现签
 let gateCookie = '';
 beforeAll(async () => {
-  process.env.GATE_PASSWORD = 'route-test-password';
-  process.env.GATE_SECRET = 'route-test-secret-of-at-least-32-chars';
-  gateCookie = (await issueGateCookie()) ?? '';
+  gateCookie = await issueGateCookie();
 });
 
 // jsdom 测试环境没有 Response；路由在边缘运行时用它写缓存，这里只需要能构造

@@ -2,9 +2,10 @@
 // - 地区只认平台给出的国家（Pages 的平台上下文，或 Worker 的 request.cf）。
 //   自己用 Node/Docker 部署时两者都没有；只有部署者确认前面的 Cloudflare 会覆盖 CF-IPCountry，
 //   才设 GATE_TRUST_COUNTRY_HEADER=true 去读那个头。
-// - 口令和签名密钥只从环境变量读取（GATE_PASSWORD、GATE_SECRET），不写进源码。
+// - 口令和签名密钥写在 gate-config.ts 里，不用环境变量。仓库是公开的，所以口令等于公开。
 // - 通过口令后发的 cookie 是「签发时间.HMAC 签名」，服务端每次校验，7 天后失效。
-// 任何一项没配置，门控都是关着的。
+
+import { GATE_PASSWORD, GATE_SIGNING_KEY } from './gate-config';
 
 export const GATE_COOKIE = 'cktv-gate';
 
@@ -113,39 +114,18 @@ async function sameSecret(left: string, right: string): Promise<boolean> {
 }
 
 function configuredPassword(): string {
-  return (process.env.GATE_PASSWORD || '').trim().toLowerCase();
+  return GATE_PASSWORD.trim().toLowerCase();
 }
 
-// 少于 32 个字符的密钥不用：签名密钥太短，cookie 就能被离线猜出来。
 function configuredSecret(): string {
-  const secret = (process.env.GATE_SECRET || '').trim();
-  return secret.length >= 32 ? secret : '';
-}
-
-// 配置缺了什么，给人看的说明；全部配好时返回空数组。
-export function gateConfigProblems(): string[] {
-  const problems: string[] = [];
-  if (configuredPassword() === '') {
-    problems.push('GATE_PASSWORD 没有设置');
-  }
-  if (configuredSecret() === '') {
-    problems.push('GATE_SECRET 没有设置，或者少于 32 个字符');
-  }
-  return problems;
-}
-
-// 口令和签名密钥都配好了，门控才会工作。
-export function gateConfigured(): boolean {
-  return gateConfigProblems().length === 0;
+  return GATE_SIGNING_KEY.trim();
 }
 
 async function sign(message: string): Promise<string> {
-  const secret = configuredSecret();
-  if (!secret) return '';
   const encoder = new TextEncoder();
   const key = await crypto.subtle.importKey(
     'raw',
-    encoder.encode(secret),
+    encoder.encode(configuredSecret()),
     { name: 'HMAC', hash: 'SHA-256' },
     false,
     ['sign']
@@ -161,13 +141,12 @@ export async function passwordMatches(code: string): Promise<boolean> {
 }
 
 // 签发 cookie 的值：「签发时间（秒）.签名」。口令本身不进 cookie。
-// 没配签名密钥时返回 null。
 export async function issueGateCookie(
   now: number = Date.now()
-): Promise<string | null> {
+): Promise<string> {
   const iat = Math.floor(now / 1000);
   const mac = await sign(`${GATE_COOKIE}:${iat}`);
-  return mac ? `${iat}.${mac}` : null;
+  return `${iat}.${mac}`;
 }
 
 async function validGateCookie(value: string, now: number): Promise<boolean> {
@@ -179,7 +158,6 @@ async function validGateCookie(value: string, now: number): Promise<boolean> {
   const age = Math.floor(now / 1000) - iat;
   if (age < -CLOCK_SKEW_SECONDS || age > GATE_MAX_AGE_SECONDS) return false;
   const expected = await sign(`${GATE_COOKIE}:${iat}`);
-  if (!expected) return false;
   return sameSecret(value.slice(dot + 1), expected);
 }
 
