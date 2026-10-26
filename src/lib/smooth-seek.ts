@@ -255,6 +255,11 @@ export function installSmoothSeek(art: Art, options: Options = {}): () => void {
         event.clientY,
         progress.getBoundingClientRect()
       ) * art.duration;
+    // 按键已经松开却没收到 mouseup（拖动时切走了窗口之类），这一下的位置就是松手的位置
+    if (event.buttons === 0) {
+      finish();
+      return;
+    }
     show(drag.target);
     preview(drag.target);
   };
@@ -360,6 +365,9 @@ export function installSmoothSeek(art: Art, options: Options = {}): () => void {
     }
   };
 
+  // 拖动时窗口失去焦点（切走窗口、切换标签页）可能收不到 mouseup，这里按松手处理
+  const onBlur = () => finish();
+
   player.addEventListener('mousedown', onMouseDown, true);
   player.addEventListener('click', onClick, true);
   player.addEventListener('touchstart', onTouchStart, {
@@ -374,6 +382,7 @@ export function installSmoothSeek(art: Art, options: Options = {}): () => void {
   document.addEventListener('mouseup', onMouseUp);
   document.addEventListener('touchend', onTouchEnd);
   document.addEventListener('touchcancel', onTouchEnd);
+  window.addEventListener('blur', onBlur);
   art.on('video:timeupdate', keepBar);
 
   return () => {
@@ -385,6 +394,7 @@ export function installSmoothSeek(art: Art, options: Options = {}): () => void {
     document.removeEventListener('mouseup', onMouseUp);
     document.removeEventListener('touchend', onTouchEnd);
     document.removeEventListener('touchcancel', onTouchEnd);
+    window.removeEventListener('blur', onBlur);
     media?.removeEventListener('seeked', onSeeked);
     if (previewTimer) window.clearTimeout(previewTimer);
     if (scrubbing) options.onScrub?.(false);

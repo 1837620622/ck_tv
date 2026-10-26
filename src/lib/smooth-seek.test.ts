@@ -86,14 +86,22 @@ function fakePlayer(duration = 600, { playing = true, rotated = false } = {}) {
   };
 }
 
+// 按下和移动时主键是按着的（buttons 为 1），松开时为 0，和真实鼠标事件一致
 function mouse(
   type: string,
   target: EventTarget,
   clientX: number,
   clientY = 0
 ) {
+  const buttons = type === 'mouseup' || type === 'click' ? 0 : 1;
   target.dispatchEvent(
-    new MouseEvent(type, { bubbles: true, button: 0, clientX, clientY })
+    new MouseEvent(type, {
+      bubbles: true,
+      button: 0,
+      buttons,
+      clientX,
+      clientY,
+    })
   );
 }
 
@@ -388,5 +396,30 @@ describe('rotated player (web fullscreen turned 90 degrees)', () => {
     for (let x = 140; x <= 500; x += 40) touch('touchmove', video, x, 104);
     touch('touchend', document, 500, 104);
     expect(seeks).toEqual([]);
+  });
+});
+
+describe('a drag that loses its mouseup', () => {
+  it('ends the drag when a move arrives with no button held', () => {
+    const { inner, seeks, media } = fakePlayer(600, { playing: true });
+    mouse('mousedown', inner, 150);
+    mouse('mousemove', document, 300);
+    expect(media.paused).toBe(true);
+    // 鼠标已经松开，只是没收到 mouseup
+    document.dispatchEvent(
+      new MouseEvent('mousemove', { bubbles: true, buttons: 0, clientX: 350 })
+    );
+    expect(seeks).toEqual([375]);
+    expect(media.plays).toBe(1);
+  });
+
+  it('ends the drag when the window loses focus during it', () => {
+    const { inner, seeks, media } = fakePlayer(600, { playing: true });
+    mouse('mousedown', inner, 150);
+    mouse('mousemove', document, 300);
+    window.dispatchEvent(new Event('blur'));
+    expect(seeks).toEqual([300]);
+    expect(media.plays).toBe(1);
+    expect(media.paused).toBe(false);
   });
 });
