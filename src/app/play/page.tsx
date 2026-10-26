@@ -107,6 +107,16 @@ function hasSystemFullscreen(): boolean {
   return enabled === true;
 }
 
+// 能不能画中画，和 ArtPlayer 的判断一致：有标准接口用标准的，否则看 iPhone Safari 的 webkit 接口
+function hasPictureInPicture(video: HTMLVideoElement): boolean {
+  if (typeof document === 'undefined') return false;
+  if (document.pictureInPictureEnabled) return true;
+  return Boolean(
+    (video as HTMLVideoElement & { webkitSupportsPresentationMode?: unknown })
+      .webkitSupportsPresentationMode
+  );
+}
+
 function PlayPageClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -2050,6 +2060,11 @@ function PlayPageClient() {
         if (!hasSystemFullscreen()) {
           artPlayerRef.current.template.$player.classList.add(
             'ck-web-fullscreen-only'
+          );
+        }
+        if (hasPictureInPicture(artPlayerRef.current.template.$video)) {
+          artPlayerRef.current.template.$player.classList.add(
+            'ck-pip-supported'
           );
         }
         detachBufferBar?.();

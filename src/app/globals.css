@@ -190,6 +190,12 @@ div[data-media-provider] video {
   display: inline-flex !important;
 }
 
+/* 全屏时手机上也要有画中画。只在能画中画的设备上显示（标记由播放页按 ArtPlayer 的判断加上） */
+.art-video-player.ck-pip-supported.art-fullscreen-web .art-control-pip,
+.art-video-player.ck-pip-supported.art-fullscreen .art-control-pip {
+  display: inline-flex !important;
+}
+
 /* 防诈骗提醒：用户关闭后，初始化脚本给 html 加上此属性，提醒在首屏就隐藏 */
 html[data-scam-notice-hidden] [data-scam-notice] {
   display: none !important;
