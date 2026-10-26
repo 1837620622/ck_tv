@@ -366,9 +366,12 @@ export default function VideoCard({
             src={imgSrc}
             alt={actualTitle}
             fill
-            className={
+            // 图片到了再淡入，不会从骨架屏突然跳成海报
+            className={`${
               from === 'adult' ? 'object-cover object-center' : 'object-cover'
-            }
+            } transition-opacity duration-300 ease-out ${
+              isLoading ? 'opacity-100' : 'opacity-0'
+            }`}
             referrerPolicy='no-referrer'
             onError={handleImageError}
             onLoadingComplete={() => setIsLoading(true)}

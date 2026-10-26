@@ -196,3 +196,37 @@ html[data-scam-notice-hidden] [data-scam-notice] {
     min-height: 100vh;
   }
 }
+
+/* 播放器缓冲条：自带的那条太淡且只画最后一段，换成按全部已缓冲区间画的白条（见 lib/buffer-bar.ts） */
+.art-video-player .art-progress-loaded {
+  display: none !important;
+}
+
+.ck-buffer {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.ck-buffer > i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background-color: rgba(255, 255, 255, 0.72);
+  border-radius: inherit;
+  transition: width 0.3s ease, left 0.3s ease;
+}
+
+.ck-buffered {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  opacity: 0.85;
+}
+
+@media (max-width: 480px) {
+  .art-control-buffered {
+    display: none !important;
+  }
+}

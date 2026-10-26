@@ -13,6 +13,7 @@ import {
   loadNativeSource,
   supportsNativeHls,
 } from '@/lib/airplay';
+import { attachBufferBar } from '@/lib/buffer-bar';
 import {
   deleteFavorite,
   deletePlayRecord,
@@ -53,6 +54,7 @@ import {
 import { SearchResult } from '@/lib/types';
 import { processImageUrl } from '@/lib/utils';
 import { type ScreenWakeLock, createScreenWakeLock } from '@/lib/wake-lock';
+import { shouldWarmNextEpisode, warmPlaylist } from '@/lib/warm-up';
 
 import EpisodeSelector from '@/components/EpisodeSelector';
 import PageLayout from '@/components/PageLayout';
@@ -1417,6 +1419,7 @@ function PlayPageClient() {
       autoNextRef.current = readAutoNext();
       // 控制栏开关和设置里的「自动连播」共用这一项。开：本集结束就进下一集。关：停在当前这一集。
       let autoNextButton: HTMLElement | null = null;
+      let detachBufferBar: (() => void) | null = null;
       const autoNextSetting: any = {
         switch: autoNextRef.current,
         onSwitch(item: any) {
@@ -1860,6 +1863,14 @@ function PlayPageClient() {
             },
           },
           {
+            // 已缓冲多少秒，和进度条上的白色缓冲条一起由 attachBufferBar 刷新
+            name: 'buffered',
+            position: 'right',
+            index: 11,
+            html: '<span class="ck-buffered"></span>',
+            style: { padding: '0 6px', cursor: 'default' },
+          },
+          {
             name: 'auto-next',
             position: 'right',
             index: 12,
@@ -1883,10 +1894,17 @@ function PlayPageClient() {
         ],
       });
 
+      artPlayerRef.current.on('destroy', () => {
+        detachBufferBar?.();
+        detachBufferBar = null;
+      });
+
       // 监听播放器事件
       playingNodeRef.current =
         (artPlayerRef.current?.video as HTMLVideoElement) || null;
       artPlayerRef.current.on('ready', () => {
+        detachBufferBar?.();
+        detachBufferBar = attachBufferBar(artPlayerRef.current);
         playingNodeRef.current =
           (artPlayerRef.current?.video as HTMLVideoElement) ||
           playingNodeRef.current;
@@ -1943,6 +1961,21 @@ function PlayPageClient() {
 
         // 隐藏换源加载状态
         setIsVideoLoading(false);
+      });
+
+      // 本集快结束时提前请求下一集的清单，自动连播或点下一集时起播更快
+      let warmedNextUrl = '';
+      artPlayerRef.current.on('video:timeupdate', () => {
+        const art = artPlayerRef.current;
+        if (!art || !shouldWarmNextEpisode(art.currentTime, art.duration)) {
+          return;
+        }
+        const nextUrl =
+          detailRef.current?.episodes?.[currentEpisodeIndexRef.current + 1] ||
+          '';
+        if (!nextUrl || nextUrl === warmedNextUrl) return;
+        warmedNextUrl = nextUrl;
+        warmPlaylist(nextUrl);
       });
 
       // 监听视频时间更新事件，实现跳过片头片尾

@@ -21,7 +21,8 @@ const manifestTemplate = {
   start_url: '/',
   scope: '/',
   display: 'standalone',
-  background_color: '#000000',
+  background_color: '#060908',
+  theme_color: '#060908',
   'apple-mobile-web-app-capable': 'yes',
   'apple-mobile-web-app-status-bar-style': 'black',
   icons: [
@@ -44,6 +45,11 @@ const manifestTemplate = {
       src: '/icons/icon-512x512.png',
       sizes: '512x512',
       type: 'image/png',
+    },
+    {
+      src: '/icon.svg',
+      sizes: 'any',
+      type: 'image/svg+xml',
     },
   ],
 };
