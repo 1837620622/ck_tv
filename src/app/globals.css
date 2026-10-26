@@ -230,3 +230,14 @@ html[data-scam-notice-hidden] [data-scam-notice] {
     display: none !important;
   }
 }
+
+/* 进度条可点区域：原本只有 6px 高（手机 8px），点歪一点就点到画面上变成暂停。
+   往上下扩一圈透明的可点区域，外观不变；点在这里仍按横坐标算位置。 */
+.art-video-player .art-control-progress::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -12px;
+  bottom: -4px;
+}
