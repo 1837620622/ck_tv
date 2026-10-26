@@ -7,6 +7,7 @@ import { DEFAULT_JSON_BODY_BYTES, readJsonBody } from '@/lib/body';
 import { db, hasServerStorage } from '@/lib/db';
 import { gateClosedFor, isGatedKey } from '@/lib/record-gate';
 import { gateDenial } from '@/lib/region-gate';
+import { isCrossSite } from '@/lib/request-guard';
 import { PlayRecord } from '@/lib/types';
 import { isAdultSource } from '@/lib/yellow';
 
@@ -42,6 +43,13 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  // 写接口不接受跨站页面的请求。跨站 POST 不做预检，text/plain 就能发出去，跨域读不到响应也挡不住写入。
+  if (isCrossSite(request)) {
+    return NextResponse.json(
+      { error: '不允许跨站调用' },
+      { status: 403, headers: { 'Cache-Control': 'no-store' } }
+    );
+  }
   try {
     if (!hasServerStorage()) {
       return NextResponse.json(
@@ -109,6 +117,13 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
+  // 写接口不接受跨站页面的请求。跨站 POST 不做预检，text/plain 就能发出去，跨域读不到响应也挡不住写入。
+  if (isCrossSite(request)) {
+    return NextResponse.json(
+      { error: '不允许跨站调用' },
+      { status: 403, headers: { 'Cache-Control': 'no-store' } }
+    );
+  }
   try {
     if (!hasServerStorage()) {
       return NextResponse.json(

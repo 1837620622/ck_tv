@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { LOCAL_AUTH_SUBJECT } from '@/lib/auth';
 import { DEFAULT_JSON_BODY_BYTES, readJsonBody } from '@/lib/body';
 import { db, hasServerStorage } from '@/lib/db';
+import { isCrossSite } from '@/lib/request-guard';
 
 export const runtime = 'edge';
 
@@ -40,6 +41,13 @@ export async function GET() {
  * body: { keyword: string }
  */
 export async function POST(request: NextRequest) {
+  // 写接口不接受跨站页面的请求。跨站 POST 不做预检，text/plain 就能发出去，跨域读不到响应也挡不住写入。
+  if (isCrossSite(request)) {
+    return NextResponse.json(
+      { error: '不允许跨站调用' },
+      { status: 403, headers: { 'Cache-Control': 'no-store' } }
+    );
+  }
   try {
     if (!hasServerStorage()) {
       return NextResponse.json(
@@ -87,6 +95,13 @@ export async function POST(request: NextRequest) {
  * 2. 带 keyword=<kw> -> 删除单条关键字
  */
 export async function DELETE(request: NextRequest) {
+  // 写接口不接受跨站页面的请求。跨站 POST 不做预检，text/plain 就能发出去，跨域读不到响应也挡不住写入。
+  if (isCrossSite(request)) {
+    return NextResponse.json(
+      { error: '不允许跨站调用' },
+      { status: 403, headers: { 'Cache-Control': 'no-store' } }
+    );
+  }
   try {
     if (!hasServerStorage()) {
       return NextResponse.json(

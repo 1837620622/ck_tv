@@ -12,6 +12,7 @@ import {
   resourceVote,
   voteConsensus,
 } from '@/lib/meta-vote';
+import { isCrossSite } from '@/lib/request-guard';
 import type { SearchResult } from '@/lib/types';
 
 export const runtime = 'edge';
@@ -143,6 +144,13 @@ async function mapLimit<T, R>(
 }
 
 export async function POST(request: NextRequest) {
+  // 每次请求都会去查好几个采集站，不让别的网站借访客的浏览器来调用
+  if (isCrossSite(request)) {
+    return NextResponse.json(
+      { error: '不允许跨站调用' },
+      { status: 403, headers: { 'Cache-Control': 'no-store' } }
+    );
+  }
   // 请求体边读边计数，超过上限就不再读，避免单个请求把任意大小的内容整个读进内存
   const read = await readJsonBody(request, DEFAULT_JSON_BODY_BYTES);
   if (!read.ok) {
