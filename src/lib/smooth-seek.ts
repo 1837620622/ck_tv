@@ -2,12 +2,18 @@
 // ArtPlayer 拖动时每次鼠标或手指移动都会改一次播放位置。一次拖动就是几十次跳转，hls.js 每次都要
 // 中断正在下载的片段、按新位置重新拉，拖完常常卡住，要再点一下播放才动。手机上点进度条也不会
 // 跳到点的位置，拖动还是按起点相对移动的。
-// 这里在播放器外层用捕获阶段先截住进度条上的拖动，画面上的横滑也由这里处理（播放器要设
-// gesture: false 关掉 ArtPlayer 自带的那套）：拖动时只移动进度条、提示时间，松手时跳一次；
-// 手机上点进度条直接跳到点的位置。单纯点击进度条仍交给 ArtPlayer（它本来就只跳一次）。
+// 这里在播放器外层用捕获阶段先截住进度条上的点击和拖动，画面上的横滑也由这里处理（播放器要设
+// gesture: false 关掉 ArtPlayer 自带的那套）：
+// - 点进度条任何位置（包括圆点上）都跳到那里。ArtPlayer 点在圆点上不跳。
+// - 拖动时先暂停，画面跟着拖到的位置预览：同一时间只有一次跳转在进行，上一次画面出来后
+//   再跳下一次，最快每 0.2 秒一次；松手时跳到准确位置，原来在播就接着播。
 
 // 手指或鼠标移动超过这个距离才算拖动
 const DRAG_THRESHOLD_PX = 4;
+// 拖动预览两次跳转之间至少隔这么久
+const PREVIEW_INTERVAL_MS = 200;
+// 预览跳转迟迟等不到 seeked（例如片段一直下不来），过了这个时间就放行下一次
+const PREVIEW_STUCK_MS = 1500;
 // 在画面上横向滑动调进度：滑过整个画面宽度对应的片长比例，和 ArtPlayer 的 TOUCH_MOVE_RATIO 一致
 const SWIPE_RATIO = 0.5;
 
@@ -75,15 +81,92 @@ type Drag = {
   target: number;
 };
 
-export function installSmoothSeek(art: Art): () => void {
+type Options = {
+  // 拖动预览开始和结束时通知页面。预览跳转不走 art.seek，页面据此暂停跳片头片尾、记进度等逻辑。
+  onScrub?: (active: boolean) => void;
+};
+
+export function installSmoothSeek(art: Art, options: Options = {}): () => void {
   const player = art.template.$player;
   const progress = art.template.$progress;
   const video = art.template.$video;
   if (!player || !progress) return () => undefined;
 
   let drag: Drag | null = null;
-  // 拖完松手后浏览器还会补一个 click，ArtPlayer 会按松手位置再跳一次，这里吞掉
+  // 点击和拖动都由这里跳转，浏览器随后补的 click 不再交给 ArtPlayer，免得再跳一次
   let swallowClickUntil = 0;
+
+  // ---- 拖动预览：暂停后让画面跟着拖到的位置走 ----
+  const media = (video as HTMLVideoElement | undefined) || null;
+  let scrubbing = false;
+  let resumeAfterScrub = false;
+  let previewBusy = false;
+  let previewBusySince = 0;
+  let previewWanted: number | null = null;
+  let previewAt = 0;
+  let previewTimer = 0;
+
+  const pumpPreview = () => {
+    if (!media || previewWanted === null) return;
+    const now = Date.now();
+    if (previewBusy && now - previewBusySince < PREVIEW_STUCK_MS) return;
+    const wait = PREVIEW_INTERVAL_MS - (now - previewAt);
+    if (wait > 0) {
+      if (!previewTimer) {
+        previewTimer = window.setTimeout(() => {
+          previewTimer = 0;
+          pumpPreview();
+        }, wait);
+      }
+      return;
+    }
+    const time = previewWanted;
+    previewWanted = null;
+    previewBusy = true;
+    previewBusySince = now;
+    previewAt = now;
+    try {
+      media.currentTime = time;
+    } catch {
+      previewBusy = false;
+    }
+  };
+  const onSeeked = () => {
+    previewBusy = false;
+    if (scrubbing) pumpPreview();
+  };
+  media?.addEventListener('seeked', onSeeked);
+
+  const startScrub = () => {
+    if (scrubbing || !media) return;
+    scrubbing = true;
+    options.onScrub?.(true);
+    resumeAfterScrub = !media.paused;
+    if (resumeAfterScrub) media.pause();
+  };
+  const preview = (time: number) => {
+    startScrub();
+    // 预览不落到片尾最后一刻，免得触发播放结束、自动连播
+    previewWanted = Math.max(0, Math.min(time, art.duration - 1));
+    pumpPreview();
+  };
+  const endScrub = () => {
+    previewWanted = null;
+    if (previewTimer) {
+      window.clearTimeout(previewTimer);
+      previewTimer = 0;
+    }
+    if (!scrubbing) return;
+    scrubbing = false;
+    options.onScrub?.(false);
+    if (resumeAfterScrub && media) {
+      resumeAfterScrub = false;
+      const playing = media.play();
+      if (playing && typeof playing.catch === 'function') {
+        playing.catch(() => undefined);
+      }
+    }
+  };
 
   const usable = () =>
     !art.option.isLive &&
@@ -102,12 +185,13 @@ export function installSmoothSeek(art: Art): () => void {
     drag = null;
     if (!current) return;
     if (current.kind === 'progress' || current.moved) {
-      if (current.moved) swallowClickUntil = Date.now() + 400;
+      swallowClickUntil = Date.now() + 400;
       art.seek = current.target;
     }
+    endScrub();
   };
 
-  // ---- 鼠标：只接管拖动，单击照旧 ----
+  // ---- 鼠标：点哪跳哪，拖动时预览，松手跳一次 ----
   const onMouseDown = (event: MouseEvent) => {
     if (event.button !== 0 || !usable()) return;
     if (!progress.contains(event.target as Node)) return;
@@ -133,14 +217,11 @@ export function installSmoothSeek(art: Art): () => void {
     drag.target =
       ratioAt(event.clientX, progress.getBoundingClientRect()) * art.duration;
     show(drag.target);
+    preview(drag.target);
   };
   const onMouseUp = () => {
     if (!drag || drag.kind !== 'progress') return;
-    // 没拖动就是单击，交给 ArtPlayer 的 click
-    if (!drag.moved) {
-      drag = null;
-      return;
-    }
+    // 没拖动就是单击：跳到按下的位置
     finish();
   };
   const onClick = (event: MouseEvent) => {
@@ -210,6 +291,7 @@ export function installSmoothSeek(art: Art): () => void {
           art.duration
         : swipeTarget(drag.startTime, dx, player.clientWidth, art.duration);
     show(drag.target);
+    if (drag.moved) preview(drag.target);
   };
   const onTouchEnd = () => {
     if (!drag) return;
@@ -252,5 +334,8 @@ export function installSmoothSeek(art: Art): () => void {
     document.removeEventListener('mouseup', onMouseUp);
     document.removeEventListener('touchend', onTouchEnd);
     document.removeEventListener('touchcancel', onTouchEnd);
+    media?.removeEventListener('seeked', onSeeked);
+    if (previewTimer) window.clearTimeout(previewTimer);
+    if (scrubbing) options.onScrub?.(false);
   };
 }

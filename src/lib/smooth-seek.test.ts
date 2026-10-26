@@ -6,7 +6,7 @@ import {
   swipeTarget,
 } from './smooth-seek';
 
-function fakePlayer(duration = 600) {
+function fakePlayer(duration = 600, { playing = true } = {}) {
   const player = document.createElement('div');
   const progress = document.createElement('div');
   const inner = document.createElement('div');
@@ -17,6 +17,25 @@ function fakePlayer(duration = 600) {
   progress.getBoundingClientRect = () =>
     ({ left: 100, width: 400, top: 0, height: 6 } as DOMRect);
   Object.defineProperty(player, 'clientWidth', { value: 800 });
+  // 预览直接改 video.currentTime，这里记下每次改动
+  const previews: number[] = [];
+  const media = { paused: !playing, plays: 0, pauses: 0 };
+  Object.defineProperty(video, 'currentTime', {
+    get: () => previews[previews.length - 1] ?? 0,
+    set: (value: number) => {
+      previews.push(value);
+    },
+  });
+  Object.defineProperty(video, 'paused', { get: () => media.paused });
+  video.pause = () => {
+    media.paused = true;
+    media.pauses += 1;
+  };
+  video.play = () => {
+    media.paused = false;
+    media.plays += 1;
+    return Promise.resolve();
+  };
   const seeks: number[] = [];
   const bars: number[] = [];
   const handlers: Record<string, Array<() => void>> = {};
@@ -42,8 +61,24 @@ function fakePlayer(duration = 600) {
       (handlers[name] ||= []).push(fn);
     },
   };
-  const detach = installSmoothSeek(art);
-  return { art, player, progress, inner, video, seeks, bars, handlers, detach };
+  const scrubs: boolean[] = [];
+  const detach = installSmoothSeek(art, {
+    onScrub: (active) => scrubs.push(active),
+  });
+  return {
+    art,
+    player,
+    progress,
+    inner,
+    video,
+    media,
+    previews,
+    scrubs,
+    seeks,
+    bars,
+    handlers,
+    detach,
+  };
 }
 
 function mouse(type: string, target: EventTarget, clientX: number) {
@@ -105,11 +140,18 @@ describe('dragging the progress bar with a mouse', () => {
     expect(bars[bars.length - 1]).toBeCloseTo(0.75);
   });
 
-  it('leaves a plain click to ArtPlayer', () => {
-    const { inner, seeks } = fakePlayer();
+  it('jumps to the clicked spot, and ArtPlayer does not seek again', () => {
+    const { progress, inner, seeks, previews, media } = fakePlayer();
+    const artplayerClick = jest.fn();
+    progress.addEventListener('click', artplayerClick);
     mouse('mousedown', inner, 300);
     mouse('mouseup', document, 300);
-    expect(seeks).toEqual([]);
+    mouse('click', inner, 300);
+    expect(seeks).toEqual([300]);
+    expect(artplayerClick).not.toHaveBeenCalled();
+    // 单击不预览，也不暂停
+    expect(previews).toEqual([]);
+    expect(media.pauses).toBe(0);
   });
 
   it('keeps ArtPlayer from starting its own drag', () => {
@@ -188,5 +230,89 @@ describe('touch', () => {
     touch('touchstart', video, 100, 100);
     touch('touchend', document, 100, 100);
     expect(seeks).toEqual([]);
+  });
+});
+
+describe('previewing the picture while dragging', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('pauses, shows the dragged spot, and resumes after the release', () => {
+    const { inner, video, media, previews, scrubs, seeks } = fakePlayer();
+    mouse('mousedown', inner, 150);
+    mouse('mousemove', document, 300);
+    expect(media.paused).toBe(true);
+    expect(previews).toEqual([300]);
+    expect(scrubs).toEqual([true]);
+    mouse('mouseup', document, 300);
+    expect(seeks).toEqual([300]);
+    expect(media.plays).toBe(1);
+    expect(scrubs).toEqual([true, false]);
+    // 预览跳转完成后的 seeked 不会再跳
+    video.dispatchEvent(new Event('seeked'));
+    expect(previews).toEqual([300]);
+  });
+
+  it('runs one preview seek at a time and jumps to the latest spot next', () => {
+    const { inner, video, previews } = fakePlayer();
+    mouse('mousedown', inner, 150);
+    mouse('mousemove', document, 200);
+    mouse('mousemove', document, 250);
+    mouse('mousemove', document, 300);
+    expect(previews).toEqual([150]);
+    // 上一次画面出来了，但离上次跳转不到 0.2 秒，要等到点
+    video.dispatchEvent(new Event('seeked'));
+    expect(previews).toEqual([150]);
+    jest.advanceTimersByTime(200);
+    expect(previews).toEqual([150, 300]);
+  });
+
+  it('moves on when a preview seek never finishes', () => {
+    const { inner, previews } = fakePlayer();
+    const start = Date.now();
+    const now = jest.spyOn(Date, 'now').mockReturnValue(start);
+    mouse('mousedown', inner, 150);
+    mouse('mousemove', document, 200);
+    now.mockReturnValue(start + 400);
+    mouse('mousemove', document, 300);
+    expect(previews).toEqual([150]);
+    now.mockReturnValue(start + 1600);
+    mouse('mousemove', document, 350);
+    expect(previews).toEqual([150, 375]);
+    now.mockRestore();
+  });
+
+  it('stays paused after the release when it was paused before', () => {
+    const { inner, media, seeks } = fakePlayer(600, { playing: false });
+    mouse('mousedown', inner, 150);
+    mouse('mousemove', document, 300);
+    mouse('mouseup', document, 300);
+    expect(seeks).toEqual([300]);
+    expect(media.plays).toBe(0);
+    expect(media.paused).toBe(true);
+  });
+
+  it('keeps the preview off the last second so it does not end the episode', () => {
+    const { inner, previews, seeks } = fakePlayer();
+    mouse('mousedown', inner, 150);
+    mouse('mousemove', document, 600);
+    expect(previews).toEqual([599]);
+    mouse('mouseup', document, 600);
+    expect(seeks).toEqual([600]);
+  });
+
+  it('previews while a finger drags along the bar', () => {
+    const { inner, media, previews, seeks } = fakePlayer();
+    touch('touchstart', inner, 120);
+    touch('touchmove', inner, 300);
+    expect(media.paused).toBe(true);
+    expect(previews).toEqual([300]);
+    touch('touchend', document, 300);
+    expect(seeks).toEqual([300]);
+    expect(media.plays).toBe(1);
   });
 });

@@ -138,6 +138,8 @@ function PlayPageClient() {
   // 访客自己拖进片尾（想看片尾彩蛋）时也不再自动跳到下一集，播完照常连播。
   const introSkippedForRef = useRef('');
   const userSeekRef = useRef<{ episode: string; time: number } | null>(null);
+  // 正在拖进度条预览画面。预览只是临时跳过去看一眼，这期间不跳片头片尾、不记进度。
+  const scrubbingRef = useRef(false);
   const episodeKey = () =>
     `${currentSourceRef.current}:${currentIdRef.current}:${currentEpisodeIndexRef.current}`;
 
@@ -2033,7 +2035,11 @@ function PlayPageClient() {
         detachBufferBar?.();
         detachBufferBar = attachBufferBar(artPlayerRef.current);
         detachSmoothSeek?.();
-        detachSmoothSeek = installSmoothSeek(artPlayerRef.current);
+        detachSmoothSeek = installSmoothSeek(artPlayerRef.current, {
+          onScrub: (active) => {
+            scrubbingRef.current = active;
+          },
+        });
         playingNodeRef.current =
           (artPlayerRef.current?.video as HTMLVideoElement) ||
           playingNodeRef.current;
@@ -2118,7 +2124,7 @@ function PlayPageClient() {
 
       // 监听视频时间更新事件，实现跳过片头片尾
       artPlayerRef.current.on('video:timeupdate', () => {
-        if (!skipConfigRef.current.enable) return;
+        if (!skipConfigRef.current.enable || scrubbingRef.current) return;
 
         const currentTime = artPlayerRef.current.currentTime || 0;
         const duration = artPlayerRef.current.duration || 0;
@@ -2245,6 +2251,7 @@ function PlayPageClient() {
 
       // 播放结束：睡眠定时优先。连播开着就进下一集，关着就停在当前这一集。
       artPlayerRef.current.on('video:ended', () => {
+        if (scrubbingRef.current) return;
         wakeLockRef.current?.disable();
         setMediaPlaybackState('paused');
         if (Date.now() < autoNextHoldRef.current) return;
@@ -2263,6 +2270,7 @@ function PlayPageClient() {
       });
 
       artPlayerRef.current.on('video:timeupdate', () => {
+        if (scrubbingRef.current) return;
         const now = Date.now();
         let interval = 5000;
         if (process.env.NEXT_PUBLIC_STORAGE_TYPE === 'd1') {
@@ -2278,6 +2286,7 @@ function PlayPageClient() {
       });
 
       artPlayerRef.current.on('pause', () => {
+        if (scrubbingRef.current) return;
         saveCurrentPlayProgress();
       });
     } catch (err) {
