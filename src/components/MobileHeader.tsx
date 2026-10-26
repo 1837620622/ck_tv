@@ -3,6 +3,7 @@
 import Link from 'next/link';
 
 import { BackButton } from './BackButton';
+import BrandMark from './BrandMark';
 import { useSite } from './SiteProvider';
 import { ThemeToggle } from './ThemeToggle';
 import { UserMenu } from './UserMenu';
@@ -32,9 +33,10 @@ const MobileHeader = ({ showBackButton = false }: MobileHeaderProps) => {
       <div className='absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2'>
         <Link
           href='/'
-          className='block max-w-[58vw] truncate text-lg font-bold tracking-tight text-green-600 transition-opacity hover:opacity-80'
+          className='flex max-w-[58vw] items-center gap-2 text-lg font-bold tracking-tight text-gray-900 transition-opacity hover:opacity-80 dark:text-white'
         >
-          {siteName}
+          <BrandMark size={26} />
+          <span className='truncate'>{siteName}</span>
         </Link>
       </div>
     </header>

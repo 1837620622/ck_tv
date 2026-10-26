@@ -30,6 +30,7 @@ import {
   useState,
 } from 'react';
 
+import BrandMark from './BrandMark';
 import { useSite } from './SiteProvider';
 import { isRestrictedColumn, useForeignColumns } from './useForeignColumns';
 
@@ -43,15 +44,15 @@ const SidebarContext = createContext<SidebarContextType>({
 
 export const useSidebar = () => useContext(SidebarContext);
 
-// 可替换为你自己的 logo 图片
 const Logo = () => {
   const { siteName } = useSite();
   return (
     <Link
       href='/'
-      className='flex h-16 w-full min-w-0 items-center select-none transition-opacity duration-200 hover:opacity-80'
+      className='flex h-16 w-full min-w-0 items-center gap-2.5 select-none transition-opacity duration-200 hover:opacity-80'
     >
-      <span className='block w-full truncate whitespace-nowrap text-left text-lg font-bold tracking-tight text-green-600'>
+      <BrandMark size={28} />
+      <span className='block min-w-0 flex-1 truncate whitespace-nowrap text-left text-base font-bold tracking-tight text-gray-900 dark:text-white'>
         {siteName}
       </span>
     </Link>

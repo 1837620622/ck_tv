@@ -17,6 +17,7 @@ import {
 import { getDoubanCategories } from '@/lib/douban.client';
 import { fetchWithin } from '@/lib/fetch-within';
 import { DoubanItem } from '@/lib/types';
+import { whenIdle } from '@/lib/warm-up';
 
 import CapsuleSwitch from '@/components/CapsuleSwitch';
 import ContinueWatching from '@/components/ContinueWatching';
@@ -219,7 +220,10 @@ function HomeClient() {
 
   useEffect(() => {
     // 打开首页就排一小批片源巡检。不等结果，不挡页面。不通的源不占搜索的快速名额。
-    fetch('/api/upstream', { cache: 'no-store' }).catch(() => undefined);
+    // 放到浏览器空闲时再发，不和首屏的榜单、海报抢连接。
+    return whenIdle(() => {
+      fetch('/api/upstream', { cache: 'no-store' }).catch(() => undefined);
+    }, 3000);
   }, []);
 
   // 收藏夹数据

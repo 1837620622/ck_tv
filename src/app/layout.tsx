@@ -12,6 +12,7 @@ import { SCAM_NOTICE_INIT_SCRIPT } from '@/lib/scam-notice';
 
 import { AppHealth } from '../components/AppHealth';
 import { GlobalErrorIndicator } from '../components/GlobalErrorIndicator';
+import { RoutePrefetch } from '../components/RoutePrefetch';
 import { SiteProvider } from '../components/SiteProvider';
 import { ThemeProvider } from '../components/ThemeProvider';
 import { WelcomeModal } from '../components/WelcomeModal';
@@ -36,10 +37,12 @@ export async function generateMetadata(): Promise<Metadata> {
     referrer: 'no-referrer',
     icons: {
       icon: [
-        { url: '/favicon.ico' },
+        { url: '/favicon.ico', sizes: '48x48' },
+        { url: '/icon.svg', type: 'image/svg+xml' },
         { url: '/icons/icon-192x192.png', sizes: '192x192', type: 'image/png' },
       ],
-      apple: '/icons/icon-192x192.png',
+      // iOS 会自己裁圆角，这张是不带圆角的满版图
+      apple: { url: '/apple-touch-icon.png', sizes: '180x180' },
     },
   };
 }
@@ -132,6 +135,7 @@ export default async function RootLayout({
             {children}
             <GlobalErrorIndicator />
             <AppHealth />
+            <RoutePrefetch />
             <WelcomeModal />
           </SiteProvider>
         </ThemeProvider>
