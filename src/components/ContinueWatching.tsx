@@ -6,9 +6,15 @@ import { useEffect, useState } from 'react';
 import type { PlayRecord } from '@/lib/db.client';
 import {
   clearAllPlayRecords,
+  deletePlayRecord,
   getAllPlayRecords,
   subscribeToDataUpdates,
 } from '@/lib/db.client';
+import {
+  groupPlayRecords,
+  RecordGroup,
+  splitRecordKey,
+} from '@/lib/play-record-groups';
 
 import ScrollableRow from '@/components/ScrollableRow';
 import VideoCard from '@/components/VideoCard';
@@ -18,25 +24,13 @@ interface ContinueWatchingProps {
 }
 
 export default function ContinueWatching({ className }: ContinueWatchingProps) {
-  const [playRecords, setPlayRecords] = useState<
-    (PlayRecord & { key: string })[]
-  >([]);
+  // 一部片子一张卡：同一部在不同线路上的记录合在一起，集数取最新的
+  const [playRecords, setPlayRecords] = useState<RecordGroup<PlayRecord>[]>([]);
   const [loading, setLoading] = useState(true);
 
   // 处理播放记录数据更新的函数
   const updatePlayRecords = (allRecords: Record<string, PlayRecord>) => {
-    // 将记录转换为数组并根据 save_time 由近到远排序
-    const recordsArray = Object.entries(allRecords).map(([key, record]) => ({
-      ...record,
-      key,
-    }));
-
-    // 按 save_time 降序排序（最新的在前面）
-    const sortedRecords = recordsArray.sort(
-      (a, b) => b.save_time - a.save_time
-    );
-
-    setPlayRecords(sortedRecords);
+    setPlayRecords(groupPlayRecords(allRecords));
   };
 
   useEffect(() => {
@@ -79,10 +73,19 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
     return (record.play_time / record.total_time) * 100;
   };
 
-  // 从 key 中解析 source 和 id
-  const parseKey = (key: string) => {
-    const [source, id] = key.split('+');
-    return { source, id };
+  // 卡片上的删除只删了显示的那一条，同一部在其它线路上的记录也一起删掉，否则它会顶上来
+  const removeGroup = async (group: RecordGroup<PlayRecord>) => {
+    setPlayRecords((prev) =>
+      prev.filter((g) => g.latest.key !== group.latest.key)
+    );
+    await Promise.all(
+      group.keys
+        .filter((key) => key !== group.latest.key)
+        .map((key) => {
+          const { source, id } = splitRecordKey(key);
+          return deletePlayRecord(source, id).catch(() => undefined);
+        })
+    );
   };
 
   return (
@@ -120,8 +123,9 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
               </div>
             ))
           : // 显示真实数据
-            playRecords.map((record) => {
-              const { source, id } = parseKey(record.key);
+            playRecords.map((group) => {
+              const record = group.latest;
+              const { source, id } = splitRecordKey(record.key);
               return (
                 <div
                   key={record.key}
@@ -135,16 +139,12 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
                     source={source}
                     source_name={record.source_name}
                     progress={getProgress(record)}
-                    episodes={record.total_episodes}
+                    episodes={group.totalEpisodes}
                     currentEpisode={record.index}
                     query={record.search_title}
                     from='playrecord'
-                    onDelete={() =>
-                      setPlayRecords((prev) =>
-                        prev.filter((r) => r.key !== record.key)
-                      )
-                    }
-                    type={record.total_episodes > 1 ? 'tv' : ''}
+                    onDelete={() => removeGroup(group)}
+                    type={group.totalEpisodes > 1 ? 'tv' : ''}
                   />
                 </div>
               );
