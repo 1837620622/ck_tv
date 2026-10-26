@@ -39,6 +39,7 @@ import {
   setMediaPlaybackState,
   setMediaPosition,
 } from '@/lib/media-session';
+import { siblingKeys, splitRecordKey } from '@/lib/play-record-groups';
 import {
   readAutoNext,
   readVolume,
@@ -51,6 +52,12 @@ import {
   SEARCH_CACHE_VERSION,
   shouldReplaceListing,
 } from '@/lib/search-cache';
+import {
+  episodeCountOf,
+  latestEpisodeCount,
+  pickFastest,
+  sourcesWithEpisode,
+} from '@/lib/source-pick';
 import { SearchResult } from '@/lib/types';
 import { processImageUrl } from '@/lib/utils';
 import { type ScreenWakeLock, createScreenWakeLock } from '@/lib/wake-lock';
@@ -70,6 +77,17 @@ declare global {
 }
 
 // 扫码、投屏链接里的 ep 参数是从 0 开始的集数；不是合法整数就当没有
+// 播放页自己改地址栏（定下线路后写入 source、id）时记下改成了什么。
+// Next.js 会把 history.replaceState 同步进 useSearchParams；PlayPageEntry 按地址给页面定 key，
+// 不区分的话，页面自己改一次地址就整页重挂：重新搜一遍、重建播放器，地址里的 ep 也已经删掉，
+// 于是回到第 1 集。换线路时同样如此。
+let selfReplacedSearch: string | null = null;
+
+function replacePlayUrl(url: URL) {
+  selfReplacedSearch = url.searchParams.toString();
+  window.history.replaceState({}, '', url.toString());
+}
+
 function parseEpisodeParam(raw: string | null): number | null {
   if (raw === null || !/^\d{1,4}$/.test(raw)) return null;
   return Number(raw);
@@ -191,7 +209,7 @@ function PlayPageClient() {
   // 视频播放地址
   const [videoUrl, setVideoUrl] = useState('');
 
-  // 总集数
+  // 总集数（当前线路）
   const totalEpisodes = detail?.episodes?.length || 0;
 
   // 用于记录是否需要在播放器 ready 后跳转到指定进度
@@ -324,9 +342,15 @@ function PlayPageClient() {
   const userChoseRef = useRef(false);
   const failOverRef = useRef<() => void>(() => undefined);
   const handleSourceChangeRef = useRef<
-    (source: string, id: string, title: string) => void
+    (source: string, id: string, title: string, targetEpisode?: number) => void
   >(() => undefined);
   availableSourcesRef.current = availableSources;
+  // 所有线路里最新的一集。选集按它显示：当前线路还没更新到的集，点了会换到有这一集的线路。
+  const latestTotal = latestEpisodeCount(availableSources, detail);
+  const latestTotalRef = useRef(latestTotal);
+  latestTotalRef.current = latestTotal;
+  // 播放记录换了线路后，只清一次同一部片子在别的线路上的旧记录
+  const dedupedRecordKeyRef = useRef('');
 
   // -----------------------------------------------------------------------------
   // 工具函数（Utils）
@@ -811,8 +835,21 @@ function PlayPageClient() {
                 source.episodes?.length
             )
           : undefined;
-      // 点中的源能播就用它。没有指定源时才按线路顺序起播。
-      detailData = pinned || pickOrderedSource(sourcesInfo);
+      // 点中的源能播就用它。没有指定源时：先挑有要看的这一集的线路，再从里面挑访客这边最快的；
+      // 都测不出来就按线路顺序。
+      if (pinned) {
+        detailData = pinned;
+      } else {
+        const wanted = currentEpisodeIndex;
+        const withEpisode = sourcesWithEpisode(sourcesInfo, wanted);
+        const pool = withEpisode.length > 0 ? withEpisode : sourcesInfo;
+        setLoadingMessage('正在挑选最快的线路');
+        const fastest = await pickFastest(
+          pool,
+          withEpisode.length > 0 ? wanted : 0
+        );
+        detailData = fastest || pickOrderedSource(pool);
+      }
 
       setCurrentSource(detailData.source);
       setCurrentId(detailData.id);
@@ -833,7 +870,7 @@ function PlayPageClient() {
       newUrl.searchParams.delete('prefer');
       // ep 只在打开链接时起作用；留着的话刷新会退回到链接里的那一集
       newUrl.searchParams.delete('ep');
-      window.history.replaceState({}, '', newUrl.toString());
+      replacePlayUrl(newUrl);
 
       setLoadingStage('ready');
       setLoading(false);
@@ -899,7 +936,9 @@ function PlayPageClient() {
   const handleSourceChange = async (
     newSource: string,
     newId: string,
-    newTitle: string
+    newTitle: string,
+    // 为了看某一集才换线时传入；不传就停在当前这一集
+    targetEpisode?: number
   ) => {
     userChoseRef.current = true;
     try {
@@ -983,8 +1022,8 @@ function PlayPageClient() {
         );
       }
 
-      // 尝试跳转到当前正在播放的集数
-      let targetIndex = currentEpisodeIndex;
+      // 尝试跳转到要看的那一集，没指定就是当前正在播放的集数
+      let targetIndex = targetEpisode ?? currentEpisodeIndexRef.current;
 
       // 如果当前集数超出新源的范围，则跳转到第一集
       if (!newDetail.episodes || targetIndex >= newDetail.episodes.length) {
@@ -992,7 +1031,7 @@ function PlayPageClient() {
       }
 
       // 如果仍然是同一集数且播放进度有效，则在播放器就绪后恢复到原始进度
-      if (targetIndex !== currentEpisodeIndex) {
+      if (targetIndex !== currentEpisodeIndexRef.current) {
         resumeTimeRef.current = 0;
       } else if (
         (!resumeTimeRef.current || resumeTimeRef.current === 0) &&
@@ -1006,7 +1045,7 @@ function PlayPageClient() {
       newUrl.searchParams.set('source', newSource);
       newUrl.searchParams.set('id', newId);
       newUrl.searchParams.set('year', newDetail.year);
-      window.history.replaceState({}, '', newUrl.toString());
+      replacePlayUrl(newUrl);
 
       setVideoTitle(repairTitle(newDetail.title || newTitle));
       setVideoYear(newDetail.year);
@@ -1036,7 +1075,14 @@ function PlayPageClient() {
         (source) =>
           !failedSourceKeysRef.current.has(`${source.source}:${source.id}`)
       )
-      .sort((a, b) => (a.source_rank ?? 999) - (b.source_rank ?? 999))[0];
+      .sort((a, b) => {
+        // 有正在看的这一集的线路排前面，再按线路顺序
+        const idx = currentEpisodeIndexRef.current;
+        const aHas = episodeCountOf(a) > idx ? 0 : 1;
+        const bHas = episodeCountOf(b) > idx ? 0 : 1;
+        if (aHas !== bHas) return aHas - bHas;
+        return (a.source_rank ?? 999) - (b.source_rank ?? 999);
+      })[0];
 
   // 用户点"换一条线路"：不受 userChoseRef 限制，直接切到下一条
   const switchLineManually = () => {
@@ -1071,11 +1117,38 @@ function PlayPageClient() {
   // 集数切换
   // ---------------------------------------------------------------------------
   // 处理集数切换
-  const handleEpisodeChange = (episodeNumber: number) => {
-    if (episodeNumber >= 0 && episodeNumber < totalEpisodes) {
+  // 换到第 index 集（从 0 起）。当前线路有这一集就直接换；还没更新到这一集时，
+  // 换到有这一集的线路里访客这边最快的那条。返回 false 表示哪条线路都没有。
+  const goToEpisode = async (index: number): Promise<boolean> => {
+    const d = detailRef.current;
+    if (d?.episodes && index < d.episodes.length) {
       // 在更换集数前保存当前播放进度（播放中或暂停中都要存）
       saveCurrentPlayProgress();
-      setCurrentEpisodeIndex(episodeNumber);
+      setCurrentEpisodeIndex(index);
+      return true;
+    }
+    const current = `${currentSourceRef.current}:${currentIdRef.current}`;
+    const candidates = sourcesWithEpisode(
+      availableSourcesRef.current,
+      index,
+      new Set([current, ...Array.from(failedSourceKeysRef.current)])
+    );
+    if (candidates.length === 0) return false;
+    saveCurrentPlayProgress();
+    if (artPlayerRef.current) {
+      artPlayerRef.current.notice.show = `第 ${
+        index + 1
+      } 集在其它线路，正在切换`;
+    }
+    const pick = (await pickFastest(candidates, index)) || candidates[0];
+    sourceSwitchingRef.current = true;
+    handleSourceChangeRef.current(pick.source, pick.id, pick.title, index);
+    return true;
+  };
+
+  const handleEpisodeChange = (episodeNumber: number) => {
+    if (episodeNumber >= 0 && episodeNumber < latestTotalRef.current) {
+      void goToEpisode(episodeNumber);
     }
   };
 
@@ -1089,14 +1162,13 @@ function PlayPageClient() {
   };
 
   const handleNextEpisode = () => {
-    const d = detailRef.current;
     const idx = currentEpisodeIndexRef.current;
-    if (d && d.episodes && idx < d.episodes.length - 1) {
+    // 当前线路的最后一集也可以往下：别的线路已经更新到下一集时换过去
+    if (idx < latestTotalRef.current - 1) {
       // 旧画面还在片尾时，结束和跳过片尾都会再进来一次。先按住，避免连跳两集。
       autoNextHoldRef.current = Date.now() + 8000;
       autoNextHoldEpisodeRef.current = idx + 1;
-      saveCurrentPlayProgress();
-      setCurrentEpisodeIndex(idx + 1);
+      void goToEpisode(idx + 1);
     }
   };
 
@@ -1228,7 +1300,11 @@ function PlayPageClient() {
         year: detailRef.current?.year,
         cover: detailRef.current?.poster || '',
         index: currentEpisodeIndexRef.current + 1, // 转换为1基索引
-        total_episodes: detailRef.current?.episodes.length || 1,
+        // 按所有线路里最新的一集记，「继续观看」上显示的总集数才跟得上更新
+        total_episodes: Math.max(
+          detailRef.current?.episodes.length || 1,
+          latestTotalRef.current
+        ),
         play_time: Math.floor(currentTime),
         total_time: Math.floor(duration),
         save_time: Date.now(),
@@ -1236,6 +1312,19 @@ function PlayPageClient() {
       });
 
       lastSaveTimeRef.current = Date.now();
+
+      // 同一部片子以前在别的线路上看过，留下的旧记录删掉，「继续观看」里只留这一条
+      const recordKey = `${currentSourceRef.current}+${currentIdRef.current}`;
+      if (dedupedRecordKeyRef.current !== recordKey) {
+        dedupedRecordKeyRef.current = recordKey;
+        const records = await getAllPlayRecords();
+        await Promise.all(
+          siblingKeys(records, recordKey).map((key) => {
+            const { source, id } = splitRecordKey(key);
+            return deletePlayRecord(source, id).catch(() => undefined);
+          })
+        );
+      }
     } catch (err) {
       console.error('保存播放进度失败:', err);
     }
@@ -2021,8 +2110,7 @@ function PlayPageClient() {
           }
           if (
             autoNextRef.current &&
-            currentEpisodeIndexRef.current <
-              (detailRef.current?.episodes?.length || 1) - 1
+            currentEpisodeIndexRef.current < latestTotalRef.current - 1
           ) {
             handleNextEpisode();
             artPlayerRef.current.notice.show = `已跳过片尾 (${formatTime(
@@ -2105,13 +2193,8 @@ function PlayPageClient() {
           artPlayerRef.current.notice.show = '本集已播完，睡眠定时已暂停播放';
           return;
         }
-        const d = detailRef.current;
         const idx = currentEpisodeIndexRef.current;
-        if (
-          !autoNextRef.current ||
-          !d?.episodes ||
-          idx >= d.episodes.length - 1
-        ) {
+        if (!autoNextRef.current || idx >= latestTotalRef.current - 1) {
           return;
         }
         handleNextEpisode();
@@ -2403,7 +2486,7 @@ function PlayPageClient() {
               }`}
             >
               <EpisodeSelector
-                totalEpisodes={totalEpisodes}
+                totalEpisodes={latestTotal}
                 value={currentEpisodeIndex + 1}
                 onChange={handleEpisodeChange}
                 onSourceChange={handleSourceChange}
@@ -2541,7 +2624,15 @@ function PlayPageEntry() {
     searchParams.get('stitle') || '',
     searchParams.get('title') || '',
   ].join('\n');
-  return <PlayPageClient key={opened} />;
+  // 地址是页面自己改的（replacePlayUrl），不算换了一部，key 保持不变
+  const keyRef = useRef<string | null>(null);
+  if (
+    keyRef.current === null ||
+    searchParams.toString() !== selfReplacedSearch
+  ) {
+    keyRef.current = opened;
+  }
+  return <PlayPageClient key={keyRef.current} />;
 }
 
 export default function PlayPage() {

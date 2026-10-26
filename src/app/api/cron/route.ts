@@ -132,7 +132,8 @@ async function refreshRecordAndFavorites() {
             }
 
             const episodeCount = detail.episodes?.length || 0;
-            if (episodeCount > 0 && episodeCount !== record.total_episodes) {
+            // 记录里存的是各线路里最新的一集，这里只往上更新，不拿单条线路的旧集数盖回去
+            if (episodeCount > record.total_episodes) {
               await db.savePlayRecord(user, source, id, {
                 title: detail.title || record.title,
                 source_name: record.source_name,
@@ -183,7 +184,7 @@ async function refreshRecordAndFavorites() {
             }
 
             const favEpisodeCount = favDetail.episodes?.length || 0;
-            if (favEpisodeCount > 0 && favEpisodeCount !== fav.total_episodes) {
+            if (favEpisodeCount > fav.total_episodes) {
               await db.saveFavorite(user, source, id, {
                 title: favDetail.title || fav.title,
                 source_name: fav.source_name,

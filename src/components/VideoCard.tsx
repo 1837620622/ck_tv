@@ -105,6 +105,7 @@ export default function VideoCard({
       first: items[0],
       mostFrequentDoubanId: getMostFrequent(countMap),
       mostFrequentEpisodes: getMostFrequent(episodeCountMap) || 0,
+      newestEpisodes: Math.max(newestEpisodes, 0),
       remarks: newestRemarks,
     };
   }, [isAggregate, items]);
@@ -116,7 +117,11 @@ export default function VideoCard({
   const actualDoubanId = String(
     aggregateData?.mostFrequentDoubanId ?? douban_id
   );
-  const actualEpisodes = aggregateData?.mostFrequentEpisodes ?? episodes;
+  // 角标按更新最快的线路算，和下面「更新至第 N 集」一致。以前取多数线路的集数，
+  // 一条线路已经更新到第 6 集、其它还停在第 5 集时，角标写 5、下面写 6。
+  const actualEpisodes = aggregateData
+    ? aggregateData.newestEpisodes || aggregateData.mostFrequentEpisodes
+    : episodes;
   const actualRemarks = aggregateData?.remarks || remarks;
   const actualYear = aggregateData?.first.year ?? year;
   const actualQuery = query || '';
@@ -343,8 +348,10 @@ export default function VideoCard({
   }, [from, isAggregate, actualDoubanId, rate]);
 
   return (
+    // 悬停只轻轻上浮：横向滚动的行会裁掉超出上下内边距的部分，放大 5% 时海报顶部被切平，
+    // 还会盖到旁边那张卡
     <div
-      className='group relative w-full rounded-lg bg-transparent cursor-pointer transition-all duration-300 ease-in-out sm:hover:scale-[1.05] sm:hover:z-[500] active:scale-[0.98]'
+      className='group relative w-full rounded-lg bg-transparent cursor-pointer transition-all duration-300 ease-in-out sm:hover:-translate-y-1 sm:hover:scale-[1.02] sm:hover:z-[500] active:scale-[0.98]'
       onClick={handleClick}
     >
       {/* 海报容器 */}
