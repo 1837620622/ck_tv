@@ -185,6 +185,11 @@ div[data-media-provider] video {
   }
 }
 
+/* 没有系统全屏的浏览器（iPhone）：全屏按钮是网页全屏，手机上也要显示出来 */
+.art-video-player.ck-web-fullscreen-only .art-control-fullscreenWeb {
+  display: inline-flex !important;
+}
+
 /* 防诈骗提醒：用户关闭后，初始化脚本给 html 加上此属性，提醒在首屏就隐藏 */
 html[data-scam-notice-hidden] [data-scam-notice] {
   display: none !important;

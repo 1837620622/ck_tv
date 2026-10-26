@@ -94,6 +94,19 @@ function parseEpisodeParam(raw: string | null): number | null {
   return Number(raw);
 }
 
+// 浏览器能不能把播放器整体切到系统全屏。iPhone Safari 不能，只能把视频交给系统原生播放器，
+// 控制栏、进度条和拖动都不在里面，所以那里的「全屏」改用网页全屏。
+// 判断方式和 ArtPlayer 的 screenfull 一样：有标准写法就看标准字段，没有才看带前缀的。
+function hasSystemFullscreen(): boolean {
+  if (typeof document === 'undefined') return false;
+  const prefixed = document as Document & { webkitFullscreenEnabled?: boolean };
+  const standard = 'exitFullscreen' in document;
+  const enabled = standard
+    ? document.fullscreenEnabled
+    : prefixed.webkitFullscreenEnabled;
+  return enabled === true;
+}
+
 function PlayPageClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -1297,8 +1310,10 @@ function PlayPageClient() {
 
     // f 键 = 切换全屏
     if (e.key === 'f' || e.key === 'F') {
-      if (artPlayerRef.current) {
-        artPlayerRef.current.fullscreen = !artPlayerRef.current.fullscreen;
+      const art = artPlayerRef.current;
+      if (art) {
+        if (hasSystemFullscreen()) art.fullscreen = !art.fullscreen;
+        else art.fullscreenWeb = !art.fullscreenWeb;
         e.preventDefault();
       }
     }
@@ -1590,7 +1605,7 @@ function PlayPageClient() {
         flip: false,
         playbackRate: true,
         aspectRatio: false,
-        fullscreen: true,
+        fullscreen: hasSystemFullscreen(),
         fullscreenWeb: true,
         subtitleOffset: false,
         miniProgressBar: false,
@@ -2032,6 +2047,11 @@ function PlayPageClient() {
       playingNodeRef.current =
         (artPlayerRef.current?.video as HTMLVideoElement) || null;
       artPlayerRef.current.on('ready', () => {
+        if (!hasSystemFullscreen()) {
+          artPlayerRef.current.template.$player.classList.add(
+            'ck-web-fullscreen-only'
+          );
+        }
         detachBufferBar?.();
         detachBufferBar = attachBufferBar(artPlayerRef.current);
         detachSmoothSeek?.();

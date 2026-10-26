@@ -7,6 +7,8 @@
 // - 点进度条任何位置（包括圆点上）都跳到那里。ArtPlayer 点在圆点上不跳。
 // - 拖动时先暂停，画面跟着拖到的位置预览：同一时间只有一次跳转在进行，上一次画面出来后
 //   再跳下一次，最快每 0.2 秒一次；松手时跳到准确位置，原来在播就接着播。
+// - 网页全屏时 ArtPlayer 会把播放器转 90 度，进度条和横滑都要按转后的方向换算，
+//   见 progressRatio 和 playerDelta。
 
 // 手指或鼠标移动超过这个距离才算拖动
 const DRAG_THRESHOLD_PX = 4;
@@ -29,6 +31,28 @@ export function ratioAt(
 ) {
   if (!rect.width) return 0;
   return clamp01((clientX - rect.left) / rect.width);
+}
+
+// 进度条上某个点对应的比例。播放器转了 90 度（网页全屏、竖屏手机看横屏视频）时进度条是竖着的，
+// 按纵坐标算，顶端为 0，和 ArtPlayer 自己的换算一致。
+export function progressRatio(
+  rotated: boolean,
+  x: number,
+  y: number,
+  rect: { left: number; top: number; width: number; height: number }
+): number {
+  return rotated
+    ? ratioAt(y, { left: rect.top, width: rect.height })
+    : ratioAt(x, { left: rect.left, width: rect.width });
+}
+
+// 屏幕上的一次移动换成播放器自己坐标里的移动。播放器顺时针转 90 度后，屏幕的下方是播放器的右边。
+export function playerDelta(
+  rotated: boolean,
+  dx: number,
+  dy: number
+): { x: number; y: number } {
+  return rotated ? { x: dy, y: -dx } : { x: dx, y: dy };
 }
 
 // 在画面上从 startTime 开始横向滑了 dx 像素，对应的目标时间
@@ -168,10 +192,10 @@ export function installSmoothSeek(art: Art, options: Options = {}): () => void {
     }
   };
 
+  const rotated = () => Boolean(art.isRotate);
   const usable = () =>
     !art.option.isLive &&
     !art.isLock &&
-    !art.isRotate &&
     Number.isFinite(art.duration) &&
     art.duration > 0;
 
@@ -205,17 +229,32 @@ export function installSmoothSeek(art: Art, options: Options = {}): () => void {
       moved: false,
       decided: true,
       target:
-        ratioAt(event.clientX, progress.getBoundingClientRect()) * art.duration,
+        progressRatio(
+          rotated(),
+          event.clientX,
+          event.clientY,
+          progress.getBoundingClientRect()
+        ) * art.duration,
     };
   };
   const onMouseMove = (event: MouseEvent) => {
     if (!drag || drag.kind !== 'progress') return;
-    if (Math.abs(event.clientX - drag.startX) > DRAG_THRESHOLD_PX) {
+    const along = playerDelta(
+      rotated(),
+      event.clientX - drag.startX,
+      event.clientY - drag.startY
+    ).x;
+    if (Math.abs(along) > DRAG_THRESHOLD_PX) {
       drag.moved = true;
     }
     if (!drag.moved) return;
     drag.target =
-      ratioAt(event.clientX, progress.getBoundingClientRect()) * art.duration;
+      progressRatio(
+        rotated(),
+        event.clientX,
+        event.clientY,
+        progress.getBoundingClientRect()
+      ) * art.duration;
     show(drag.target);
     preview(drag.target);
   };
@@ -250,8 +289,12 @@ export function installSmoothSeek(art: Art, options: Options = {}): () => void {
         moved: false,
         decided: true,
         target:
-          ratioAt(touch.clientX, progress.getBoundingClientRect()) *
-          art.duration,
+          progressRatio(
+            rotated(),
+            touch.clientX,
+            touch.clientY,
+            progress.getBoundingClientRect()
+          ) * art.duration,
       };
       show(drag.target);
       event.stopPropagation();
@@ -270,11 +313,15 @@ export function installSmoothSeek(art: Art, options: Options = {}): () => void {
   const onTouchMove = (event: TouchEvent) => {
     if (!drag || event.touches.length !== 1) return;
     const touch = event.touches[0];
-    const dx = touch.clientX - drag.startX;
-    const dy = touch.clientY - drag.startY;
+    // 换成播放器自己的方向：x 是沿进度条（或画面横向）的移动，y 是垂直于它的移动
+    const { x: px, y: py } = playerDelta(
+      rotated(),
+      touch.clientX - drag.startX,
+      touch.clientY - drag.startY
+    );
     if (drag.kind === 'swipe' && !drag.decided) {
-      if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
-      if (Math.abs(dy) > Math.abs(dx)) {
+      if (Math.abs(px) < 10 && Math.abs(py) < 10) return;
+      if (Math.abs(py) > Math.abs(px)) {
         drag = null;
         return;
       }
@@ -284,12 +331,16 @@ export function installSmoothSeek(art: Art, options: Options = {}): () => void {
     // （播放器关了它自带的 gesture），不拦，长按倍速照常能收到移动和松手。
     if (drag.kind === 'progress') event.stopPropagation();
     if (event.cancelable) event.preventDefault();
-    if (Math.abs(dx) > DRAG_THRESHOLD_PX) drag.moved = true;
+    if (Math.abs(px) > DRAG_THRESHOLD_PX) drag.moved = true;
     drag.target =
       drag.kind === 'progress'
-        ? ratioAt(touch.clientX, progress.getBoundingClientRect()) *
-          art.duration
-        : swipeTarget(drag.startTime, dx, player.clientWidth, art.duration);
+        ? progressRatio(
+            rotated(),
+            touch.clientX,
+            touch.clientY,
+            progress.getBoundingClientRect()
+          ) * art.duration
+        : swipeTarget(drag.startTime, px, player.clientWidth, art.duration);
     show(drag.target);
     if (drag.moved) preview(drag.target);
   };

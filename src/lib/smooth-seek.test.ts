@@ -2,11 +2,14 @@ import {
   clamp01,
   formatClock,
   installSmoothSeek,
+  playerDelta,
+  progressRatio,
   ratioAt,
   swipeTarget,
 } from './smooth-seek';
 
-function fakePlayer(duration = 600, { playing = true } = {}) {
+// rotated 为真时模拟网页全屏转了 90 度：进度条竖着放，纵坐标 100 到 500 对应整条进度条
+function fakePlayer(duration = 600, { playing = true, rotated = false } = {}) {
   const player = document.createElement('div');
   const progress = document.createElement('div');
   const inner = document.createElement('div');
@@ -15,7 +18,9 @@ function fakePlayer(duration = 600, { playing = true } = {}) {
   player.append(video, progress);
   document.body.appendChild(player);
   progress.getBoundingClientRect = () =>
-    ({ left: 100, width: 400, top: 0, height: 6 } as DOMRect);
+    (rotated
+      ? { left: 0, top: 100, width: 6, height: 400 }
+      : { left: 100, top: 0, width: 400, height: 6 }) as DOMRect;
   Object.defineProperty(player, 'clientWidth', { value: 800 });
   // 预览直接改 video.currentTime，这里记下每次改动
   const previews: number[] = [];
@@ -50,7 +55,7 @@ function fakePlayer(duration = 600, { playing = true } = {}) {
       return 0;
     },
     isLock: false,
-    isRotate: false,
+    isRotate: rotated,
     option: { isLive: false },
     notice: { show: '' },
     emit: (name: string, ...args: unknown[]) => {
@@ -81,9 +86,14 @@ function fakePlayer(duration = 600, { playing = true } = {}) {
   };
 }
 
-function mouse(type: string, target: EventTarget, clientX: number) {
+function mouse(
+  type: string,
+  target: EventTarget,
+  clientX: number,
+  clientY = 0
+) {
   target.dispatchEvent(
-    new MouseEvent(type, { bubbles: true, button: 0, clientX })
+    new MouseEvent(type, { bubbles: true, button: 0, clientX, clientY })
   );
 }
 
@@ -314,5 +324,69 @@ describe('previewing the picture while dragging', () => {
     touch('touchend', document, 300);
     expect(seeks).toEqual([300]);
     expect(media.plays).toBe(1);
+  });
+});
+
+describe('rotated player (web fullscreen turned 90 degrees)', () => {
+  it('maps a point on the vertical bar by its height, top is 0', () => {
+    const rect = { left: 0, top: 100, width: 6, height: 400 };
+    expect(progressRatio(true, 3, 300, rect)).toBe(0.5);
+    expect(progressRatio(true, 3, 50, rect)).toBe(0);
+    expect(
+      progressRatio(false, 300, 3, { left: 100, top: 0, width: 400, height: 6 })
+    ).toBe(0.5);
+  });
+
+  it('turns screen movement into the player direction', () => {
+    expect(playerDelta(false, 10, 20)).toEqual({ x: 10, y: 20 });
+    // 顺时针转 90 度：屏幕向下是播放器向右
+    expect(playerDelta(true, 10, 20)).toEqual({ x: 20, y: -10 });
+  });
+
+  it('seeks where a tap lands on the vertical bar', () => {
+    const { inner, seeks } = fakePlayer(600, { rotated: true });
+    mouse('mousedown', inner, 3, 300);
+    mouse('mouseup', document, 3, 300);
+    expect(seeks).toEqual([300]);
+  });
+
+  it('previews and seeks once when the mouse drags along the vertical bar', () => {
+    const { inner, seeks, previews, media } = fakePlayer(600, {
+      rotated: true,
+    });
+    mouse('mousedown', inner, 3, 140);
+    mouse('mousemove', document, 3, 340);
+    // 纵坐标 340 在 100 到 500 的竖条上是 0.6
+    expect(media.paused).toBe(true);
+    expect(previews[previews.length - 1]).toBe(360);
+    mouse('mouseup', document, 3, 340);
+    expect(seeks).toEqual([360]);
+    expect(media.plays).toBe(1);
+  });
+
+  it('follows a finger down the vertical bar', () => {
+    const { inner, seeks } = fakePlayer(600, { rotated: true });
+    touch('touchstart', inner, 3, 120);
+    for (let y = 140; y <= 460; y += 40) touch('touchmove', inner, 3, y);
+    touch('touchend', document, 3, 460);
+    expect(seeks).toEqual([540]);
+  });
+
+  it('swipes the picture forward when the finger moves down the screen', () => {
+    const { video, seeks } = fakePlayer(600, { rotated: true });
+    touch('touchstart', video, 100, 100);
+    for (let y = 140; y <= 460; y += 40) touch('touchmove', video, 104, y);
+    touch('touchmove', video, 104, 480);
+    touch('touchend', document, 104, 480);
+    // 屏幕向下 380 像素，播放器横向 380 像素，起点 60 秒
+    expect(seeks).toEqual([60 + (380 / 800) * 600 * 0.5]);
+  });
+
+  it('ignores a sideways swipe on the screen when the player is turned', () => {
+    const { video, seeks } = fakePlayer(600, { rotated: true });
+    touch('touchstart', video, 100, 100);
+    for (let x = 140; x <= 500; x += 40) touch('touchmove', video, x, 104);
+    touch('touchend', document, 500, 104);
+    expect(seeks).toEqual([]);
   });
 });
