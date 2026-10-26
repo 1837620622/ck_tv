@@ -196,6 +196,33 @@ div[data-media-provider] video {
   display: inline-flex !important;
 }
 
+/* 播放器本身很窄时（横屏手机两边都有面板，只有约 400 像素宽），音量和缓冲文字让位，
+   免得全屏按钮被挤到播放器外面、点不到 */
+.art-video-player {
+  container-type: inline-size;
+}
+
+@container (max-width: 520px) {
+  .art-video-player .art-control-volume,
+  .art-video-player .art-control-buffered {
+    display: none !important;
+  }
+}
+
+/* 触屏设备全屏时：进度条的点按范围往上扩到约 44 像素，手指好点中。只往上扩，下面是控制按钮。
+   整个播放器不让浏览器抢走拖动，也不做双击缩放 */
+@media (pointer: coarse) {
+  .art-video-player.art-fullscreen-web .art-control-progress::before,
+  .art-video-player.art-fullscreen .art-control-progress::before {
+    top: -40px;
+  }
+
+  .art-video-player.art-fullscreen-web,
+  .art-video-player.art-fullscreen {
+    touch-action: none;
+  }
+}
+
 /* 防诈骗提醒：用户关闭后，初始化脚本给 html 加上此属性，提醒在首屏就隐藏 */
 html[data-scam-notice-hidden] [data-scam-notice] {
   display: none !important;

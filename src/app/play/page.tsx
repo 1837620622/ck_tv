@@ -107,6 +107,33 @@ function hasSystemFullscreen(): boolean {
   return enabled === true;
 }
 
+// 网页全屏时手机转了方向。ArtPlayer 只在进入全屏时判断要不要把播放器转 90 度，转屏后不会重新判断，
+// 画面会歪、进度条会跑到屏幕外。这里转屏后退出再进入一次，让它按新的方向判断。
+function watchWebFullscreenOrientation(art: any): () => void {
+  let landscape: boolean | null = null;
+  let timer = 0;
+  const onWebFullscreen = (on: boolean) => {
+    landscape = on ? window.innerWidth > window.innerHeight : null;
+  };
+  const check = () => {
+    if (landscape === null || !art.fullscreenWeb) return;
+    if (window.innerWidth > window.innerHeight === landscape) return;
+    art.fullscreenWeb = false;
+    art.fullscreenWeb = true;
+  };
+  const onResize = () => {
+    // 转屏动画中尺寸还在变，等稳定下来再判断
+    window.clearTimeout(timer);
+    timer = window.setTimeout(check, 350);
+  };
+  art.on('fullscreenWeb', onWebFullscreen);
+  window.addEventListener('resize', onResize);
+  return () => {
+    window.clearTimeout(timer);
+    window.removeEventListener('resize', onResize);
+  };
+}
+
 // 能不能画中画，和 ArtPlayer 的判断一致：有标准接口用标准的，否则看 iPhone Safari 的 webkit 接口
 function hasPictureInPicture(video: HTMLVideoElement): boolean {
   if (typeof document === 'undefined') return false;
@@ -1570,6 +1597,7 @@ function PlayPageClient() {
       let autoNextButton: HTMLElement | null = null;
       let detachBufferBar: (() => void) | null = null;
       let detachSmoothSeek: (() => void) | null = null;
+      let detachOrientation: (() => void) | null = null;
       const autoNextSetting: any = {
         switch: autoNextRef.current,
         onSwitch(item: any) {
@@ -2051,6 +2079,8 @@ function PlayPageClient() {
         detachBufferBar = null;
         detachSmoothSeek?.();
         detachSmoothSeek = null;
+        detachOrientation?.();
+        detachOrientation = null;
       });
 
       // 监听播放器事件
@@ -2075,6 +2105,8 @@ function PlayPageClient() {
             scrubbingRef.current = active;
           },
         });
+        detachOrientation?.();
+        detachOrientation = watchWebFullscreenOrientation(artPlayerRef.current);
         playingNodeRef.current =
           (artPlayerRef.current?.video as HTMLVideoElement) ||
           playingNodeRef.current;
