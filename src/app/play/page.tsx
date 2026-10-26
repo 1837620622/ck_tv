@@ -52,6 +52,7 @@ import {
   SEARCH_CACHE_VERSION,
   shouldReplaceListing,
 } from '@/lib/search-cache';
+import { formatClock, installSmoothSeek } from '@/lib/smooth-seek';
 import {
   episodeCountOf,
   latestEpisodeCount,
@@ -133,6 +134,12 @@ function PlayPageClient() {
 
   // 跳过检查的时间间隔控制
   const lastSkipCheckRef = useRef(0);
+  // 自动跳过只替访客做一次：片头每集最多跳一次；访客自己拖过进度后，这一集不再自动跳片头；
+  // 访客自己拖进片尾（想看片尾彩蛋）时也不再自动跳到下一集，播完照常连播。
+  const introSkippedForRef = useRef('');
+  const userSeekRef = useRef<{ episode: string; time: number } | null>(null);
+  const episodeKey = () =>
+    `${currentSourceRef.current}:${currentIdRef.current}:${currentEpisodeIndexRef.current}`;
 
   // 去广告开关（从 localStorage 继承，默认 true）
   const [blockAdEnabled, setBlockAdEnabled] = useState<boolean>(() => {
@@ -1177,6 +1184,33 @@ function PlayPageClient() {
   // ---------------------------------------------------------------------------
   // 键盘快捷键
   // ---------------------------------------------------------------------------
+  // 方向键快退快进。按一下立刻跳；按住不放时只移动进度条和提示时间，松开后跳一次，
+  // 不让连发的按键变成几十次跳转（hls.js 会被拖得卡住）。
+  const keySeekRef = useRef<{ target: number; timer: number } | null>(null);
+  const keySeek = (delta: number, repeat: boolean) => {
+    const art = artPlayerRef.current;
+    if (!art || !(art.duration > 0)) return;
+    const base = keySeekRef.current?.target ?? art.currentTime;
+    const target = Math.min(
+      Math.max(0, base + delta),
+      Math.max(0, art.duration - 1)
+    );
+    if (!repeat && !keySeekRef.current) {
+      art.seek = target;
+      return;
+    }
+    if (keySeekRef.current) window.clearTimeout(keySeekRef.current.timer);
+    art.emit('setBar', 'played', target / art.duration);
+    art.notice.show = `${formatClock(target)} / ${formatClock(art.duration)}`;
+    keySeekRef.current = {
+      target,
+      timer: window.setTimeout(() => {
+        keySeekRef.current = null;
+        art.seek = target;
+      }, 250),
+    };
+  };
+
   // 处理全局快捷键
   const handleKeyboardShortcuts = (e: KeyboardEvent) => {
     const target = e.target as HTMLElement;
@@ -1203,9 +1237,9 @@ function PlayPageClient() {
 
     // Alt + 右箭头 = 下一集
     if (e.altKey && e.key === 'ArrowRight') {
-      const d = detailRef.current;
       const idx = currentEpisodeIndexRef.current;
-      if (d && idx < d.episodes.length - 1) {
+      // 和连播一样按所有线路里最新的一集算，当前线路没有下一集时会换线
+      if (idx < latestTotalRef.current - 1) {
         handleNextEpisode();
         e.preventDefault();
       }
@@ -1213,19 +1247,16 @@ function PlayPageClient() {
 
     // 左箭头 = 快退
     if (!e.altKey && e.key === 'ArrowLeft') {
-      if (artPlayerRef.current && artPlayerRef.current.currentTime > 5) {
-        artPlayerRef.current.currentTime -= 10;
+      if (artPlayerRef.current) {
+        keySeek(-10, e.repeat);
         e.preventDefault();
       }
     }
 
     // 右箭头 = 快进
     if (!e.altKey && e.key === 'ArrowRight') {
-      if (
-        artPlayerRef.current &&
-        artPlayerRef.current.currentTime < artPlayerRef.current.duration - 5
-      ) {
-        artPlayerRef.current.currentTime += 10;
+      if (artPlayerRef.current) {
+        keySeek(10, e.repeat);
         e.preventDefault();
       }
     }
@@ -1511,6 +1542,7 @@ function PlayPageClient() {
       // 控制栏开关和设置里的「自动连播」共用这一项。开：本集结束就进下一集。关：停在当前这一集。
       let autoNextButton: HTMLElement | null = null;
       let detachBufferBar: (() => void) | null = null;
+      let detachSmoothSeek: (() => void) | null = null;
       const autoNextSetting: any = {
         switch: autoNextRef.current,
         onSwitch(item: any) {
@@ -1569,6 +1601,8 @@ function PlayPageClient() {
         lang: 'zh-cn',
         hotkey: false,
         fastForward: true,
+        // 画面横滑调进度由 installSmoothSeek 处理：自带的那套每移动一下就跳一次，拖完常卡住
+        gesture: false,
         autoOrientation: true,
         lock: true,
         moreVideoAttr: {
@@ -1988,6 +2022,8 @@ function PlayPageClient() {
       artPlayerRef.current.on('destroy', () => {
         detachBufferBar?.();
         detachBufferBar = null;
+        detachSmoothSeek?.();
+        detachSmoothSeek = null;
       });
 
       // 监听播放器事件
@@ -1996,6 +2032,8 @@ function PlayPageClient() {
       artPlayerRef.current.on('ready', () => {
         detachBufferBar?.();
         detachBufferBar = attachBufferBar(artPlayerRef.current);
+        detachSmoothSeek?.();
+        detachSmoothSeek = installSmoothSeek(artPlayerRef.current);
         playingNodeRef.current =
           (artPlayerRef.current?.video as HTMLVideoElement) ||
           playingNodeRef.current;
@@ -2017,6 +2055,15 @@ function PlayPageClient() {
       });
 
       // 监听视频可播放事件，这时恢复播放进度更可靠
+      // 还没起播就自己拖了进度：以拖到的位置为准，canplay 时不再跳回上次看到的地方
+      artPlayerRef.current.on('seek', () => {
+        resumeTimeRef.current = null;
+        userSeekRef.current = {
+          episode: episodeKey(),
+          time: artPlayerRef.current?.currentTime || 0,
+        };
+      });
+
       artPlayerRef.current.on('video:canplay', () => {
         // 若存在需要恢复的播放进度，则跳转
         if (resumeTimeRef.current && resumeTimeRef.current > 0) {
@@ -2082,10 +2129,18 @@ function PlayPageClient() {
         lastSkipCheckRef.current = now;
 
         // 跳过片头
+        const playingEpisode = episodeKey();
+        const userSeek =
+          userSeekRef.current?.episode === playingEpisode
+            ? userSeekRef.current
+            : null;
         if (
           skipConfigRef.current.intro_time > 0 &&
-          currentTime < skipConfigRef.current.intro_time
+          currentTime < skipConfigRef.current.intro_time &&
+          introSkippedForRef.current !== playingEpisode &&
+          !userSeek
         ) {
+          introSkippedForRef.current = playingEpisode;
           artPlayerRef.current.currentTime = skipConfigRef.current.intro_time;
           artPlayerRef.current.notice.show = `已跳过片头 (${formatTime(
             skipConfigRef.current.intro_time
@@ -2098,7 +2153,12 @@ function PlayPageClient() {
           skipConfigRef.current.outro_time < 0 &&
           duration > 0 &&
           currentTime >
-            artPlayerRef.current.duration + skipConfigRef.current.outro_time
+            artPlayerRef.current.duration + skipConfigRef.current.outro_time &&
+          !(
+            userSeek &&
+            userSeek.time >=
+              artPlayerRef.current.duration + skipConfigRef.current.outro_time
+          )
         ) {
           if (Date.now() < autoNextHoldRef.current) return;
           // 睡眠定时「本集结束」优先于连播。暂停后结束事件仍可能再来，按住避免接着跳集。
