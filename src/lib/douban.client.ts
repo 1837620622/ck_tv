@@ -1,4 +1,5 @@
 import { parseCardMeta } from './douban-filter';
+import { fetchWithin } from './fetch-within';
 import { DoubanItem, DoubanResult } from './types';
 import { getDoubanProxyUrl } from './utils';
 
@@ -197,11 +198,13 @@ async function fetchServerCategories(
   params: DoubanCategoriesParams
 ): Promise<DoubanResult> {
   const { kind, category, type, pageLimit = 20, pageStart = 0 } = params;
-  const response = await fetch(
+  // 服务端最多等上游 10 秒，这里给 15 秒，超时就按失败处理，不让首页一直转圈。
+  // 不再用 no-store：服务端给了最多 10 分钟浏览器缓存，空列表本来就是 no-store，回到首页不必重等。
+  const response = await fetchWithin(
     `/api/douban/categories?kind=${kind}&category=${encodeURIComponent(
       category
     )}&type=${encodeURIComponent(type)}&limit=${pageLimit}&start=${pageStart}`,
-    { cache: 'no-store' }
+    15000
   );
 
   if (!response.ok) {
@@ -258,10 +261,11 @@ export async function getDoubanList(
     return fetchDoubanList(params);
   } else {
     // 对中文参数进行URL编码，避免请求失败
-    const response = await fetch(
+    const response = await fetchWithin(
       `/api/douban?tag=${encodeURIComponent(tag)}&type=${encodeURIComponent(
         type
-      )}&pageSize=${pageLimit}&pageStart=${pageStart}`
+      )}&pageSize=${pageLimit}&pageStart=${pageStart}`,
+      15000
     );
 
     if (!response.ok) {

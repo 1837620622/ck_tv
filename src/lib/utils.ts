@@ -28,6 +28,50 @@ export function getImageProxyUrl(): string | null {
     : null;
 }
 
+// 豆瓣图床在国内。时区在中国大陆、港澳台的访客直连更快：走本站代理要先绕到 Cloudflare 节点
+// （国内访客常被分到美国西部），每张图还要启动一次函数。其他地区仍走代理，代理结果按节点缓存。
+const NEAR_DOUBAN_TIME_ZONES = new Set([
+  'Asia/Shanghai',
+  'Asia/Chongqing',
+  'Asia/Chungking',
+  'Asia/Harbin',
+  'Asia/Urumqi',
+  'Asia/Kashgar',
+  'Asia/Hong_Kong',
+  'Asia/Macau',
+  'Asia/Taipei',
+  'PRC',
+  'ROC',
+  'Hongkong',
+]);
+
+export function isNearDoubanCdn(timeZone: string | undefined): boolean {
+  return !!timeZone && NEAR_DOUBAN_TIME_ZONES.has(timeZone);
+}
+
+function visitorTimeZone(): string | undefined {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * 海报卡片用的图片地址。只给有失败回退的地方用（VideoCard 加载失败会改走 /api/image-proxy）：
+ * 国内时区的豆瓣海报直连，其余和 processImageUrl 相同。页面已经设了 no-referrer，豆瓣不会因为来源拦截。
+ */
+export function posterImageUrl(
+  originalUrl: string,
+  timeZone: string | undefined = visitorTimeZone()
+): string {
+  const cleanUrl = (originalUrl || '').trim();
+  if (cleanUrl.includes('doubanio.com') && isNearDoubanCdn(timeZone)) {
+    return cleanUrl.replace(/^http:\/\//, 'https://');
+  }
+  return processImageUrl(originalUrl);
+}
+
 /**
  * 处理图片 URL，如果设置了图片代理则使用代理
  * 豆瓣图片会自动使用内置代理绕过防盗链

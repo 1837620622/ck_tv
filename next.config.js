@@ -99,22 +99,25 @@ const nextConfig = {
   },
 };
 
-// 门控后的接口只给通过门控的访客看。它们不能进 Service Worker 的运行时缓存：
-// 缓存会在断网或超时时把之前的响应再端出来，等于绕过门控。这些路径一律只走网络。
-const defaultRuntimeCaching = require('next-pwa/cache');
-const gatedApiCaching = {
-  urlPattern:
-    /^https?:\/\/[^/]+\/api\/(adult|huangguo|detail|gate)(?=[/?#]|$)/i,
-  handler: 'NetworkOnly',
-  method: 'GET',
-};
-
+// Service Worker 只用来让站点能「添加到主屏幕」，不做离线缓存：
+// - 不预缓存构建产物和截图。以前每个新访客装 SW 时，后台要再下载约 20 MB
+//   （public 里三张截图就有 18 MB），和首页、正片抢带宽；其中任何一个文件下载失败，
+//   SW 安装失败，下次打开又从头下载。_next/static 有一年的 immutable 缓存头，浏览器自己会缓存。
+// - 不登记运行时缓存。以前接口、页面和所有跨域请求都会被 SW 拦下：每个视频分片都要过一遍 SW
+//   并写进 Cache Storage；接口和页面超过 10 秒就返回旧内容；新版本上线后还会拿旧页面去加载
+//   已经不存在的脚本。现在这些请求都直接走浏览器，门控接口自然也不会被缓存。
+// - 不缓存首页（cacheStartUrl、dynamicStartUrl），原因同上。dynamicStartUrl 默认开着时，
+//   页面每次回到首页还会在后台再拉一遍首页 HTML 存进缓存。
 const withPWA = require('next-pwa')({
   dest: 'public',
   disable: process.env.NODE_ENV === 'development',
   register: true,
   skipWaiting: true,
-  runtimeCaching: [gatedApiCaching, ...defaultRuntimeCaching],
+  cacheStartUrl: false,
+  dynamicStartUrl: false,
+  buildExcludes: [/.*/],
+  publicExcludes: ['!noprecache/**/*', '!screenshot*.png', '!ck.jpg'],
+  runtimeCaching: [],
 });
 
 module.exports = withPWA(nextConfig);

@@ -13,7 +13,7 @@ import {
 } from '@/lib/db.client';
 import { repairTitle } from '@/lib/match-title';
 import { SearchResult } from '@/lib/types';
-import { processImageUrl } from '@/lib/utils';
+import { posterImageUrl } from '@/lib/utils';
 
 import { ImagePlaceholder } from '@/components/ImagePlaceholder';
 
@@ -130,13 +130,13 @@ export default function VideoCard({
     : type;
 
   const [imgSrc, setImgSrc] = useState<string>(() =>
-    processImageUrl(actualPoster)
+    posterImageUrl(actualPoster)
   );
   const [hasError, setHasError] = useState(!actualPoster);
   const [isRetryingProxy, setIsRetryingProxy] = useState(false);
 
   useEffect(() => {
-    setImgSrc(processImageUrl(actualPoster));
+    setImgSrc(posterImageUrl(actualPoster));
     setHasError(!actualPoster);
     setIsRetryingProxy(false);
     setIsLoading(false);
