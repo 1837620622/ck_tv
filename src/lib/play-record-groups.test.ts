@@ -63,6 +63,16 @@ describe('groupPlayRecords', () => {
     expect(siblingKeys(records, 'missing+1')).toEqual([]);
   });
 
+  it('only deletes records whose year matches exactly', () => {
+    const records = {
+      'a+1': record('倚天屠龙记', 50, 3, '2019'),
+      'b+2': record('倚天屠龙记', 40, 2, ''),
+      'c+3': record('倚天屠龙记', 50, 1, '2019'),
+    };
+    // 显示时没写年份的那条会并进来，删除时不动它
+    expect(siblingKeys(records, 'a+1')).toEqual(['c+3']);
+  });
+
   it('splits keys whose id contains a plus sign', () => {
     expect(splitRecordKey('src+a+b')).toEqual({ source: 'src', id: 'a+b' });
   });

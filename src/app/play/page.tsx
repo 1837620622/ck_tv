@@ -1134,6 +1134,9 @@ function PlayPageClient() {
       new Set([current, ...Array.from(failedSourceKeysRef.current)])
     );
     if (candidates.length === 0) return false;
+    // 测速要等一会儿。片尾的「结束」和「跳过片尾」可能各来一次，换线期间不再接第二次
+    if (sourceSwitchingRef.current) return false;
+    sourceSwitchingRef.current = true;
     saveCurrentPlayProgress();
     if (artPlayerRef.current) {
       artPlayerRef.current.notice.show = `第 ${
@@ -1141,7 +1144,6 @@ function PlayPageClient() {
       } 集在其它线路，正在切换`;
     }
     const pick = (await pickFastest(candidates, index)) || candidates[0];
-    sourceSwitchingRef.current = true;
     handleSourceChangeRef.current(pick.source, pick.id, pick.title, index);
     return true;
   };

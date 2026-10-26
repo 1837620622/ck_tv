@@ -64,13 +64,20 @@ export function groupPlayRecords<T extends RecordLike>(
   return groups.sort((a, b) => b.latest.save_time - a.latest.save_time);
 }
 
-// 和 key 是同一部片子的其它记录键
+// 和 key 是同一部片子的其它记录键，用来删旧线路的记录。
+// 删除比合并显示更保守：年份必须一样（都写了且相同，或都没写），
+// 一条有年份、一条没有时不删，避免把同名翻拍的进度删掉。
 export function siblingKeys<T extends RecordLike>(
   records: Record<string, T>,
   key: string
 ): string[] {
+  const self = records[key];
+  if (!self) return [];
   const group = groupPlayRecords(records).find((g) => g.keys.includes(key));
-  return group ? group.keys.filter((k) => k !== key) : [];
+  if (!group) return [];
+  return group.keys.filter(
+    (k) => k !== key && yearOf(records[k]) === yearOf(self)
+  );
 }
 
 export function splitRecordKey(key: string): { source: string; id: string } {
