@@ -7,7 +7,8 @@ import {
   writeJsonCache,
 } from '@/lib/edge-cache';
 import { playlistHeight } from '@/lib/playlist';
-import { fetchPublic, publicHttpUrl } from '@/lib/safe-url';
+import { clientIp, isCrossSite, takeQuota } from '@/lib/request-guard';
+import { fetchPublic, publicPlaylistUrl } from '@/lib/safe-url';
 
 export const runtime = 'edge';
 
@@ -46,7 +47,30 @@ export async function GET(request: Request) {
       return undefined;
     }
   })();
-  const target = publicHttpUrl(
+  if (isCrossSite(request)) {
+    return NextResponse.json(
+      { ok: false, height: 0, edgeMs: 0 },
+      { status: 403, headers: { 'Cache-Control': 'no-store' } }
+    );
+  }
+  const ip = clientIp(request);
+  if (ip) {
+    const wait = takeQuota(`line:${ip}`, 180, 60_000);
+    if (wait > 0) {
+      return NextResponse.json(
+        { ok: false, height: 0, edgeMs: 0 },
+        {
+          status: 429,
+          headers: {
+            'Cache-Control': 'no-store',
+            'Retry-After': String(wait),
+          },
+        }
+      );
+    }
+  }
+  // 只测播放清单。其它地址一律拒绝，避免被拿来访问任意公网。
+  const target = publicPlaylistUrl(
     new URL(request.url).searchParams.get('u') || ''
   );
   if (!target) {

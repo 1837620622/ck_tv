@@ -15,6 +15,7 @@ import {
   subscribeToDataUpdates,
 } from '@/lib/db.client';
 import { getDoubanCategories } from '@/lib/douban.client';
+import { fetchWithin } from '@/lib/fetch-within';
 import { DoubanItem } from '@/lib/types';
 
 import CapsuleSwitch from '@/components/CapsuleSwitch';
@@ -142,7 +143,7 @@ function HomeRow({
     <section className='mb-8'>
       <SectionTitle title={title} href={href} />
       <ScrollableRow>
-        {loading ? (
+        {loading && items.length === 0 ? (
           <RowSkeleton />
         ) : (
           items.map((item) => (
@@ -183,11 +184,12 @@ async function loadCatalogRow(
   kind: string
 ): Promise<DoubanItem[]> {
   try {
-    const response = await fetch(
+    // 服务端给了 5 分钟浏览器缓存，回到首页时不用再等一次接口。最多等 15 秒。
+    const response = await fetchWithin(
       `/api/catalog?engine=${engine}&kind=${encodeURIComponent(
         kind
       )}&page=1&v=3`,
-      { cache: 'no-store' }
+      15000
     );
     if (!response.ok) return [];
     const data = await response.json();
@@ -215,6 +217,11 @@ function HomeClient() {
   const [catalogLoading, setCatalogLoading] = useState(true);
   const foreignColumns = useForeignColumns();
 
+  useEffect(() => {
+    // 打开首页就排一小批片源巡检。不等结果，不挡页面。不通的源不占搜索的快速名额。
+    fetch('/api/upstream', { cache: 'no-store' }).catch(() => undefined);
+  }, []);
+
   // 收藏夹数据
   type FavoriteItem = {
     id: string;
@@ -234,30 +241,23 @@ function HomeClient() {
       try {
         setLoading(true);
 
-        const [movies, latest, tvShows, anime, varietyShows, documentaries] =
-          await Promise.all([
-            loadDoubanRow({ kind: 'movie', category: '热门', type: '全部' }),
-            loadDoubanRow({ kind: 'movie', category: '最新', type: '全部' }),
-            loadDoubanRow({ kind: 'tv', category: 'tv', type: 'tv' }),
-            loadDoubanRow({
-              kind: 'tv',
-              category: 'tv',
-              type: 'tv_animation',
-            }),
-            loadDoubanRow({ kind: 'tv', category: 'show', type: 'show' }),
-            loadDoubanRow({
-              kind: 'tv',
-              category: 'tv',
-              type: 'tv_documentary',
-            }),
-          ]);
-
-        setHotMovies(movies);
-        setLatestMovies(latest);
-        setHotTvShows(tvShows);
-        setHotAnime(anime);
-        setHotVarietyShows(varietyShows);
-        setHotDocumentaries(documentaries);
+        // 每一行到了就先画出来，不等最慢的那一行。以前六行一起等，一行卡住整个首页都是骨架屏。
+        const rows: Array<
+          [Parameters<typeof loadDoubanRow>[0], (items: DoubanItem[]) => void]
+        > = [
+          [{ kind: 'movie', category: '热门', type: '全部' }, setHotMovies],
+          [{ kind: 'movie', category: '最新', type: '全部' }, setLatestMovies],
+          [{ kind: 'tv', category: 'tv', type: 'tv' }, setHotTvShows],
+          [{ kind: 'tv', category: 'tv', type: 'tv_animation' }, setHotAnime],
+          [{ kind: 'tv', category: 'show', type: 'show' }, setHotVarietyShows],
+          [
+            { kind: 'tv', category: 'tv', type: 'tv_documentary' },
+            setHotDocumentaries,
+          ],
+        ];
+        await Promise.all(
+          rows.map(([params, setRow]) => loadDoubanRow(params).then(setRow))
+        );
       } finally {
         setLoading(false);
       }
@@ -269,14 +269,15 @@ function HomeClient() {
   useEffect(() => {
     let cancelled = false;
     const loadCatalog = async () => {
-      const [bangumi, bilibili] = await Promise.all([
-        loadCatalogRow('bangumi', 'anime'),
-        loadCatalogRow('bilibili', 'bangumi'),
+      await Promise.all([
+        loadCatalogRow('bangumi', 'anime').then((items) => {
+          if (!cancelled) setBangumiRow(items);
+        }),
+        loadCatalogRow('bilibili', 'bangumi').then((items) => {
+          if (!cancelled) setBilibiliRow(items);
+        }),
       ]);
-      if (cancelled) return;
-      setBangumiRow(bangumi);
-      setBilibiliRow(bilibili);
-      setCatalogLoading(false);
+      if (!cancelled) setCatalogLoading(false);
     };
     loadCatalog();
     return () => {
@@ -433,7 +434,7 @@ function HomeClient() {
                   title='热度最高'
                   href='/douban?type=movie&cat=热门'
                 />
-                {loading ? (
+                {loading && hotMovies.length === 0 ? (
                   <GridSkeleton count={18} />
                 ) : hotMovies.length === 0 ? (
                   <EmptyNote text='暂时没有热门影片，稍后再试' />
@@ -447,7 +448,7 @@ function HomeClient() {
                   title='最新上线'
                   href='/douban?type=movie&cat=最新'
                 />
-                {loading ? (
+                {loading && latestMovies.length === 0 ? (
                   <GridSkeleton count={12} />
                 ) : (
                   (() => {

@@ -14,7 +14,7 @@ export async function GET(request: Request) {
   const query = searchParams.get('q');
   const resourceId = searchParams.get('resourceId');
 
-  const headers = jsonCacheHeaders(300, 60);
+  const headers = jsonCacheHeaders(60, 15, 0);
 
   if (!query || !resourceId) {
     return NextResponse.json(

@@ -22,6 +22,9 @@ interface ApiSearchItem {
 // 最近失败过的源（超时、网络错误、非 200、返回的不是 JSON）。
 // 同一个实例里暂时不占快速查询名额，5 分钟后自动恢复。
 const FAILURE_MEMO_MS = 5 * 60 * 1000;
+// 回源缓存短于列表新鲜期。后台刷新时这份缓存已经过期，才能看到采集站的新集。
+const SEARCH_UPSTREAM_TTL = 300;
+const DETAIL_UPSTREAM_TTL = 300;
 const failedSites = new Map<string, number>();
 
 export function recentlyFailed(siteKey: string): boolean {
@@ -37,6 +40,16 @@ export function recentlyFailed(siteKey: string): boolean {
 function noteSite(siteKey: string, ok: boolean) {
   if (ok) failedSites.delete(siteKey);
   else failedSites.set(siteKey, Date.now());
+}
+
+// 采集站用这句话标更新，例如「更新至12集」。里面夹着地址的丢掉。
+function remarkText(value: unknown): string | undefined {
+  const text = String(value ?? '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 40);
+  if (!text || text.includes('http')) return undefined;
+  return text;
 }
 
 // 把苹果 CMS 的一条记录转成站内结构。上游字段类型不稳定（数字、空值），先统一转字符串；
@@ -71,6 +84,7 @@ function toSearchResult(
       // 没有四位数字的年份（如「未知」）同样记为 unknown，排序时才和缺失年份一样排在最后
       year: yearText.match(/\d{4}/)?.[0] || 'unknown',
       desc: cleanHtmlTags(String(item.vod_content ?? '')),
+      remarks: remarkText(item.vod_remarks),
       type_name: item.type_name,
       douban_id: item.vod_douban_id,
     };
@@ -114,7 +128,11 @@ export async function searchFromApi(
     try {
       const response = await fetch(
         apiUrl,
-        edgeFetchInit(API_CONFIG.search.headers, controller.signal, 1800)
+        edgeFetchInit(
+          API_CONFIG.search.headers,
+          controller.signal,
+          SEARCH_UPSTREAM_TTL
+        )
       );
       if (!response.ok) {
         return {
@@ -223,7 +241,11 @@ export async function getDetailFromApi(
     try {
       const response = await fetch(
         detailUrl,
-        edgeFetchInit(API_CONFIG.detail.headers, controller.signal, 600)
+        edgeFetchInit(
+          API_CONFIG.detail.headers,
+          controller.signal,
+          DETAIL_UPSTREAM_TTL
+        )
       );
       if (!response.ok) {
         lastError = new Error(`详情请求失败: ${response.status}`);
@@ -276,6 +298,7 @@ export async function getDetailFromApi(
     class: videoDetail.vod_class,
     year: yearText.match(/\d{4}/)?.[0] || 'unknown',
     desc: cleanHtmlTags(String(videoDetail.vod_content ?? '')),
+    remarks: remarkText(videoDetail.vod_remarks),
     type_name: videoDetail.type_name,
     douban_id: videoDetail.vod_douban_id,
   };
@@ -292,7 +315,11 @@ async function handleSpecialSourceDetail(
 
   const response = await fetch(
     detailUrl,
-    edgeFetchInit(API_CONFIG.detail.headers, controller.signal, 600)
+    edgeFetchInit(
+      API_CONFIG.detail.headers,
+      controller.signal,
+      DETAIL_UPSTREAM_TTL
+    )
   );
 
   clearTimeout(timeoutId);

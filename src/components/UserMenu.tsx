@@ -6,6 +6,7 @@ import { Settings, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
+import { coloName, EdgeNode, fetchEdgeNode } from '@/lib/edge-node';
 import { checkForUpdates, CURRENT_VERSION, UpdateStatus } from '@/lib/version';
 
 export const UserMenu: React.FC = () => {
@@ -28,6 +29,9 @@ export const UserMenu: React.FC = () => {
 
   // 赞赏码弹窗状态
   const [isDonateOpen, setIsDonateOpen] = useState(false);
+  // 当前连到的 Cloudflare 节点，打开菜单时才去查，访客反馈加载慢时可以报这一行
+  const [edgeNode, setEdgeNode] = useState<EdgeNode | null>(null);
+  const [edgeNodeChecked, setEdgeNodeChecked] = useState(false);
 
   // 确保组件已挂载
   useEffect(() => {
@@ -92,6 +96,12 @@ export const UserMenu: React.FC = () => {
       }
     }
   }, []);
+
+  useEffect(() => {
+    if (!isOpen || edgeNodeChecked) return;
+    setEdgeNodeChecked(true);
+    fetchEdgeNode().then(setEdgeNode);
+  }, [isOpen, edgeNodeChecked]);
 
   // 版本检查
   useEffect(() => {
@@ -234,6 +244,13 @@ export const UserMenu: React.FC = () => {
 
           {/* 分割线 */}
           <div className='my-1 border-t border-gray-200 dark:border-gray-700'></div>
+
+          {edgeNode ? (
+            <div className='px-3 pt-1 text-center text-[11px] text-gray-400 dark:text-gray-500'>
+              当前节点：{coloName(edgeNode.colo)}
+              {edgeNode.country ? ` · 你在 ${edgeNode.country}` : ''}
+            </div>
+          ) : null}
 
           {/* 版本信息 - 点击弹出赞赏码 */}
           <button

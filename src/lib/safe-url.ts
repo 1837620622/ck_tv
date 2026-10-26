@@ -118,6 +118,14 @@ function embeddedIPv4Blocked(host: string): boolean {
   return false;
 }
 
+// 测速只接受播放清单。任意公网地址不能借这个接口去探。
+export function publicPlaylistUrl(raw: string): URL | null {
+  const url = publicHttpUrl(raw);
+  if (!url) return null;
+  if (!url.pathname.toLowerCase().includes('.m3u8')) return null;
+  return url;
+}
+
 export function publicHttpUrl(raw: string): URL | null {
   let url: URL;
   try {

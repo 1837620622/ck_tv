@@ -4,9 +4,11 @@ import { getOptionalRequestContext } from '@cloudflare/next-on-pages';
 import { NextRequest, NextResponse } from 'next/server';
 
 import { LOCAL_AUTH_SUBJECT } from '@/lib/auth';
+import { getSearchApiSites } from '@/lib/config';
 import { safeEqual } from '@/lib/crypto';
 import { db } from '@/lib/db';
 import { fetchVideoDetail } from '@/lib/fetchVideoDetail';
+import { beginSourceWatch } from '@/lib/source-watch';
 import { SearchResult } from '@/lib/types';
 
 export const runtime = 'edge';
@@ -23,7 +25,7 @@ export async function GET(request: NextRequest) {
     console.log('Cron job triggered:', new Date().toISOString());
 
     // 刷新在响应之后继续跑。Cloudflare 上交给 waitUntil，避免返回后被截断；Node 下直接后台执行。
-    const work = refreshRecordAndFavorites();
+    const work = refreshUpstreamAndRecords();
     const ctx = (() => {
       try {
         return getOptionalRequestContext()?.ctx;
@@ -51,6 +53,17 @@ export async function GET(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+// 本地存储不会回写收藏，但片源巡检跟存储无关，每次都做。
+async function refreshUpstreamAndRecords() {
+  try {
+    const sites = await getSearchApiSites('cn');
+    await beginSourceWatch(sites, undefined, true);
+  } catch (error) {
+    console.error('上游巡检失败', error);
+  }
+  await refreshRecordAndFavorites();
 }
 
 async function refreshRecordAndFavorites() {

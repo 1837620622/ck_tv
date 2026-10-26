@@ -10,6 +10,7 @@ import { getConfig } from '@/lib/config';
 import RuntimeConfig from '@/lib/runtime';
 import { SCAM_NOTICE_INIT_SCRIPT } from '@/lib/scam-notice';
 
+import { AppHealth } from '../components/AppHealth';
 import { GlobalErrorIndicator } from '../components/GlobalErrorIndicator';
 import { SiteProvider } from '../components/SiteProvider';
 import { ThemeProvider } from '../components/ThemeProvider';
@@ -130,6 +131,7 @@ export default async function RootLayout({
           <SiteProvider siteName={siteName} announcement={announcement}>
             {children}
             <GlobalErrorIndicator />
+            <AppHealth />
             <WelcomeModal />
           </SiteProvider>
         </ThemeProvider>

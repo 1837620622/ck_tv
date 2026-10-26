@@ -5,7 +5,10 @@
 // - 口令和签名密钥写在 gate-config.ts 里，不用环境变量。仓库是公开的，所以口令等于公开。
 // - 通过口令后发的 cookie 是「签发时间.HMAC 签名」，服务端每次校验，7 天后失效。
 
+import { countryOf } from './edge-country';
 import { GATE_PASSWORD, GATE_SIGNING_KEY } from './gate-config';
+
+export { countryOf };
 
 export const GATE_COOKIE = 'cktv-gate';
 
@@ -18,54 +21,15 @@ const CLOCK_SKEW_SECONDS = 300;
 // 中国大陆、香港、澳门、台湾
 const BLOCKED_COUNTRIES = new Set(['CN', 'HK', 'MO', 'TW']);
 
-export const PRIVATE_HEADERS = {
-  'Cache-Control': 'private, no-store',
-  'CDN-Cache-Control': 'private, no-store',
-};
-
 type CfRequest = {
   cf?: { country?: string };
   headers?: { get(name: string): string | null };
 };
 
-// next-on-pages 把原始请求的 cf 放在这个符号上。页面拿到的 Request 往往没有 cf。
-const PLATFORM_CONTEXT = Symbol.for('__cloudflare-request-context__');
-
-type PlatformContext = {
-  cf?: { country?: unknown };
+export const PRIVATE_HEADERS = {
+  'Cache-Control': 'private, no-store',
+  'CDN-Cache-Control': 'private, no-store',
 };
-
-// 边缘运行时才有这份上下文。读不到时返回 undefined，交给后面的字段。
-function platformCountry(): string | undefined {
-  try {
-    const ctx = (
-      globalThis as unknown as Record<symbol, PlatformContext | undefined>
-    )[PLATFORM_CONTEXT];
-    if (!ctx?.cf) return undefined;
-    if (typeof ctx.cf.country !== 'string') return '';
-    return ctx.cf.country.trim().toUpperCase();
-  } catch {
-    return undefined;
-  }
-}
-
-// CF-IPCountry 是访客自己也能发的头，默认不信任。
-function trustCountryHeader(): boolean {
-  return process.env.GATE_TRUST_COUNTRY_HEADER === 'true';
-}
-
-// 空值、未知码一律不算国外（见 isForeignCountry）。
-export function countryOf(request: CfRequest): string {
-  const fromContext = platformCountry();
-  if (fromContext !== undefined) return fromContext;
-  if (request.cf) {
-    return (request.cf.country || '').trim().toUpperCase();
-  }
-  if (trustCountryHeader()) {
-    return (request.headers?.get('cf-ipcountry') || '').trim().toUpperCase();
-  }
-  return '';
-}
 
 export function isForeignCountry(code: string): boolean {
   if (!/^[A-Z]{2}$/.test(code)) return false;
