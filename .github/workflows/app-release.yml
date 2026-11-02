@@ -13,6 +13,7 @@ name: App Release
 # 发布时会自动加上 /app-v<版本号>/，所以变量只需要设置一次。
 # 必须是白名单里的域名（见 client/scripts/make-update-manifest.mjs）。没有设置时，
 # 应用只提供 GitHub 下载线路。
+# pnpm 版本由根目录 package.json 的 packageManager 决定，这里不要再写 version（两边都写，pnpm/action-setup 会直接报错）。
 
 on:
   push:
@@ -41,13 +42,15 @@ jobs:
 
       - name: 取回标签注释（更新说明）
         run: |
-          # checkout 不一定会带上注释标签的内容，所以明确取回。
-          # 注释标签用它的注释作更新说明；轻量标签（网页创建发布时就是轻量标签）
-          # 没有注释，更新说明用默认文案，不再直接失败，后续步骤已有兜底。
-          git fetch --force --no-tags origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME" || true
-            if [ "$(git cat-file -t "refs/tags/$GITHUB_REF_NAME")" != "tag" ]; then
-            echo "轻量标签 $GITHUB_REF_NAME，没有注释，更新说明用默认文案"
-          fi
+          # checkout 不一定会带上标签对象，所以明确取回。
+          # 注释标签的注释作为更新说明；轻量标签（网页创建发布时就是轻量标签）没有注释，
+          # 后面的步骤改用默认文案。不能直接用 %(contents)：对轻量标签它返回的是提交信息。
+          git fetch --force --no-tags origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
+          case "$(git for-each-ref --format='%(objecttype)' "refs/tags/$GITHUB_REF_NAME")" in
+            tag) echo "注释标签 $GITHUB_REF_NAME：更新说明用标签注释" ;;
+            commit) echo "轻量标签 $GITHUB_REF_NAME，没有注释，更新说明用默认文案" ;;
+            *) echo "取不到标签 $GITHUB_REF_NAME" >&2; exit 1 ;;
+          esac
 
       - name: 运行脚本和纯函数的测试
         run: node --test "client/test/*.test.mjs"
@@ -79,9 +82,14 @@ jobs:
             echo "Release $GITHUB_REF_NAME 已经存在，沿用它"
             exit 0
           fi
-          git for-each-ref --format='%(contents)' "refs/tags/$GITHUB_REF_NAME" > "$RUNNER_TEMP/notes.md"
-          if [ ! -s "$RUNNER_TEMP/notes.md" ]; then
-            echo "CKTV 客户端 $GITHUB_REF_NAME" > "$RUNNER_TEMP/notes.md"
+          # 只有注释标签才有标签注释；轻量标签没有，用默认文案
+          NOTES="$RUNNER_TEMP/notes.md"
+          : > "$NOTES"
+          if [ "$(git for-each-ref --format='%(objecttype)' "refs/tags/$GITHUB_REF_NAME")" = "tag" ]; then
+            git for-each-ref --format='%(contents)' "refs/tags/$GITHUB_REF_NAME" > "$NOTES"
+          fi
+          if [ ! -s "$NOTES" ]; then
+            echo "CKTV 客户端 $GITHUB_REF_NAME" > "$NOTES"
           fi
           gh release create "$GITHUB_REF_NAME" --draft --title "CKTV $GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md"
 
@@ -168,20 +176,39 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - uses: android-actions/setup-android@v3
-
+      # 运行器镜像已经自带 Android SDK，不用 android-actions/setup-android：它会去安装已经废弃的 tools 包，
+      # 在这里报错退出。这一步只补装 NDK。
       - name: 安装 NDK
         run: |
-          yes | sdkmanager --licenses > /dev/null
-          sdkmanager --install "ndk;${NDK_VERSION}"
-          echo "NDK_HOME=${ANDROID_SDK_ROOT}/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
+          SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          # cmdline-tools 的版本目录名不固定（latest、16.0 等），所以按文件查找
+          SDKMANAGER=$(find "$SDK/cmdline-tools" -name sdkmanager -path '*/bin/*' | sort | tail -n 1)
+          if [ -z "$SDKMANAGER" ]; then
+            echo "找不到 sdkmanager，目录：$SDK/cmdline-tools" >&2
+            exit 1
+          fi
+          # sdkmanager 退出后 yes 会收到 SIGPIPE；流水线开启了 pipefail，所以 yes 失败时用 || true 兜住
+          (yes || true) | "$SDKMANAGER" --licenses > /dev/null
+          (yes || true) | "$SDKMANAGER" --install "ndk;${NDK_VERSION}" > /dev/null
+          NDK_DIR="$SDK/ndk/${NDK_VERSION}"
+          if [ ! -d "$NDK_DIR" ]; then
+            echo "NDK 没有装好：$NDK_DIR" >&2
+            exit 1
+          fi
+          {
+            echo "ANDROID_HOME=$SDK"
+            echo "ANDROID_SDK_ROOT=$SDK"
+            echo "NDK_HOME=$NDK_DIR"
+            echo "ANDROID_NDK_HOME=$NDK_DIR"
+          } >> "$GITHUB_ENV"
 
       - uses: pnpm/action-setup@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
-          
+
           cache-dependency-path: client/pnpm-lock.yaml
 
       - uses: dtolnay/rust-toolchain@stable
@@ -249,7 +276,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
-      
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -276,33 +303,24 @@ jobs:
       - name: 构建界面（供 Rust 编译使用）
         run: pnpm build
 
-      # 不做代码签名：IPA 由用户在 AltStore 里用自己的 Apple ID 重新签名后安装
-      - name: 编译未签名的 App
-        run: |
-          PROJECT=$(find src-tauri/gen/apple -maxdepth 1 -name '*.xcodeproj' | head -n 1)
-          SCHEME=$(xcodebuild -list -json -project "$PROJECT" | jq -r '.project.schemes[]' | grep -m 1 'iOS$')
-          echo "Xcode 工程：$PROJECT，scheme：$SCHEME"
-          xcodebuild build \
-            -project "$PROJECT" \
-            -scheme "$SCHEME" \
-            -configuration Release \
-            -sdk iphoneos \
-            -derivedDataPath "$RUNNER_TEMP/ios-build" \
-            ARCHS=arm64 ONLY_ACTIVE_ARCH=NO \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
+      # 用 Tauri 自己的命令构建：Xcode 构建时需要连接 CLI 启动的本地选项服务
+      #（gen/apple/.tauri/cli-options-server.json），直接调用 xcodebuild 会因为缺少它失败。
+      # --no-sign：不签名。IPA 由用户在 AltStore 里用自己的 Apple ID 重新签名后安装。
+      # 只构建真机架构（aarch64），与上面安装的 Rust 目标一致。
+      - name: 构建未签名的 IPA
+        run: pnpm tauri ios build --ci --no-sign --target aarch64
 
-      - name: 打包 IPA 并上传到草稿 Release
+      - name: 上传 IPA 到草稿 Release
         run: |
-          APP=$(find "$RUNNER_TEMP/ios-build/Build/Products/Release-iphoneos" -maxdepth 1 -name '*.app' | head -n 1)
-          if [ -z "$APP" ]; then
-            echo "没有找到编译好的 .app" >&2
+          # IPA 的输出目录由 Tauri 决定，所以按文件名查找，不写死路径
+          IPA_SRC=$(find src-tauri/gen/apple -name '*.ipa' | head -n 1)
+          if [ -z "$IPA_SRC" ]; then
+            echo "没有找到 IPA" >&2
             exit 1
           fi
           VERSION=$(node -p "require('./package.json').version")
           IPA="$RUNNER_TEMP/CKTV_${VERSION}_ios-unsigned.ipa"
-          rm -rf "$RUNNER_TEMP/ipa" && mkdir -p "$RUNNER_TEMP/ipa/Payload"
-          cp -R "$APP" "$RUNNER_TEMP/ipa/Payload/"
-          (cd "$RUNNER_TEMP/ipa" && zip -qry "$IPA" Payload)
+          cp "$IPA_SRC" "$IPA"
           gh release upload "$GITHUB_REF_NAME" "$IPA" --clobber
 
   publish:
@@ -330,7 +348,15 @@ jobs:
         run: |
           VERSION=$(node -p "require('./client/package.json').version")
           git fetch --force --no-tags origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
-          git for-each-ref --format='%(contents)' "refs/tags/$GITHUB_REF_NAME" > "$RUNNER_TEMP/notes.md"
+          # 只有注释标签才有标签注释；轻量标签没有，用默认文案
+          NOTES="$RUNNER_TEMP/notes.md"
+          : > "$NOTES"
+          if [ "$(git for-each-ref --format='%(objecttype)' "refs/tags/$GITHUB_REF_NAME")" = "tag" ]; then
+            git for-each-ref --format='%(contents)' "refs/tags/$GITHUB_REF_NAME" > "$NOTES"
+          fi
+          if [ ! -s "$NOTES" ]; then
+            echo "CKTV 客户端 $GITHUB_REF_NAME" > "$NOTES"
+          fi
           ARGS=(
             --version "$VERSION"
             --tag "$GITHUB_REF_NAME"

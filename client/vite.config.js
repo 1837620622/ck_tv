@@ -1,9 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 
-
 const at = (path) => fileURLToPath(new URL(path, import.meta.url));
-
 
 // 界面是纯静态页面（多页面），不需要前端框架。Tauri 直接加载构建产物。
 export default defineConfig({

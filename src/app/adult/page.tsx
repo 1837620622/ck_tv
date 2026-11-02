@@ -3,8 +3,10 @@
 'use client';
 
 import { Flame, Search, X } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState } from 'react';
 
+import { sectionQuery } from '@/lib/section-query';
 import { SearchResult } from '@/lib/types';
 import { isUnderageLabel } from '@/lib/yellow';
 
@@ -23,6 +25,8 @@ interface CategoryOption {
   type_id: number | string;
   type_name: string;
 }
+
+const DEFAULT_SOURCE = 'zy91md';
 
 function asPage(value: unknown, fallback: number): number {
   const n = Number(value);
@@ -43,22 +47,33 @@ function keepAdultItem(item: SearchResult): boolean {
 }
 
 function AdultPageClient() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  // 源站、分类、页码、搜索词从地址栏读取初始值。去播放页再返回时组件会重新挂载，
+  // 靠地址里的这些参数回到同一个搜索结果，而不是默认列表。
+  const initialQuery = (searchParams.get('q') || '').trim();
   const [ready, setReady] = useState(false);
   const [foreign, setForeign] = useState(false);
   const [unlocked, setUnlocked] = useState(false);
   const [sources, setSources] = useState<SourceOption[]>([]);
-  const [activeSource, setActiveSource] = useState('zy91md');
+  const [activeSource, setActiveSource] = useState(
+    searchParams.get('source') || DEFAULT_SOURCE
+  );
   const [categories, setCategories] = useState<CategoryOption[]>([]);
-  const [activeCategory, setActiveCategory] = useState('');
+  const [activeCategory, setActiveCategory] = useState(
+    searchParams.get('t') || ''
+  );
   const [videos, setVideos] = useState<SearchResult[]>([]);
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState(() => asPage(searchParams.get('page'), 1));
   const [pageCount, setPageCount] = useState(1);
   const [loading, setLoading] = useState(false);
-  const [draftQuery, setDraftQuery] = useState('');
-  const [committedQuery, setCommittedQuery] = useState('');
-  const [isSearching, setIsSearching] = useState(false);
+  const [draftQuery, setDraftQuery] = useState(initialQuery);
+  const [committedQuery, setCommittedQuery] = useState(initialQuery);
+  const [isSearching, setIsSearching] = useState(initialQuery !== '');
   const requestId = useRef(0);
   const categoryCache = useRef<Record<string, CategoryOption[]>>({});
+  // 上一次写进地址栏的查询串，相同就不再替换
+  const urlQuery = useRef(searchParams.toString());
 
   useEffect(() => {
     let gone = false;
@@ -173,6 +188,20 @@ function AdultPageClient() {
     isSearching,
     committedQuery,
   ]);
+
+  // 状态变了就把地址栏改成同样的内容（替换当前记录，不新增历史）
+  useEffect(() => {
+    if (!unlocked) return;
+    const query = sectionQuery([
+      ['q', committedQuery],
+      ['source', activeSource === DEFAULT_SOURCE ? '' : activeSource],
+      ['t', activeCategory],
+      ['page', page > 1 ? String(page) : ''],
+    ]);
+    if (query === urlQuery.current) return;
+    urlQuery.current = query;
+    router.replace(query ? `/adult?${query}` : '/adult', { scroll: false });
+  }, [unlocked, committedQuery, activeSource, activeCategory, page, router]);
 
   const goPage = (next: number) => {
     const target = Math.min(

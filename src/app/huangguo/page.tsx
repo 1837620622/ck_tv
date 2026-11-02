@@ -3,9 +3,11 @@
 'use client';
 
 import { Clapperboard, Search, X } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState } from 'react';
 
 import { HUANGGUO_CATEGORIES } from '@/lib/huangguo';
+import { sectionQuery } from '@/lib/section-query';
 import { isUnderageLabel } from '@/lib/yellow';
 
 import AgeGate, { AgeNotice } from '@/components/AgeGate';
@@ -35,19 +37,29 @@ function scrollPageTop() {
 }
 
 function HuangguoClient() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  // 分类、页码、搜索词从地址栏读取初始值。去播放页再返回时组件会重新挂载，
+  // 靠地址里的这些参数回到同一个搜索结果，而不是默认列表。
+  const initialQuery = (searchParams.get('q') || '').trim();
   const [ready, setReady] = useState(false);
   const [foreign, setForeign] = useState(false);
   const [unlocked, setUnlocked] = useState(false);
-  const [category, setCategory] = useState('hot');
+  const [category, setCategory] = useState(() => {
+    const t = searchParams.get('t') || '';
+    return HUANGGUO_CATEGORIES.some((item) => item.id === t) ? t : 'hot';
+  });
   const [videos, setVideos] = useState<CardItem[]>([]);
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState(() => asPage(searchParams.get('page'), 1));
   const [pageCount, setPageCount] = useState(1);
   const [loading, setLoading] = useState(false);
-  const [draftQuery, setDraftQuery] = useState('');
-  const [committedQuery, setCommittedQuery] = useState('');
-  const [isSearching, setIsSearching] = useState(false);
+  const [draftQuery, setDraftQuery] = useState(initialQuery);
+  const [committedQuery, setCommittedQuery] = useState(initialQuery);
+  const [isSearching, setIsSearching] = useState(initialQuery !== '');
   const requestId = useRef(0);
   const pageCountRef = useRef(1);
+  // 上一次写进地址栏的查询串，相同就不再替换
+  const urlQuery = useRef(searchParams.toString());
 
   useEffect(() => {
     let gone = false;
@@ -127,6 +139,21 @@ function HuangguoClient() {
     run();
     return () => controller.abort();
   }, [unlocked, category, page, isSearching, committedQuery]);
+
+  // 状态变了就把地址栏改成同样的内容（替换当前记录，不新增历史）
+  useEffect(() => {
+    if (!unlocked) return;
+    const query = sectionQuery([
+      ['q', committedQuery],
+      ['t', category === 'hot' ? '' : category],
+      ['page', page > 1 ? String(page) : ''],
+    ]);
+    if (query === urlQuery.current) return;
+    urlQuery.current = query;
+    router.replace(query ? `/huangguo?${query}` : '/huangguo', {
+      scroll: false,
+    });
+  }, [unlocked, committedQuery, category, page, router]);
 
   const jump = (next: number) => {
     setPage((current) =>

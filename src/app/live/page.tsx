@@ -2,6 +2,7 @@
 
 import Hls from 'hls.js';
 import { Radio } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Suspense,
   useCallback,
@@ -15,6 +16,7 @@ import {
 import { LIVE_CHANNELS, LIVE_GROUPS, LiveChannel, LiveGroup } from '@/lib/live';
 import { qualityText } from '@/lib/playlist';
 import { releaseMedia, silenceOtherMedia } from '@/lib/release-media';
+import { sectionQuery } from '@/lib/section-query';
 
 import { choiceClass } from '@/components/ChoiceRow';
 import ChoiceRow from '@/components/ChoiceRow';
@@ -23,13 +25,20 @@ import PageLayout from '@/components/PageLayout';
 type Phase = 'idle' | 'loading' | 'ready' | 'error';
 
 function LivePageClient() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const videoRef = useRef<HTMLVideoElement>(null);
   // React 卸掉 DOM 时会先把 videoRef 清空。这里另外留住节点，离开页面才能暂停。
   const nodeRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
   const tokenRef = useRef(0);
   const clockRef = useRef(0);
-  const [group, setGroup] = useState<LiveGroup>('news');
+  // 分类和搜索词从地址栏读取，去别的栏目再返回时保持原来的选择
+  const [group, setGroup] = useState<LiveGroup>(() => {
+    const g = searchParams.get('g') || '';
+    const found = LIVE_GROUPS.find((item) => item.value === g);
+    return found ? found.value : 'news';
+  });
   const [current, setCurrent] = useState<LiveChannel | null>(null);
   const [phase, setPhase] = useState<Phase>('idle');
   const [line, setLine] = useState('');
@@ -39,8 +48,22 @@ function LivePageClient() {
   const [health, setHealth] = useState<
     Record<string, { ok: boolean; reason?: string }>
   >({});
-  const [keyword, setKeyword] = useState('');
+  const [keyword, setKeyword] = useState(() => searchParams.get('q') || '');
   const checkedRef = useRef(new Set<string>());
+  // 搜索词和分类写进地址栏（替换当前记录）。输入时等停下来再写，免得每敲一个字就换一次地址
+  const urlQuery = useRef(searchParams.toString());
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const query = sectionQuery([
+        ['q', keyword.trim()],
+        ['g', group === 'news' ? '' : group],
+      ]);
+      if (query === urlQuery.current) return;
+      urlQuery.current = query;
+      router.replace(query ? `/live?${query}` : '/live', { scroll: false });
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [keyword, group, router]);
 
   const playChannel = useCallback((channel: LiveChannel) => {
     const token = ++tokenRef.current;
