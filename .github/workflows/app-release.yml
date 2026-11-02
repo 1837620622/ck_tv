@@ -13,6 +13,7 @@ name: App Release
 # 发布时会自动加上 /app-v<版本号>/，所以变量只需要设置一次。
 # 必须是白名单里的域名（见 client/scripts/make-update-manifest.mjs）。没有设置时，
 # 应用只提供 GitHub 下载线路。
+# pnpm 版本由根目录 package.json 的 packageManager 决定，这里不要再写 version（两边都写，pnpm/action-setup 会直接报错）。
 
 on:
   push:
@@ -177,6 +178,7 @@ jobs:
           echo "NDK_HOME=${ANDROID_SDK_ROOT}/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
 
       - uses: pnpm/action-setup@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -249,7 +251,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
-      
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22

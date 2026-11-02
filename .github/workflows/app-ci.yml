@@ -2,6 +2,7 @@ name: App CI
 
 # 客户端（client/）的检查：前端测试与构建，Rust 格式、Clippy 和单元测试。
 # 只在客户端相关文件变化时运行。
+# pnpm 版本由根目录 package.json 的 packageManager 决定，这里不要再写 version（两边都写，pnpm/action-setup 会直接报错）。
 
 on:
   pull_request:
@@ -33,7 +34,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
-      
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
