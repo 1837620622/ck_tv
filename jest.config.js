@@ -16,6 +16,10 @@ const customJestConfig = {
 
   testEnvironment: 'jest-environment-jsdom',
 
+  // client/ 是独立的桌面和手机客户端，有自己的测试（node --test）和构建产物，不属于站点
+  testPathIgnorePatterns: ['/node_modules/', '<rootDir>/client/'],
+  modulePathIgnorePatterns: ['<rootDir>/client/'],
+
   /**
    * Absolute imports and Module Path Aliases
    */

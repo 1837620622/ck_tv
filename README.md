@@ -275,6 +275,10 @@ Docker 默认是 `localstorage`。`NEXT_PUBLIC_` 开头的变量在 `docker buil
 - 去广告只处理清单里标出来的插播（CUE 标记，或不连续标记框住的 15 秒内短段）。画面里直接压着的广告、没有任何标记的插播，清单层看不到，过滤不了。
 - 直播健康检查在部署环境里跑，结果只决定排序和变暗，不隐藏频道。
 
+## 原生客户端
+
+`client/` 是 CKTV 的原生客户端，基于 Tauri 2，支持 macOS、Windows、Linux、Android 和 iOS。启动后自动测速选出最快的线路，带自动检查更新，还可以把视频下载到本机离线播放。最新版本和安装包在 [Release 页面](https://github.com/1837620622/ck_tv/releases/latest)；下载方式（包括 iPhone）、发布流程和验证状态见 [client/README.md](client/README.md)。
+
 ## 免责声明
 
 普通栏目的片源来自公开接口，仅供学习与技术交流。本站不存储、不制作视频。

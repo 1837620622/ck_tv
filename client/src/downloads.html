@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#060a13" />
+    <title>CKTV · 下载</title>
+    <link rel="stylesheet" href="./styles/tokens.css" />
+    <link rel="stylesheet" href="./styles/base.css" />
+    <link rel="stylesheet" href="./styles/components.css" />
+    <link rel="stylesheet" href="./styles/pages.css" />
+    <script type="module" src="./js/downloads.js"></script>
+  </head>
+  <body>
+    <div id="app" class="updates downloads">
+      <!-- 桌面端：自绘标题栏（窗口没有系统边框），可以拖动，右上角是窗口按钮 -->
+      <header class="titlebar" id="titlebar" data-tauri-drag-region hidden>
+        <div class="tb-brand" data-tauri-drag-region>
+          <img src="./assets/logo.svg" alt="" width="18" height="18" />
+          <span data-tauri-drag-region>CKTV · 下载</span>
+        </div>
+        <div class="tb-controls">
+          <button
+            class="tb-btn"
+            id="tb-min"
+            type="button"
+            aria-label="最小化"
+          ></button>
+          <button
+            class="tb-btn tb-close"
+            id="tb-close"
+            type="button"
+            aria-label="关闭"
+          ></button>
+        </div>
+      </header>
+
+      <!-- 手机端：顶部返回栏 -->
+      <header class="topbar" id="topbar" hidden>
+        <button
+          class="btn btn-ghost btn-icon"
+          id="back"
+          type="button"
+          aria-label="返回"
+        ></button>
+        <span class="topbar-title">下载</span>
+        <span class="topbar-spacer"></span>
+      </header>
+
+      <main class="shell" id="shell">
+        <p class="notice" id="page-error" role="alert" hidden></p>
+
+        <section class="card" aria-labelledby="new-title">
+          <div class="card-head">
+            <div>
+              <h1 class="card-title" id="new-title">新建下载</h1>
+              <p class="card-sub">
+                粘贴视频地址，下载到本机后可以离线播放。支持 .mp4 直链，以及
+                .m3u8 分片地址（自动选最高画质）。
+              </p>
+            </div>
+          </div>
+          <form id="new-form" class="new-form" novalidate>
+            <div class="field">
+              <label class="hint" for="source">视频地址</label>
+              <input
+                class="input"
+                id="source"
+                name="source"
+                type="url"
+                inputmode="url"
+                autocomplete="off"
+                autocapitalize="off"
+                autocorrect="off"
+                spellcheck="false"
+                placeholder="https://…"
+                aria-describedby="source-error"
+              />
+              <p class="hint error" id="source-error" hidden></p>
+            </div>
+            <div class="field">
+              <label class="hint" for="title">名称（可选）</label>
+              <input
+                class="input"
+                id="title"
+                name="title"
+                type="text"
+                autocomplete="off"
+                maxlength="80"
+                placeholder="不填则使用视频地址的域名"
+              />
+            </div>
+            <div class="new-actions">
+              <button class="btn btn-primary" id="submit" type="submit">
+                开始下载
+              </button>
+            </div>
+          </form>
+          <p class="hint new-note">
+            只保存你有权保存的内容。下载的文件保存在应用自己的目录里，卸载应用时会一并删除。
+          </p>
+        </section>
+
+        <section class="card" aria-labelledby="list-title">
+          <div class="card-head">
+            <div>
+              <h2 class="card-title" id="list-title">下载列表</h2>
+              <p class="card-sub" id="summary" aria-live="polite"></p>
+            </div>
+            <button
+              class="btn btn-ghost btn-sm desktop-only"
+              id="open-folder"
+              type="button"
+            >
+              打开文件夹
+            </button>
+          </div>
+          <div class="list dl-list" id="list"></div>
+          <p class="empty" id="empty" hidden>
+            还没有下载的视频。把地址粘贴到上面，或者在网页上点「下载」按钮。
+          </p>
+        </section>
+      </main>
+    </div>
+
+    <!-- 播放器：全屏遮罩。关闭时释放视频占用的内存。 -->
+    <dialog class="player" id="player" aria-labelledby="player-title">
+      <div class="player-bar">
+        <span class="player-title" id="player-title"></span>
+        <button
+          class="btn btn-ghost btn-icon"
+          id="player-fs"
+          type="button"
+          aria-label="全屏"
+        ></button>
+        <button
+          class="btn btn-ghost btn-icon"
+          id="player-close"
+          type="button"
+          aria-label="关闭播放"
+        ></button>
+      </div>
+      <div class="player-stage">
+        <video
+          id="video"
+          class="player-video"
+          controls
+          playsinline
+          preload="metadata"
+        ></video>
+      </div>
+      <p class="player-error" id="player-error" role="alert" hidden></p>
+    </dialog>
+  </body>
+</html>

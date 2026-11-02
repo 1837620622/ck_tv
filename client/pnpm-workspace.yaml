@@ -1,0 +1,3 @@
+# 让 client/ 成为独立的 pnpm 工作区（和站点根目录的 lock 文件分开）
+packages:
+  - '.'

@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="ck-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#18231F"/>
+      <stop offset="1" stop-color="#060908"/>
+    </linearGradient>
+    <radialGradient id="ck-glow" cx="0.42" cy="0.4" r="0.62">
+      <stop offset="0" stop-color="#22C55E" stop-opacity="0.30"/>
+      <stop offset="1" stop-color="#22C55E" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="ck-ring" x1="0.1" y1="0" x2="0.9" y2="1">
+      <stop offset="0" stop-color="#A7F3D0"/>
+      <stop offset="0.45" stop-color="#34D399"/>
+      <stop offset="1" stop-color="#059669"/>
+    </linearGradient>
+    <linearGradient id="ck-play" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#D1FAE5"/>
+    </linearGradient>
+    <linearGradient id="ck-sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.09"/>
+      <stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="116" fill="url(#ck-bg)"/>
+  <rect width="512" height="512" rx="116" fill="url(#ck-glow)"/>
+  <rect width="512" height="512" rx="116" fill="url(#ck-sheen)"/>
+  <rect x="3" y="3" width="506" height="506" rx="113" fill="none" stroke="#FFFFFF" stroke-opacity="0.10" stroke-width="3"/>
+  <path d="M 372.6 347.1 A 148 148 0 1 1 372.6 164.9" fill="none" stroke="url(#ck-ring)" stroke-width="46" stroke-linecap="round"/>
+  <path d="M 222 196 L 222 316 L 322 256 Z" fill="url(#ck-play)" stroke="url(#ck-play)" stroke-width="26" stroke-linejoin="round"/>
+  <circle cx="404.0" cy="256" r="17" fill="#6EE7B7"/>
+</svg>

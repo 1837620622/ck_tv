@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#060a13" />
+    <title>CKTV · 连接失败</title>
+    <link rel="stylesheet" href="./styles/tokens.css" />
+    <link rel="stylesheet" href="./styles/base.css" />
+    <link rel="stylesheet" href="./styles/components.css" />
+    <link rel="stylesheet" href="./styles/pages.css" />
+    <script type="module" src="./js/offline.js"></script>
+  </head>
+  <body>
+    <div id="app" class="offline">
+      <div class="offline-card card">
+        <div class="offline-art" aria-hidden="true">
+          <svg viewBox="0 0 200 150" width="200" height="150" fill="none">
+            <defs>
+              <linearGradient id="cloud" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#4ade80" stop-opacity="0.9" />
+                <stop offset="1" stop-color="#16a34a" stop-opacity="0.6" />
+              </linearGradient>
+            </defs>
+            <ellipse
+              cx="100"
+              cy="132"
+              rx="62"
+              ry="8"
+              fill="#000"
+              opacity="0.35"
+            />
+            <path
+              d="M58 96c-16 0-28-11-28-25s11-25 25-25c3-16 17-27 34-27 16 0 29 10 33 24 3-1 7-2 11-2 16 0 29 13 29 29s-13 29-29 29H58z"
+              fill="url(#cloud)"
+              opacity="0.22"
+            />
+            <path
+              d="M58 96c-16 0-28-11-28-25s11-25 25-25c3-16 17-27 34-27 16 0 29 10 33 24 3-1 7-2 11-2 16 0 29 13 29 29s-13 29-29 29H58z"
+              stroke="#4ade80"
+              stroke-width="2.4"
+              stroke-linejoin="round"
+            />
+            <path
+              d="M40 48 160 112"
+              stroke="#fb7185"
+              stroke-width="3"
+              stroke-linecap="round"
+            />
+            <path
+              d="M74 112a18 18 0 0 1 24-4M100 108a10 10 0 0 1 10 0"
+              stroke="#86efac"
+              stroke-width="2.4"
+              stroke-linecap="round"
+              stroke-dasharray="4 6"
+              class="dash-line"
+            />
+          </svg>
+        </div>
+
+        <h1 class="offline-title">暂时连不上 CKTV</h1>
+        <p class="offline-desc">
+          所有线路都没有响应。可以先检查网络或代理设置，也可以换一条备用线路。
+        </p>
+
+        <ul class="reasons" id="reasons" aria-label="线路测速结果"></ul>
+
+        <div class="offline-actions">
+          <button class="btn btn-primary" id="retry" type="button">
+            重试连接
+          </button>
+          <button class="btn" id="switch-line" type="button">切换线路</button>
+          <button class="btn btn-ghost" id="open-updates" type="button">
+            更新中心
+          </button>
+        </div>
+
+        <details class="tips">
+          <summary>还是不行？</summary>
+          <ul>
+            <li>确认设备能正常上网，换 Wi-Fi 或移动数据再试一次。</li>
+            <li>如果开了代理或加速器，先关闭再重试。</li>
+            <li>
+              线路可能被网络运营商屏蔽，在「切换线路」里添加备用地址即可。
+            </li>
+            <li>站点偶尔会维护，稍后再试通常就好了。</li>
+          </ul>
+        </details>
+      </div>
+    </div>
+  </body>
+</html>
