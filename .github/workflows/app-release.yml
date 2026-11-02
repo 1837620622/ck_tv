@@ -2,7 +2,7 @@ name: App Release
 
 # 推送 app-v<版本号> 标签时构建并发布 CKTV 客户端（版本号和标签的写法见 client/README.md）。不需要配置任何密钥。
 #
-#   1. verify   检查版本号和标签一致、并且比上一个正式发布大，创建草稿 Release（标签注释会作为更新说明）
+#   1. verify   检查版本号和标签一致、并且比上一个正式发布大，创建草稿 Release（注释标签用它的注释作更新说明，轻量标签用默认文案）
 #   2. desktop  macOS（通用版）、Windows、Linux：构建安装包，上传到草稿
 #   3. android  构建 APK，使用仓库里公开的签名密钥（client/signing/），上传到草稿
 #   4. ios      构建未签名的 IPA，用户通过 AltStore 用自己的 Apple ID 安装，上传到草稿
@@ -43,11 +43,11 @@ jobs:
       - name: 取回标签注释（更新说明）
         run: |
           # checkout 不一定会带上注释标签的内容，所以明确取回。
-          # 轻量标签没有注释，更新说明会变成提交信息，所以直接失败。
-          git fetch --force --no-tags origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
-          if [ "$(git cat-file -t "refs/tags/$GITHUB_REF_NAME")" != "tag" ]; then
-            echo "标签 $GITHUB_REF_NAME 必须是注释标签（git tag -a），标签注释会作为更新说明" >&2
-            exit 1
+          # 注释标签用它的注释作更新说明；轻量标签（网页创建发布时就是轻量标签）
+          # 没有注释，更新说明用默认文案，不再直接失败，后续步骤已有兜底。
+          git fetch --force --no-tags origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME" || true
+            if [ "$(git cat-file -t "refs/tags/$GITHUB_REF_NAME")" != "tag" ]; then
+            echo "轻量标签 $GITHUB_REF_NAME，没有注释，更新说明用默认文案"
           fi
 
       - name: 运行脚本和纯函数的测试

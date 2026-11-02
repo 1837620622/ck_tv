@@ -21,6 +21,10 @@ export default defineConfig({
       },
     },
   },
+  css: {
+    // 客户端是纯手写 CSS，不用站点的 Tailwind/PostCSS 配置；显式清空，避免 Vite 向上找到根目录的 postcss.config.js（Windows 上曾因此找不到 tailwindcss 而构建失败）
+    postcss: { plugins: [] },
+  },
   server: {
     host: 'localhost',
     port: 1420,
