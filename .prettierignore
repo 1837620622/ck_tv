@@ -39,3 +39,9 @@ yarn-error.log*
 CHANGELOG.md
 
 pnpm-lock.yaml
+
+# client/ 的构建产物和依赖（体积很大，不要格式化）
+client/node_modules/
+client/dist/
+client/src-tauri/target/
+client/src-tauri/gen/

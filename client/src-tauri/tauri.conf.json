@@ -1,0 +1,64 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "CKTV",
+  "version": "1.2.0",
+  "identifier": "top.chuankangkk.cktv",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "pnpm dev",
+    "beforeBuildCommand": "pnpm build"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' blob: asset: http://asset.localhost; connect-src 'self' ipc: http://ipc.localhost asset: http://asset.localhost blob: ws://localhost:1420 ws://127.0.0.1:1420; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
+      "freezePrototype": true,
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$APPDATA/downloads/**"]
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app", "dmg", "nsis", "msi", "deb", "appimage"],
+    "createUpdaterArtifacts": false,
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "category": "Entertainment",
+    "shortDescription": "CKTV 传康播放器",
+    "longDescription": "CKTV 传康播放器的原生客户端。观看内容来自公开的第三方接口，本应用不制作任何视频。可以把你有权保存的视频下载到本机，离线播放。",
+    "copyright": "Copyright © CKTV",
+    "publisher": "CKTV",
+    "macOS": {
+      "minimumSystemVersion": "11.0",
+      "signingIdentity": "-"
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper",
+        "silent": true
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": ["SimpChinese", "English"]
+      },
+      "wix": {
+        "language": "zh-CN"
+      }
+    },
+    "android": {
+      "minSdkVersion": 24
+    },
+    "iOS": {
+      "minimumSystemVersion": "14.0"
+    }
+  }
+}

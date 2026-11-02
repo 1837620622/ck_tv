@@ -1,0 +1,99 @@
+name: App CI
+
+# 客户端（client/）的检查：前端测试与构建，Rust 格式、Clippy 和单元测试。
+# 只在客户端相关文件变化时运行。
+
+on:
+  pull_request:
+    paths:
+      - 'client/**'
+      - '.github/workflows/app-*.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'client/**'
+      - '.github/workflows/app-*.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    name: 前端（版本号、测试、构建）
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+      
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: client/pnpm-lock.yaml
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 检查版本号一致
+        run: pnpm check:version
+
+      - name: 运行测试
+        run: pnpm test
+
+      - name: 构建界面
+        run: pnpm build
+
+  rust:
+    name: Rust（格式、Clippy、测试）
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 Linux 构建依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: client/pnpm-lock.yaml
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: client/src-tauri
+
+      # Tauri 在编译时把 dist/ 打包进程序，所以先构建界面
+      - name: 构建界面（供 Rust 编译使用）
+        working-directory: client
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: 格式检查
+        working-directory: client/src-tauri
+        run: cargo fmt --all -- --check
+
+      - name: Clippy（警告视为错误）
+        working-directory: client/src-tauri
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: 单元测试
+        working-directory: client/src-tauri
+        run: cargo test
