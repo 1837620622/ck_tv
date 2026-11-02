@@ -187,14 +187,14 @@ cd client
 node scripts/sync-version.mjs <新版本号> --after <上一个标签>
 git commit -am "chore(client): 版本 <新版本号>"
 
-# 2. 打注释标签（必须是注释标签，即 git tag -a）：标签注释就是更新说明的第一段
+# 2. 推荐打注释标签（git tag -a）：标签注释就是更新说明的第一段。轻量标签也能发布，但更新说明只有默认文案
 git tag -a app-v<新版本号> -m "- 更新说明"
 git push origin app-v<新版本号>
 ```
 
 推送标签后，`.github/workflows/app-release.yml` 会依次运行：
 
-1. **verify**：检查标签是注释标签、版本号与标签一致、README 的版本信息同步、比上一个正式发布大，并运行脚本测试；创建草稿 Release。
+1. **verify**：检查版本号与标签一致、README 的版本信息同步、比上一个正式发布大，并运行脚本测试；创建草稿 Release。标签是注释标签时用它的注释作更新说明，是轻量标签时用默认文案。
 2. **desktop**：macOS（通用版）、Windows、Linux 并行构建，安装包上传到草稿。
 3. **android**：构建 APK，用公开密钥签名，上传到草稿。
 4. **ios**：构建未签名的 IPA，上传到草稿。
