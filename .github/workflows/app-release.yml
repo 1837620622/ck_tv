@@ -1,6 +1,5 @@
 name: App Release
 
-
 # 推送 app-v<版本号> 标签时构建并发布 CKTV 客户端（版本号和标签的写法见 client/README.md）。不需要配置任何密钥。
 #
 #   1. verify   检查版本号和标签一致、并且比上一个正式发布大，创建草稿 Release（注释标签用它的注释作更新说明，轻量标签用默认文案）
@@ -8,20 +7,25 @@ name: App Release
 #   3. android  构建 APK，使用仓库里公开的签名密钥（client/signing/），上传到草稿
 #   4. ios      构建未签名的 IPA，用户通过 AltStore 用自己的 Apple ID 安装，上传到草稿
 #   5. publish  生成 update.json 和 altstore.json，上传后把 Release 改为正式发布
+#
 # 可选的仓库变量 CN_MIRROR_BASE：国内下载线路的根地址，例如
 #   https://tv.chuankangkk.top/cktv
 # 发布时会自动加上 /app-v<版本号>/，所以变量只需要设置一次。
 # 必须是白名单里的域名（见 client/scripts/make-update-manifest.mjs）。没有设置时，
 # 应用只提供 GitHub 下载线路。
+
 on:
   push:
     tags:
       - 'app-v*'
+
 permissions:
   contents: write
+
 concurrency:
   group: app-release-${{ github.ref_name }}
   cancel-in-progress: false
+
 jobs:
   verify:
     name: 检查版本号并创建草稿 Release
@@ -30,27 +34,24 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+
       - name: 取回标签注释（更新说明）
         run: |
           # checkout 不一定会带上注释标签的内容，所以明确取回。
           # 注释标签用它的注释作更新说明；轻量标签（网页创建发布时就是轻量标签）
           # 没有注释，更新说明用默认文案，不再直接失败，后续步骤已有兜底。
           git fetch --force --no-tags origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME" || true
-          if [ "$(git cat-file -t "refs/tags/$GITHUB_REF_NAME")" != "tag" ]; then
+            if [ "$(git cat-file -t "refs/tags/$GITHUB_REF_NAME")" != "tag" ]; then
             echo "轻量标签 $GITHUB_REF_NAME，没有注释，更新说明用默认文案"
           fi
-      - name: 同步版本并运行脚本和纯函数的测试
-        run: |
-          # 版本号的唯一来源是标签。提交里改版本号时必须同步多个文件里的版本（和
-          # client/src-tauri/tauri.conf.json 里的版本），所以这一步只跑脚本，不检查
-          # package.json 和标签是否一致。如果脚本发现不一致，会自动修正这些文件，
-          # 然后提交回标签所在的分支……但标签发布时没有分支，这一步只负责测试。
-          # 实际发布的版本号来自标签，脚本会把所有文件里的版本号都改成标签里的版本。
-          node client/scripts/sync-version.mjs "$GITHUB_REF_NAME"
-          node --test "client/test/*.test.mjs"
+
+      - name: 运行脚本和纯函数的测试
+        run: node --test "client/test/*.test.mjs"
+
       - name: 检查版本号：和标签一致，并且比上一个正式发布大
         run: |
           # 应用内更新只会安装比当前版本大的版本号。版本号倒退或没有变化，老用户就收不到更新。
@@ -62,219 +63,296 @@ jobs:
             LATEST=""
           else
             cat "$RUNNER_TEMP/gh-error.txt" >&2
-            echo "查询最新正式发布失败" >&2
             exit 1
           fi
-          VERSION=$(node -p "require('./package.json').version")
-          TAG_VERSION="${GITHUB_REF_NAME#app-v}"
-          echo "当前标签：$GITHUB_REF_NAME，package.json 版本：$VERSION"
-          if [ "$VERSION" != "$TAG_VERSION" ]; then
-            echo "package.json 的 version（$VERSION）和标签（$GITHUB_REF_NAME）不一致" >&2
-            exit 1
+          echo "上一个正式发布：${LATEST:-（没有）}"
+          if [ -z "$LATEST" ] || [ "$LATEST" = "$GITHUB_REF_NAME" ]; then
+            node client/scripts/sync-version.mjs --check --tag "$GITHUB_REF_NAME"
+          else
+            node client/scripts/sync-version.mjs --check --tag "$GITHUB_REF_NAME" --after "$LATEST"
           fi
-          if [ -n "$LATEST" ] && [ "$LATEST" != "$GITHUB_REF_NAME" ]; then
-            LATEST_VERSION="${LATEST#app-v}"
-            HIGHEST=$(printf '%s\n%s\n' "$VERSION" "$LATEST_VERSION" | sort -V | tail -n 1)
-            if [ "$HIGHEST" != "$VERSION" ] || [ "$VERSION" = "$LATEST_VERSION" ]; then
-              echo "版本号 $VERSION 没有比上一个正式发布 $LATEST 大" >&2
-              exit 1
-            fi
-          fi
-      - name: 从标签注释或默认文案生成更新说明
+
+      - name: 创建草稿 Release（已经存在就沿用）
         run: |
-          if [ "$(git cat-file -t "refs/tags/$GITHUB_REF_NAME")" = "tag" ]; then
-            git tag -l --format='%(contents)' "$GITHUB_REF_NAME" > "$RUNNER_TEMP/release-notes.md"
+          # 列表接口会包含草稿，按标签名直接查询则不会，所以这里用列表判断
+          if gh api "repos/$GITHUB_REPOSITORY/releases" --paginate --jq '.[].tag_name' | grep -Fxq "$GITHUB_REF_NAME"; then
+            echo "Release $GITHUB_REF_NAME 已经存在，沿用它"
+            exit 0
           fi
-          if [ ! -s "$RUNNER_TEMP/release-notes.md" ]; then
-            cat > "$RUNNER_TEMP/release-notes.md" <<'EOF'
-          CKTV 客户端更新。
-          EOF
+          git for-each-ref --format='%(contents)' "refs/tags/$GITHUB_REF_NAME" > "$RUNNER_TEMP/notes.md"
+          if [ ! -s "$RUNNER_TEMP/notes.md" ]; then
+            echo "CKTV 客户端 $GITHUB_REF_NAME" > "$RUNNER_TEMP/notes.md"
           fi
-      - name: 创建草稿 Release
-        run: |
-          gh release create "$GITHUB_REF_NAME" \
-            --draft \
-            --title "CKTV $GITHUB_REF_NAME" \
-            --notes-file "$RUNNER_TEMP/release-notes.md" \
-            --target "$GITHUB_SHA"
+          gh release create "$GITHUB_REF_NAME" --draft --title "CKTV $GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md"
+
   desktop:
     name: 桌面端 · ${{ matrix.name }}
-    runs-on: ${{ matrix.runner }}
     needs: verify
-    env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - name: macOS
+          - name: macOS（通用版）
             runner: macos-latest
-            rust-targets: universal-apple-darwin
-            args: ''
+            rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
+            args: --target universal-apple-darwin
           - name: Windows
             runner: windows-latest
-            rust-targets: x86_64-pc-windows-msvc
+            rust-targets: ''
             args: ''
           - name: Linux
-            runner: ubuntu-latest
-            rust-targets: x86_64-unknown-linux-gnu
+            runner: ubuntu-22.04
+            rust-targets: ''
             args: ''
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        working-directory: client
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - name: 安装 pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10
-      - name: 安装系统依赖（Linux）
+
+      - name: 安装 Linux 构建依赖
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
-      - name: 安装依赖并构建安装包
-        working-directory: client
-        run: |
-          pnpm install --frozen-lockfile
-          pnpm tauri build --target ${{ matrix.rust-targets }} ${{ matrix.args }}
-      - name: 上传安装包到草稿 Release
-        run: |
-          ls client/src-tauri/target/${{ matrix.rust-targets }}/release/bundle/
-          find client/src-tauri/target/${{ matrix.rust-targets }}/release/bundle -type f \( -name '*.dmg' -o -name '*.app.tar.gz' -o -name '*.msi' -o -name '*.exe' -o -name '*.AppImage' -o -name '*.deb' \) -print -exec gh release upload "$GITHUB_REF_NAME" {} --clobber \;
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf libfuse2
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: client/pnpm-lock.yaml
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-targets }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: client/src-tauri
+
+      - name: 安装前端依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 构建安装包并上传到草稿 Release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: client
+          tagName: ${{ github.ref_name }}
+          releaseName: CKTV ${{ github.ref_name }}
+          releaseDraft: true
+          prerelease: false
+          includeUpdaterJson: false
+          tauriScript: pnpm tauri
+          args: ${{ matrix.args }}
+
   android:
-    name: 安卓构建
-    runs-on: ubuntu-latest
+    name: 安卓 APK
     needs: verify
+    runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       NDK_VERSION: 27.0.12077973
+    defaults:
+      run:
+        working-directory: client
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 17
-      - name: 安装 pnpm
-        uses: pnpm/action-setup@v4
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: 安装 NDK
+        run: |
+          yes | sdkmanager --licenses > /dev/null
+          sdkmanager --install "ndk;${NDK_VERSION}"
+          echo "NDK_HOME=${ANDROID_SDK_ROOT}/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
         with:
-          version: 10
-      - name: 安装 Rust
-        uses: dtolnay/rust-toolchain@stable
+          node-version: 22
+          cache: pnpm
+          
+          cache-dependency-path: client/pnpm-lock.yaml
+
+      - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
-      - name: 安装 NDK（用 runner 自带的 Android SDK）
-        run: |
-          SDK_ROOT="${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}"
-          echo "Android SDK：$SDK_ROOT"
-          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
-          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
-          echo "$SDK_ROOT/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
-          yes | "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
-          "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --install "ndk;${NDK_VERSION}"
-          echo "NDK_HOME=$SDK_ROOT/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
-      - name: 生成签名密钥库
-        run: |
-          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/cktv-release.keystore"
-          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/cktv-release.keystore" >> "$GITHUB_ENV"
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: client/src-tauri
+
+      - name: 安装前端依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 生成 Android 工程
+        run: pnpm tauri android init --ci
+
+      - name: 写入签名配置
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-      - name: 导入签名密钥
-        run: |
-          # 密钥库密码和密钥密码都是公开的，密钥本身没有保密价值，
-          # 只是用来证明安装包是 CKTV 官方构建的。
-          # 密钥库文件在上一步已经生成，这里只把密码写进 Tauri 的配置文件。
-          # 注意：Tauri 只认 ANDROID_KEY_ALIAS 和 ANDROID_KEY_PASSWORD 这两个环境变量，
-          # 不认 ANDROID_KEYSTORE_PASSWORD，所以两个密码都要写进 ANDROID_KEY_PASSWORD。
-          echo "ANDROID_KEY_ALIAS=$ANDROID_KEY_ALIAS" >> "$GITHUB_ENV"
-          echo "ANDROID_KEY_PASSWORD=$ANDROID_KEY_PASSWORD" >> "$GITHUB_ENV"
-        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-      - name: 安装依赖并构建 APK
-        working-directory: client
         run: |
-          pnpm install --frozen-lockfile
-          pnpm tauri android init || true
-          pnpm tauri android build
+          # 没有配置私钥时，使用仓库里公开的签名密钥（见 client/README.md）。
+          # 每个版本都用同一个密钥签名，用户才能覆盖安装。
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.jks"
+            STORE_FILE="$RUNNER_TEMP/release.jks"
+            PASSWORD="$ANDROID_KEYSTORE_PASSWORD"
+            ALIAS="$ANDROID_KEY_ALIAS"
+          else
+            STORE_FILE="$GITHUB_WORKSPACE/client/signing/cktv-android-public.jks"
+            PASSWORD="cktv-public"
+            ALIAS="cktv"
+          fi
+          {
+            echo "password=$PASSWORD"
+            echo "keyAlias=$ALIAS"
+            echo "storeFile=$STORE_FILE"
+          } > src-tauri/gen/android/keystore.properties
+
+      - name: 构建 APK
+        run: pnpm tauri android build --apk
+
       - name: 上传 APK 到草稿 Release
         run: |
-          find client/src-tauri/gen/android -name '*.apk' -print -exec gh release upload "$GITHUB_REF_NAME" {} --clobber \;
+          APK=$(find src-tauri/gen/android -name '*-release.apk' | head -n 1)
+          if [ -z "$APK" ]; then
+            echo "没有找到 release APK" >&2
+            exit 1
+          fi
+          VERSION=$(node -p "require('./package.json').version")
+          cp "$APK" "$RUNNER_TEMP/CKTV_${VERSION}_android.apk"
+          gh release upload "$GITHUB_REF_NAME" "$RUNNER_TEMP/CKTV_${VERSION}_android.apk" --clobber
+
   ios:
-    name: iOS 构建
-    runs-on: macos-latest
+    name: iPhone / iPad（未签名 IPA）
     needs: verify
+    runs-on: macos-latest
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    defaults:
+      run:
+        working-directory: client
     steps:
       - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+      
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: 安装 pnpm
-        uses: pnpm/action-setup@v4
+          cache: pnpm
+          cache-dependency-path: client/pnpm-lock.yaml
+
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          version: 10
-      - name: 安装 Rust
-        uses: dtolnay/rust-toolchain@stable
+          targets: aarch64-apple-ios
+
+      - uses: swatinem/rust-cache@v2
         with:
-          targets: aarch64-apple-ios,aarch64-apple-ios-sim,x86_64-apple-ios
-      - name: 安装依赖并初始化 iOS 工程
-        working-directory: client
+          workspaces: client/src-tauri
+
+      - name: 安装前端依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 生成 iOS 工程
         run: |
-          pnpm install --frozen-lockfile
-          pnpm tauri ios init || true
+          command -v xcodegen >/dev/null || brew install xcodegen
+          pnpm tauri ios init --ci
+
+      # Rust 编译时会把 dist/ 打包进程序，所以先构建界面
+      - name: 构建界面（供 Rust 编译使用）
+        run: pnpm build
+
+      # 不做代码签名：IPA 由用户在 AltStore 里用自己的 Apple ID 重新签名后安装
       - name: 编译未签名的 App
-        env:
-          CODE_SIGNING_ALLOWED: NO
-          CODE_SIGNING_REQUIRED: NO
-          CODE_SIGN_IDENTITY: ""
-        run: pnpm tauri ios build
+        run: |
+          PROJECT=$(find src-tauri/gen/apple -maxdepth 1 -name '*.xcodeproj' | head -n 1)
+          SCHEME=$(xcodebuild -list -json -project "$PROJECT" | jq -r '.project.schemes[]' | grep -m 1 'iOS$')
+          echo "Xcode 工程：$PROJECT，scheme：$SCHEME"
+          xcodebuild build \
+            -project "$PROJECT" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath "$RUNNER_TEMP/ios-build" \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=NO \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
+
       - name: 打包 IPA 并上传到草稿 Release
         run: |
-          VERSION=$(node -p "require('./package.json').version")
-          IPA_OUT="$RUNNER_TEMP/CKTV_${VERSION}_ios-unsigned.ipa"
-          IPA=$(find src-tauri -name '*.ipa' | head -n 1)
-          if [ -n "$IPA" ]; then
-            echo "tauri 已生成 IPA：$IPA"
-            cp "$IPA" "$IPA_OUT"
-          else
-            APP=$(find src-tauri -name '*.app' -type d | head -n 1)
-            if [ -z "$APP" ]; then
-              echo "没有找到编译好的 .app 或 .ipa" >&2
-              exit 1
-            fi
-            echo "tauri 已生成 .app：$APP，打包成 IPA"
-            rm -rf "$RUNNER_TEMP/ipa" && mkdir -p "$RUNNER_TEMP/ipa/Payload"
-            cp -R "$APP" "$RUNNER_TEMP/ipa/Payload/"
-            (cd "$RUNNER_TEMP/ipa" && zip -qry "$IPA_OUT" Payload)
+          APP=$(find "$RUNNER_TEMP/ios-build/Build/Products/Release-iphoneos" -maxdepth 1 -name '*.app' | head -n 1)
+          if [ -z "$APP" ]; then
+            echo "没有找到编译好的 .app" >&2
+            exit 1
           fi
-          gh release upload "$GITHUB_REF_NAME" "$IPA_OUT" --clobber
+          VERSION=$(node -p "require('./package.json').version")
+          IPA="$RUNNER_TEMP/CKTV_${VERSION}_ios-unsigned.ipa"
+          rm -rf "$RUNNER_TEMP/ipa" && mkdir -p "$RUNNER_TEMP/ipa/Payload"
+          cp -R "$APP" "$RUNNER_TEMP/ipa/Payload/"
+          (cd "$RUNNER_TEMP/ipa" && zip -qry "$IPA" Payload)
+          gh release upload "$GITHUB_REF_NAME" "$IPA" --clobber
+
   publish:
     name: 生成更新清单并正式发布
+    needs: [verify, desktop, android, ios]
     runs-on: ubuntu-latest
-    needs: [desktop, android, ios]
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      CN_MIRROR_BASE: ${{ vars.CN_MIRROR_BASE }}
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: 生成 update.json 和 altstore.json
+
+      - name: 下载五个平台的安装包
         run: |
-          # 资产已经在草稿 Release 里，这里只下载，不重新构建。
-          # 下载失败（比如资产还没上传完）时直接失败，不能生成空清单。
-          gh release download "$GITHUB_REF_NAME" --dir "$RUNNER_TEMP/assets" --pattern '*'
-          node client/scripts/make-update-manifest.mjs \
-            --tag "$GITHUB_REF_NAME" \
-            --assets "$RUNNER_TEMP/assets" \
-            --out "$RUNNER_TEMP/manifests" \
-            --cn-mirror "${{ vars.CN_MIRROR_BASE }}" \
-            --allow-mirror-hosts-file client/scripts/allow-mirror-hosts.txt
-          gh release upload "$GITHUB_REF_NAME" "$RUNNER_TEMP/manifests/update.json" "$RUNNER_TEMP/manifests/altstore.json" --clobber
-      - name: 把 Release 改为正式发布
-        run: gh release edit "$GITHUB_REF_NAME" --draft=false
+          mkdir -p "$RUNNER_TEMP/downloads"
+          gh release download "$GITHUB_REF_NAME" --dir "$RUNNER_TEMP/downloads" --clobber \
+            --pattern '*.dmg' --pattern '*-setup.exe' --pattern '*.AppImage' --pattern '*.apk' --pattern '*.ipa'
+          ls -la "$RUNNER_TEMP/downloads"
+
+      - name: 生成 update.json、altstore.json 和图标
+        run: |
+          VERSION=$(node -p "require('./client/package.json').version")
+          git fetch --force --no-tags origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
+          git for-each-ref --format='%(contents)' "refs/tags/$GITHUB_REF_NAME" > "$RUNNER_TEMP/notes.md"
+          ARGS=(
+            --version "$VERSION"
+            --tag "$GITHUB_REF_NAME"
+            --repo "$GITHUB_REPOSITORY"
+            --assets-dir "$RUNNER_TEMP/downloads"
+            --icon client/src-tauri/icons/icon.png
+            --out-dir "$RUNNER_TEMP/manifest"
+            --notes-file "$RUNNER_TEMP/notes.md"
+          )
+          if [ -n "$CN_MIRROR_BASE" ]; then
+            # 变量是根地址，每个版本放在 app-v<版本号> 目录下，这里自动加上标签
+            ARGS+=(--mirror-base "${CN_MIRROR_BASE%/}/$GITHUB_REF_NAME")
+          fi
+          node client/scripts/make-update-manifest.mjs "${ARGS[@]}"
+
+      - name: 上传清单并把 Release 改为正式发布
+        run: |
+          gh release upload "$GITHUB_REF_NAME" \
+            "$RUNNER_TEMP/manifest/update.json" \
+            "$RUNNER_TEMP/manifest/altstore.json" \
+            "$RUNNER_TEMP/manifest/cktv-icon.png" \
+            --clobber
+          # 更新说明：标签注释 + 下载表格（每个平台的文件名和下载地址）
+          gh release edit "$GITHUB_REF_NAME" --draft=false --latest \
+            --notes-file "$RUNNER_TEMP/manifest/release-notes.md"
