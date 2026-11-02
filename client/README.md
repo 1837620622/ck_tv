@@ -65,7 +65,7 @@ AltStore 的源随每次正式发布更新，还没有在真机上完整安装�
 | `src-tauri/src/downloads.rs`                | 下载：直链和分片的下载、进度事件、下载记录（`downloads.json`）                         |
 | `src-tauri/src/hls.rs`                      | 分片列表解析（选最高码率）和 AES-128 解密                                              |
 | `src-tauri/capabilities/local.json`         | 权限：只有本地页面能调用原生命令，站点页面拿不到                                       |
-| `scripts/sync-version.mjs`                  | 版本号同步与检查                                                                       |
+| `scripts/sync-version.mjs`                  | 版本号同步与检查（也生成 README 的版本信息）                                           |
 | `scripts/make-update-manifest.mjs`          | 发布时生成 `update.json`、`altstore.json` 和 `release-notes.md`                        |
 | `signing/`                                  | 公开的安卓签名密钥，见下文「不需要配置密钥」                                           |
 | `test/`                                     | 纯函数和脚本的测试（`pnpm test`）                                                      |
@@ -117,7 +117,7 @@ pnpm install
 pnpm dev            # 桌面开发窗口（tauri dev）
 pnpm build          # 只构建界面到 dist/
 pnpm test           # 纯函数和脚本的测试
-pnpm check:version  # 检查 package.json、tauri.conf.json、Cargo.toml 版本一致
+pnpm check:version  # 检查版本号一致，README 的版本信息也要同步
 
 cd src-tauri
 cargo test
@@ -147,14 +147,23 @@ cargo clippy --all-targets -- -D warnings
 
 ## 版本号
 
-版本号以 `package.json` 为准，同步到 `tauri.conf.json`、`Cargo.toml` 和 `Cargo.lock`。**每次更新都要用新的版本号和新的标签**，不要复用旧标签，也不要把版本号改小。
+版本号以 `package.json` 为准，同步到 `tauri.conf.json`、`Cargo.toml` 和 `Cargo.lock`。**每次更新都要用新的版本号和新的标签**，不要复用旧标签，也不要把版本号改小。下面标记之间的「版本信息」由脚本生成，不要手改。
+
+<!-- version:start -->
+
+<!-- 由 scripts/sync-version.mjs 生成，不要手改 -->
+
+当前版本：**1.2.0**，标签 `app-v1.2.0`。
+
+下一次升版本，在 `client` 目录运行（新版本号必须比它大）：
 
 ```bash
-cd client
-node scripts/sync-version.mjs 1.2.0 --after app-v1.1.0
+node scripts/sync-version.mjs <新版本号> --after app-v1.2.0
 ```
 
-`--after` 填上一个正式发布的标签。新版本号必须比它大，否则不写入。原因是应用只会安装比当前版本大的版本：版本号倒退或停在原地，老用户就收不到更新。CI 发布时还会再检查一次：标签和版本号一致，并且比上一个正式发布大。
+<!-- version:end -->
+
+`--after` 填上一个正式发布的标签，也就是「版本信息」里写的当前标签。新版本号必须比它大，否则不写入。原因是应用只会安装比当前版本大的版本：版本号倒退或停在原地，老用户就收不到更新。CI 发布时还会再检查一次：标签和版本号一致，README 的版本信息和版本号一致，并且比上一个正式发布大。
 
 ## 不需要配置密钥
 
@@ -166,25 +175,26 @@ node scripts/sync-version.mjs 1.2.0 --after app-v1.1.0
 - **安卓**：使用仓库里公开的签名密钥 `signing/cktv-android-public.jks`，口令也是公开的。它保证每个版本都用同一个密钥签名，所以覆盖安装可以成功。**任何人都能用这个密钥签名，它不能证明安装包来自我们**，只保证版本之间能覆盖安装。
 - **iOS**：构建未签名的 IPA，用户在 AltStore 里用自己的 Apple ID 重新签名后安装。
 
-仓库变量 `CN_MIRROR_BASE`（可选）是国内下载线路的地址前缀，例如 `https://tv.chuankangkk.top/cktv/app-v1.2.0`。设置后，发布时会为每个安装包生成国内线路地址，格式是 `<前缀>/<文件名>`。**发布流程不会上传国内线路的文件**，需要自己把同名文件同步到那里。地址的域名必须在白名单里，否则发布失败。没有设置时，应用只提供 GitHub 线路。
+仓库变量 `CN_MIRROR_BASE`（可选）是国内下载线路的根地址，例如 `https://tv.chuankangkk.top/cktv`。设置后，发布时会自动加上版本标签，每个安装包的国内线路是 `<根地址>/app-v<版本号>/<文件名>`，变量只需要设置一次。**发布流程不会上传国内线路的文件**，需要自己把同名文件同步到 `<根地址>/app-v<版本号>/`。地址的域名必须在白名单里，否则发布失败。没有设置时，应用只提供 GitHub 线路。
 
 ## 发布流程
 
 ```bash
 cd client
 
-# 1. 改版本号（--after 填上一个正式发布的标签）并提交
-node scripts/sync-version.mjs 1.2.0 --after app-v1.1.0
-git commit -am "chore(client): 版本 1.2.0"
+# 1. 改版本号并提交：--after 填上一个正式发布的标签（「版本信息」里的当前标签）
+#    README 的版本信息会一起更新
+node scripts/sync-version.mjs <新版本号> --after <上一个标签>
+git commit -am "chore(client): 版本 <新版本号>"
 
-# 2. 打注释标签：标签注释就是更新说明的第一段
-git tag -a app-v1.2.0 -m "- 修复全屏拖动进度"
-git push origin app-v1.2.0
+# 2. 打注释标签（必须是注释标签，即 git tag -a）：标签注释就是更新说明的第一段
+git tag -a app-v<新版本号> -m "- 更新说明"
+git push origin app-v<新版本号>
 ```
 
 推送标签后，`.github/workflows/app-release.yml` 会依次运行：
 
-1. **verify**：检查版本与标签一致，并且比上一个正式发布大；创建草稿 Release。
+1. **verify**：检查标签是注释标签、版本号与标签一致、README 的版本信息同步、比上一个正式发布大，并运行脚本测试；创建草稿 Release。
 2. **desktop**：macOS（通用版）、Windows、Linux 并行构建，安装包上传到草稿。
 3. **android**：构建 APK，用公开密钥签名，上传到草稿。
 4. **ios**：构建未签名的 IPA，上传到草稿。
@@ -208,7 +218,7 @@ git push origin app-v1.2.0
 
 以下在 Linux 上实际运行过（模拟数据，没有原生层）：
 
-- **前端**：`pnpm test` 75 项全部通过；`pnpm build` 通过；ESLint（界面、脚本、测试，零警告）和 Prettier 通过。
+- **前端**：`pnpm test` 83 项全部通过（包括版本号脚本和发布清单的测试）；`pnpm build` 通过；ESLint（界面、脚本、测试，零警告）和 Prettier 通过。
 - **乱码扫描**：75 个文本文件（包括构建产物 `dist/`），没有非法 UTF-8、替换字符或乱码。
 - **Rust**：`cargo fmt --check`、`cargo clippy --all-targets -- -D warnings` 和 `cargo test`（33 项）通过。
 - **浏览器预览**：下载页在桌面（1280×800）和手机（390×844）宽度下的列表、地址校验、横向滚动和播放提示；站点预填（带参数打开、收到事件、都不会自动开始）；站点上下载条的显示、位置、关闭，以及点击后的文字「已打开下载页」。共 31 项检查全部通过。

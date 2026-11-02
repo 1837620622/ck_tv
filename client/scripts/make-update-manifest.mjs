@@ -7,14 +7,14 @@
 //   release-notes.md  Release 页面的说明：标签注释、下载表格和 SHA-256 校验值
 //
 //   node scripts/make-update-manifest.mjs \
-//     --version 1.1.0 \
-//     --tag app-v1.1.0 \
+//     --version <版本号> \
+//     --tag app-v<版本号> \
 //     --repo 1837620622/ck_tv \
 //     --assets-dir downloads \
 //     --icon src-tauri/icons/icon.png \
 //     --out-dir out \
 //     [--notes-file notes.md] \
-//     [--mirror-base https://tv.chuankangkk.top/cktv/app-v1.1.0]
+//     [--mirror-base https://tv.chuankangkk.top/cktv/app-v<版本号>]
 //
 // 五个平台的安装包必须都在 --assets-dir 里，缺一个就失败，不发出不完整的版本。
 // 所有地址都必须是 https，域名在白名单里（和 src-tauri/src/update.rs 保持一致）。

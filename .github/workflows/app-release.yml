@@ -1,6 +1,6 @@
 name: App Release
 
-# 推送 app-v* 标签（例如 app-v1.1.0）时构建并发布 CKTV 客户端。不需要配置任何密钥。
+# 推送 app-v<版本号> 标签时构建并发布 CKTV 客户端（版本号和标签的写法见 client/README.md）。不需要配置任何密钥。
 #
 #   1. verify   检查版本号和标签一致、并且比上一个正式发布大，创建草稿 Release（标签注释会作为更新说明）
 #   2. desktop  macOS（通用版）、Windows、Linux：构建安装包，上传到草稿
@@ -8,8 +8,9 @@ name: App Release
 #   4. ios      构建未签名的 IPA，用户通过 AltStore 用自己的 Apple ID 安装，上传到草稿
 #   5. publish  生成 update.json 和 altstore.json，上传后把 Release 改为正式发布
 #
-# 可选的仓库变量 CN_MIRROR_BASE：国内下载线路的地址前缀，例如
-#   https://tv.chuankangkk.top/cktv/app-v1.1.0
+# 可选的仓库变量 CN_MIRROR_BASE：国内下载线路的根地址，例如
+#   https://tv.chuankangkk.top/cktv
+# 发布时会自动加上 /app-v<版本号>/，所以变量只需要设置一次。
 # 必须是白名单里的域名（见 client/scripts/make-update-manifest.mjs）。没有设置时，
 # 应用只提供 GitHub 下载线路。
 
@@ -34,11 +35,36 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 取回标签注释（更新说明）
+        run: |
+          # checkout 不一定会带上注释标签的内容，所以明确取回。
+          # 轻量标签没有注释，更新说明会变成提交信息，所以直接失败。
+          git fetch --force --no-tags origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
+          if [ "$(git cat-file -t "refs/tags/$GITHUB_REF_NAME")" != "tag" ]; then
+            echo "标签 $GITHUB_REF_NAME 必须是注释标签（git tag -a），标签注释会作为更新说明" >&2
+            exit 1
+          fi
+
+      - name: 运行脚本和纯函数的测试
+        run: node --test "client/test/*.test.mjs"
+
       - name: 检查版本号：和标签一致，并且比上一个正式发布大
         run: |
           # 应用内更新只会安装比当前版本大的版本号。版本号倒退或没有变化，老用户就收不到更新。
           # 重新运行同一个标签的发布时，最新的正式发布就是它自己，不再和自己比较。
-          LATEST=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2>/dev/null || true)
+          # 查询失败（不是「没有正式发布」）时直接失败，不能悄悄跳过检查
+          if LATEST=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name 2>"$RUNNER_TEMP/gh-error.txt"); then
+            true
+          elif grep -q 'HTTP 404' "$RUNNER_TEMP/gh-error.txt"; then
+            LATEST=""
+          else
+            cat "$RUNNER_TEMP/gh-error.txt" >&2
+            exit 1
+          fi
           echo "上一个正式发布：${LATEST:-（没有）}"
           if [ -z "$LATEST" ] || [ "$LATEST" = "$GITHUB_REF_NAME" ]; then
             node client/scripts/sync-version.mjs --check --tag "$GITHUB_REF_NAME"
@@ -252,6 +278,10 @@ jobs:
           command -v xcodegen >/dev/null || brew install xcodegen
           pnpm tauri ios init --ci
 
+      # Rust 编译时会把 dist/ 打包进程序，所以先构建界面
+      - name: 构建界面（供 Rust 编译使用）
+        run: pnpm build
+
       # 不做代码签名：IPA 由用户在 AltStore 里用自己的 Apple ID 重新签名后安装
       - name: 编译未签名的 App
         run: |
@@ -305,6 +335,7 @@ jobs:
       - name: 生成 update.json、altstore.json 和图标
         run: |
           VERSION=$(node -p "require('./client/package.json').version")
+          git fetch --force --no-tags origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
           git for-each-ref --format='%(contents)' "refs/tags/$GITHUB_REF_NAME" > "$RUNNER_TEMP/notes.md"
           ARGS=(
             --version "$VERSION"
@@ -316,7 +347,8 @@ jobs:
             --notes-file "$RUNNER_TEMP/notes.md"
           )
           if [ -n "$CN_MIRROR_BASE" ]; then
-            ARGS+=(--mirror-base "$CN_MIRROR_BASE")
+            # 变量是根地址，每个版本放在 app-v<版本号> 目录下，这里自动加上标签
+            ARGS+=(--mirror-base "${CN_MIRROR_BASE%/}/$GITHUB_REF_NAME")
           fi
           node client/scripts/make-update-manifest.mjs "${ARGS[@]}"
 
