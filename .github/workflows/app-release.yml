@@ -42,13 +42,15 @@ jobs:
 
       - name: 取回标签注释（更新说明）
         run: |
-          # checkout 不一定会带上注释标签的内容，所以明确取回。
-          # 注释标签用它的注释作更新说明；轻量标签（网页创建发布时就是轻量标签）
-          # 没有注释，更新说明用默认文案，不再直接失败，后续步骤已有兜底。
-          git fetch --force --no-tags origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME" || true
-            if [ "$(git cat-file -t "refs/tags/$GITHUB_REF_NAME")" != "tag" ]; then
-            echo "轻量标签 $GITHUB_REF_NAME，没有注释，更新说明用默认文案"
-          fi
+          # checkout 不一定会带上标签对象，所以明确取回。
+          # 注释标签的注释作为更新说明；轻量标签（网页创建发布时就是轻量标签）没有注释，
+          # 后面的步骤改用默认文案。不能直接用 %(contents)：对轻量标签它返回的是提交信息。
+          git fetch --force --no-tags origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
+          case "$(git for-each-ref --format='%(objecttype)' "refs/tags/$GITHUB_REF_NAME")" in
+            tag) echo "注释标签 $GITHUB_REF_NAME：更新说明用标签注释" ;;
+            commit) echo "轻量标签 $GITHUB_REF_NAME，没有注释，更新说明用默认文案" ;;
+            *) echo "取不到标签 $GITHUB_REF_NAME" >&2; exit 1 ;;
+          esac
 
       - name: 运行脚本和纯函数的测试
         run: node --test "client/test/*.test.mjs"
@@ -80,9 +82,14 @@ jobs:
             echo "Release $GITHUB_REF_NAME 已经存在，沿用它"
             exit 0
           fi
-          git for-each-ref --format='%(contents)' "refs/tags/$GITHUB_REF_NAME" > "$RUNNER_TEMP/notes.md"
-          if [ ! -s "$RUNNER_TEMP/notes.md" ]; then
-            echo "CKTV 客户端 $GITHUB_REF_NAME" > "$RUNNER_TEMP/notes.md"
+          # 只有注释标签才有标签注释；轻量标签没有，用默认文案
+          NOTES="$RUNNER_TEMP/notes.md"
+          : > "$NOTES"
+          if [ "$(git for-each-ref --format='%(objecttype)' "refs/tags/$GITHUB_REF_NAME")" = "tag" ]; then
+            git for-each-ref --format='%(contents)' "refs/tags/$GITHUB_REF_NAME" > "$NOTES"
+          fi
+          if [ ! -s "$NOTES" ]; then
+            echo "CKTV 客户端 $GITHUB_REF_NAME" > "$NOTES"
           fi
           gh release create "$GITHUB_REF_NAME" --draft --title "CKTV $GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md"
 
@@ -332,7 +339,15 @@ jobs:
         run: |
           VERSION=$(node -p "require('./client/package.json').version")
           git fetch --force --no-tags origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
-          git for-each-ref --format='%(contents)' "refs/tags/$GITHUB_REF_NAME" > "$RUNNER_TEMP/notes.md"
+          # 只有注释标签才有标签注释；轻量标签没有，用默认文案
+          NOTES="$RUNNER_TEMP/notes.md"
+          : > "$NOTES"
+          if [ "$(git for-each-ref --format='%(objecttype)' "refs/tags/$GITHUB_REF_NAME")" = "tag" ]; then
+            git for-each-ref --format='%(contents)' "refs/tags/$GITHUB_REF_NAME" > "$NOTES"
+          fi
+          if [ ! -s "$NOTES" ]; then
+            echo "CKTV 客户端 $GITHUB_REF_NAME" > "$NOTES"
+          fi
           ARGS=(
             --version "$VERSION"
             --tag "$GITHUB_REF_NAME"
