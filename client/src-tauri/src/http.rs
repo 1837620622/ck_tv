@@ -13,8 +13,9 @@ use std::sync::Arc;
 pub fn client_builder() -> reqwest::ClientBuilder {
     #[cfg(target_os = "android")]
     {
-        let config = bundled_roots_config()
-            .expect("内置根证书的 TLS 配置应当总能创建（aws-lc-rs 和 webpki-roots 都是编译进来的）");
+        let config = bundled_roots_config().expect(
+            "内置根证书的 TLS 配置应当总能创建（aws-lc-rs 和 webpki-roots 都是编译进来的）",
+        );
         return reqwest::Client::builder().tls_backend_preconfigured(config);
     }
     #[cfg(not(target_os = "android"))]
