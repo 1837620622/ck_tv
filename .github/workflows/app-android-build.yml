@@ -1,0 +1,117 @@
+name: App Android Build
+
+# 手动触发：只构建并签名 APK，上传为运行产物（Artifact），不创建 Release、不推送标签。
+# 用来在发布前验证安卓包能否构建。签名和 app-release.yml 的 android 任务一致（用仓库里的公开密钥）。
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-android-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    name: 安卓 APK（仅构建）
+    runs-on: ubuntu-latest
+    env:
+      NDK_VERSION: 27.0.12077973
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: 安装 NDK
+        run: |
+          SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          SDKMANAGER=$(find "$SDK/cmdline-tools" -name sdkmanager -path '*/bin/*' | sort | tail -n 1)
+          if [ -z "$SDKMANAGER" ]; then
+            echo "找不到 sdkmanager，目录：$SDK/cmdline-tools" >&2
+            exit 1
+          fi
+          (yes || true) | "$SDKMANAGER" --licenses > /dev/null
+          (yes || true) | "$SDKMANAGER" --install "ndk;${NDK_VERSION}" > /dev/null
+          NDK_DIR="$SDK/ndk/${NDK_VERSION}"
+          if [ ! -d "$NDK_DIR" ]; then
+            echo "NDK 没有装好：$NDK_DIR" >&2
+            exit 1
+          fi
+          {
+            echo "ANDROID_HOME=$SDK"
+            echo "ANDROID_SDK_ROOT=$SDK"
+            echo "NDK_HOME=$NDK_DIR"
+            echo "ANDROID_NDK_HOME=$NDK_DIR"
+          } >> "$GITHUB_ENV"
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: client/pnpm-lock.yaml
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: client/src-tauri
+
+      - name: 安装前端依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 生成 Android 工程
+        run: pnpm tauri android init --ci
+
+      - name: 写入签名配置（公开密钥）
+        run: |
+          STORE_FILE="$GITHUB_WORKSPACE/client/signing/cktv-android-public.jks"
+          PASSWORD="cktv-public"
+          {
+            echo "password=$PASSWORD"
+            echo "storePassword=$PASSWORD"
+            echo "keyPassword=$PASSWORD"
+            echo "keyAlias=cktv"
+            echo "storeFile=$STORE_FILE"
+          } > src-tauri/gen/android/keystore.properties
+          cp src-tauri/gen/android/keystore.properties src-tauri/gen/android/app/keystore.properties
+
+      - name: 构建 APK
+        run: pnpm tauri android build --apk
+
+      - name: 签名并检查 APK
+        run: |
+          UNSIGNED=$(find src-tauri/gen/android -name 'app-universal-release-unsigned.apk' | head -n 1)
+          if [ -z "$UNSIGNED" ]; then
+            echo "没有找到未签名 APK" >&2
+            find src-tauri/gen/android -name '*.apk' >&2 || true
+            exit 1
+          fi
+          SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          APKSIGNER=$(find "$SDK"/build-tools -name apksigner -type f | sort | tail -n 1)
+          if [ -z "$APKSIGNER" ]; then
+            echo "找不到 apksigner" >&2
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/out"
+          SIGNED="$RUNNER_TEMP/out/CKTV_build_android.apk"
+          "$APKSIGNER" sign --ks "$GITHUB_WORKSPACE/client/signing/cktv-android-public.jks" --ks-pass "pass:cktv-public" --ks-key-alias cktv --key-pass "pass:cktv-public" --out "$SIGNED" "$UNSIGNED"
+          "$APKSIGNER" verify --verbose "$SIGNED"
+          ls -l "$SIGNED"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cktv-android-apk
+          path: ${{ runner.temp }}/out/CKTV_build_android.apk
+          if-no-files-found: error
