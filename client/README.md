@@ -271,7 +271,7 @@ git push origin app-v<新版本号>
 
 **还没有验证**：
 
-- 发布流水线（`app-release.yml`）还没有在 GitHub 上运行过：发布标签还没有推送到 GitHub，所以它还没有被触发。第一次运行可能需要调整，以 Actions 页面的结果为准。
+- 发布流水线（`app-release.yml`）已在 GitHub 上跑通过：app-v1.2.1 的 App Release 全绿（verify、桌面三端、安卓、iOS、publish），11 个安装包正式发布。
 - 五个平台的安装包没有在真实设备上安装和运行。覆盖安装、更新下载、SHA-256 核对、AltStore 添加源和安装，都还没有在真机上完整走过。
 - 真实 WebView 里的 `cktv://` 拦截、刘海和底部手势条的安全区布局、全屏视频、离线下载的长时间运行，没有完整验证。
 - 国内线路还没有配置（没有 `CN_MIRROR_BASE`），中国大陆用户目前只能使用 GitHub 线路。
