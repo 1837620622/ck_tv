@@ -245,18 +245,24 @@ jobs:
           fi
           {
             echo "password=$PASSWORD"
+            echo "storePassword=$PASSWORD"
+            echo "keyPassword=$PASSWORD"
             echo "keyAlias=$ALIAS"
             echo "storeFile=$STORE_FILE"
           } > src-tauri/gen/android/keystore.properties
+          # Tauri 生成的 Gradle 脚本按模块目录解析 keystore.properties，只写在 gen/android/ 会被当成不存在而出未签名包；
+          # 同时写到 gen/android/app/（build.gradle.kts 所在目录），两种模板都能读到。
+          cp src-tauri/gen/android/keystore.properties src-tauri/gen/android/app/keystore.properties
 
       - name: 构建 APK
         run: pnpm tauri android build --apk
 
       - name: 上传 APK 到草稿 Release
         run: |
-          APK=$(find src-tauri/gen/android -name '*-release.apk' | head -n 1)
+          APK=$(find src-tauri/gen/android -name 'app-universal-release.apk' | head -n 1)
           if [ -z "$APK" ]; then
-            echo "没有找到 release APK" >&2
+            echo "没有找到已签名的 release APK（只找到未签名包时不能发布，安卓会拒绝安装未签名 APK）" >&2
+            find src-tauri/gen/android -name '*.apk' >&2 || true
             exit 1
           fi
           VERSION=$(node -p "require('./package.json').version")
