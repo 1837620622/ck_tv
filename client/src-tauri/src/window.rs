@@ -40,12 +40,16 @@ fn init_script(app: &AppHandle) -> String {
 pub fn create_main(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     let nav_app = app.clone();
     let load_app = app.clone();
-    WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("index.html".into()))
+    // center() 只在桌面窗口上有，手机上没有这个方法；无条件调用会在安卓/iOS 编译时报 E0599。
+    // 先把 builder 拆开，桌面才加 center()，手机直接跳过，桌面行为不变。
+    let builder = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("index.html".into()))
         .title("CKTV")
         .background_color(BACKGROUND)
         .inner_size(1280.0, 800.0)
-        .min_inner_size(360.0, 560.0)
-        .center()
+        .min_inner_size(360.0, 560.0);
+    #[cfg(desktop)]
+    let builder = builder.center();
+    builder
         .initialization_script(init_script(app))
         .on_navigation(move |url| handle_navigation(&nav_app, url))
         .on_page_load(move |_window, payload| {
