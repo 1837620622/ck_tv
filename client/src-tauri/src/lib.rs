@@ -14,6 +14,7 @@
 mod commands;
 mod downloads;
 mod hls;
+mod http;
 #[cfg(desktop)]
 mod menu;
 mod region;

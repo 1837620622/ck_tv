@@ -37,7 +37,7 @@ pub fn parse_trace(body: &str) -> Region {
 }
 
 pub async fn detect() -> Region {
-    let client = match reqwest::Client::builder()
+    let client = match crate::http::client_builder()
         .timeout(TRACE_TIMEOUT)
         .user_agent(crate::servers::user_agent())
         .build()

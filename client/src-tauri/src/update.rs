@@ -189,7 +189,11 @@ pub async fn check(app: AppHandle, manual: bool) -> UpdateState {
         s.error = None;
     });
     let state = run_check(&app).await;
-    record_checked(&app, now_ms());
+    // 只有检查成功才记下时间。失败时（没网、线路暂时打不开）不记，定时器会在下一次检查时间再试，
+    // 而不是等满一个检查间隔才重试。
+    if state.status != Status::Error {
+        record_checked(&app, now_ms());
+    }
     state
 }
 
@@ -292,7 +296,7 @@ pub struct PlatformEntry {
 }
 
 async fn fetch_manifest() -> Result<Manifest, String> {
-    let client = reqwest::Client::builder()
+    let client = crate::http::client_builder()
         .timeout(MANIFEST_TIMEOUT)
         .user_agent(crate::servers::user_agent())
         .build()

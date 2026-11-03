@@ -93,7 +93,7 @@ pub fn user_agent() -> String {
 
 /// 并行测速，结果顺序和输入一致。站点只要有响应（非 5xx）就算线路可用。
 pub async fn probe_all(urls: Vec<String>) -> Vec<Probe> {
-    let client = match reqwest::Client::builder()
+    let client = match crate::http::client_builder()
         .connect_timeout(Duration::from_secs(4))
         .timeout(Duration::from_secs(8))
         .user_agent(user_agent())
