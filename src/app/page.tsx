@@ -2,7 +2,7 @@
 
 'use client';
 
-import { ChevronRight, Download } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
@@ -21,6 +21,7 @@ import { whenIdle } from '@/lib/warm-up';
 
 import CapsuleSwitch from '@/components/CapsuleSwitch';
 import ContinueWatching from '@/components/ContinueWatching';
+import MobileAppDownload from '@/components/MobileAppDownload';
 import PageLayout from '@/components/PageLayout';
 import ScrollableRow from '@/components/ScrollableRow';
 import { useForeignColumns } from '@/components/useForeignColumns';
@@ -403,18 +404,6 @@ function HomeClient() {
           ) : (
             // 首页视图
             <>
-              <div className='mb-4 flex justify-center'>
-                <Link
-                  href='https://github.com/1837620622/ck_tv/releases/latest'
-                  target='_blank'
-                  rel='noreferrer'
-                  className='flex items-center gap-1.5 rounded-full bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700'
-                >
-                  <Download className='h-4 w-4' />
-                  移动端下载
-                </Link>
-              </div>
-
               <nav className='mb-6 flex items-center gap-x-1 overflow-x-auto text-sm'>
                 {homeEntries.map((item) => (
                   <Link
@@ -525,6 +514,8 @@ function HomeClient() {
             </>
           )}
         </div>
+
+        <MobileAppDownload />
       </div>
     </PageLayout>
   );
