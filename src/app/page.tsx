@@ -21,6 +21,7 @@ import { whenIdle } from '@/lib/warm-up';
 
 import CapsuleSwitch from '@/components/CapsuleSwitch';
 import ContinueWatching from '@/components/ContinueWatching';
+import MobileAppDownload from '@/components/MobileAppDownload';
 import PageLayout from '@/components/PageLayout';
 import ScrollableRow from '@/components/ScrollableRow';
 import { useForeignColumns } from '@/components/useForeignColumns';
@@ -513,6 +514,8 @@ function HomeClient() {
             </>
           )}
         </div>
+
+        <MobileAppDownload />
       </div>
     </PageLayout>
   );

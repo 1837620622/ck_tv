@@ -567,7 +567,7 @@ async fn fetch_segment(
 }
 
 fn http_client() -> Result<reqwest::Client, String> {
-    reqwest::Client::builder()
+    crate::http::client_builder()
         .user_agent(servers::user_agent())
         .connect_timeout(Duration::from_secs(20))
         .read_timeout(Duration::from_secs(60))
