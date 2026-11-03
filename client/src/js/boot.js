@@ -21,8 +21,8 @@ const ui = {
   updates: $('open-updates'),
 };
 
-// 开场动画至少播这么久。时间和 pages.css 里各元素的动画对应，最后一个元素约 1.8 秒完成。
-const INTRO_MS = 1800;
+// 开场动画至少播这么久。时间和 pages.css 里各元素的动画对应，最后一个元素（说明文字）约 1.9 秒完成。
+const INTRO_MS = 1900;
 // 测速结束后停留一小会儿，让用户看清选中了哪条线路
 const SHOW_RESULT_MS = 480;
 // 启动页淡出的时间，和 pages.css 里 .boot.leaving 的 transition 一致
@@ -130,7 +130,7 @@ async function start() {
   if (!autoEnter) return;
   if (!inTauri) {
     // 浏览器预览里没有原生层，不会真正跳转，只把结果写在状态栏里
-    setStatus(`预览模式：已选好 ${hostOf(best)}，桌面应用里会在这里进入`, {
+    setStatus(`预览模式：已选好 ${hostOf(best)}，桌面应用中将进入`, {
       tone: 'ok',
       name: 'info',
     });
