@@ -257,18 +257,42 @@ jobs:
       - name: 构建 APK
         run: pnpm tauri android build --apk
 
-      - name: 上传 APK 到草稿 Release
+      - name: 签名并上传 APK 到草稿 Release
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
-          APK=$(find src-tauri/gen/android -name 'app-universal-release.apk' | head -n 1)
-          if [ -z "$APK" ]; then
-            echo "没有找到已签名的 release APK（只找到未签名包时不能发布，安卓会拒绝安装未签名 APK）" >&2
+          # Tauri 生成的 Gradle 工程默认没有 signingConfigs，keystore.properties 写了也不会被读，
+          # 所以构建产物恒为未签名包；这里用 apksigner 对未签名包事后签名，再上传。
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.jks"
+            STORE_FILE="$RUNNER_TEMP/release.jks"
+            PASSWORD="$ANDROID_KEYSTORE_PASSWORD"
+            ALIAS="$ANDROID_KEY_ALIAS"
+          else
+            STORE_FILE="$GITHUB_WORKSPACE/client/signing/cktv-android-public.jks"
+            PASSWORD="cktv-public"
+            ALIAS="cktv"
+          fi
+          UNSIGNED=$(find src-tauri/gen/android -name 'app-universal-release-unsigned.apk' | head -n 1)
+          if [ -z "$UNSIGNED" ]; then
+            echo "没有找到未签名 APK" >&2
             find src-tauri/gen/android -name '*.apk' >&2 || true
             exit 1
           fi
+          SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          APKSIGNER=$(find "$SDK"/build-tools -name apksigner -type f | sort | tail -n 1)
+          if [ -z "$APKSIGNER" ]; then
+            echo "找不到 apksigner" >&2
+            exit 1
+          fi
           VERSION=$(node -p "require('./package.json').version")
-          cp "$APK" "$RUNNER_TEMP/CKTV_${VERSION}_android.apk"
-          gh release upload "$GITHUB_REF_NAME" "$RUNNER_TEMP/CKTV_${VERSION}_android.apk" --clobber
-
+          SIGNED="$RUNNER_TEMP/CKTV_${VERSION}_android.apk"
+          "$APKSIGNER" sign --ks "$STORE_FILE" --ks-pass "pass:$PASSWORD" --ks-key-alias "$ALIAS" --key-pass "pass:$PASSWORD" --out "$SIGNED" "$UNSIGNED"
+          "$APKSIGNER" verify --verbose "$SIGNED"
+          gh release upload "$GITHUB_REF_NAME" "$SIGNED" --clobber          
+              
   ios:
     name: iPhone / iPad（未签名 IPA）
     needs: verify
