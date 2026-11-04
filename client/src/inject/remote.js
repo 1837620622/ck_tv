@@ -185,7 +185,8 @@
       animation: rise .42s cubic-bezier(.2,.8,.2,1) both;
     }
     @media (max-width: 640px) {
-      .card { left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); width: auto; }
+      /* 手机上放在站点底部导航（3.5rem）和左下角工具条（40px）的上方，不挡住它们 */
+      .card { left: 12px; right: 12px; bottom: calc(3.5rem + 64px + env(safe-area-inset-bottom, 0px)); width: auto; }
     }
     .row { display: flex; gap: 12px; align-items: flex-start; }
     .badge {
