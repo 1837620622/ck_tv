@@ -52,7 +52,9 @@ export default function MobileAppDownload() {
                 : [],
             });
             if (data.androidMirrorUrl) setMirrorUrl(data.androidMirrorUrl);
-            return;
+            // 带 stale 标记的是上游失败时的陈旧兜底：先显示它，再往下直连 GitHub API 刷新，
+            // 不直接返回，否则旧版本号会一直挂在卡片上。
+            if (!data.stale) return;
           }
         }
       } catch {

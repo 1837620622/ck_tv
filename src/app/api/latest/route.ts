@@ -15,6 +15,9 @@ const ALTSTORE_SOURCE = `https://github.com/${REPO}/releases/latest/download/alt
 const CACHE_SECONDS = 300;
 const BROWSER_SECONDS = 60;
 const FETCH_TIMEOUT_MS = 5000;
+// 陈旧兜底 7 天：上游 GitHub 挂了或限速时，返回上次成功的结果而不是 502；
+// 卡片拿到带 stale 标记的结果会先显示它，再去直连 GitHub API 刷新，不会把旧版本当成最新。
+const STALE_SECONDS = 7 * 24 * 3600;
 
 interface ReleaseAsset {
   name: string;
@@ -40,6 +43,19 @@ export async function GET() {
   })();
 
   const cacheUrl = 'https://cktv-cache.local/latest-release?v=1';
+  const staleUrl = `${cacheUrl}&stale=1`;
+  // 上游失败时用上次成功的结果兜底；没有兜底才返回 502。
+  const serveStale = async () => {
+    const stale = await readJsonCache(staleUrl);
+    if (!stale) return null;
+    return new NextResponse(await stale.text(), {
+      headers: {
+        'Cache-Control': 'public, max-age=60, s-maxage=0',
+        'content-type': 'application/json; charset=utf-8',
+        'x-ck-cache': 'STALE',
+      },
+    });
+  };
   const hit = await readJsonCache(cacheUrl);
   if (hit) {
     return new NextResponse(await hit.text(), {
@@ -60,16 +76,22 @@ export async function GET() {
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     if (!response.ok) {
-      return NextResponse.json(
-        { ok: false, reason: `github-${response.status}` },
-        { status: 502, headers: { 'Cache-Control': 'no-store' } }
+      return (
+        (await serveStale()) ??
+        NextResponse.json(
+          { ok: false, reason: `github-${response.status}` },
+          { status: 502, headers: { 'Cache-Control': 'no-store' } }
+        )
       );
     }
     const data = (await response.json()) as GithubRelease;
     if (!data?.tag_name || !Array.isArray(data.assets)) {
-      return NextResponse.json(
-        { ok: false, reason: 'bad-payload' },
-        { status: 502, headers: { 'Cache-Control': 'no-store' } }
+      return (
+        (await serveStale()) ??
+        NextResponse.json(
+          { ok: false, reason: 'bad-payload' },
+          { status: 502, headers: { 'Cache-Control': 'no-store' } }
+        )
       );
     }
     const android = data.assets.find((asset) =>
@@ -82,15 +104,23 @@ export async function GET() {
       androidUrl && androidUrl.startsWith('https://github.com/')
         ? `https://ghfast.top/${androidUrl}`
         : null;
-    const body = JSON.stringify({
+    const payload = {
       ok: true,
       tag: data.tag_name,
       androidUrl,
       androidMirrorUrl,
       releaseUrl: data.html_url || RELEASES_PAGE,
       altstoreUrl: ALTSTORE_SOURCE,
-    });
+    };
+    const body = JSON.stringify(payload);
     await writeJsonCache(ctx, cacheUrl, body, CACHE_SECONDS, BROWSER_SECONDS);
+    await writeJsonCache(
+      ctx,
+      staleUrl,
+      JSON.stringify({ ...payload, stale: true }),
+      STALE_SECONDS,
+      BROWSER_SECONDS
+    );
     return new NextResponse(body, {
       headers: {
         ...jsonCacheHeaders(CACHE_SECONDS, BROWSER_SECONDS),
@@ -100,9 +130,12 @@ export async function GET() {
     });
   } catch (error) {
     const timedOut = error instanceof Error && error.name === 'TimeoutError';
-    return NextResponse.json(
-      { ok: false, reason: timedOut ? 'timeout' : 'network' },
-      { status: 502, headers: { 'Cache-Control': 'no-store' } }
+    return (
+      (await serveStale()) ??
+      NextResponse.json(
+        { ok: false, reason: timedOut ? 'timeout' : 'network' },
+        { status: 502, headers: { 'Cache-Control': 'no-store' } }
+      )
     );
   }
 }

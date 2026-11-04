@@ -827,6 +827,11 @@ function chooserBody(update) {
       { class: 'line-list' },
       lines.map((line) => lineItem(line, line.key === recommended))
     ),
+    h(
+      'p',
+      { class: 'hint' },
+      '下载失败或速度很慢时，不用重新检查更新，直接点另一条线路重试。'
+    ),
     h('p', { class: 'hint install-tip' }, INSTALL_TIPS[platform] ?? ''),
     releaseUrl
       ? h(
@@ -903,8 +908,9 @@ function lineItem(line, recommended) {
       {
         class: `btn${recommended ? ' btn-primary' : ''}`,
         type: 'button',
+        // 点了线路不关弹窗：这条线下载失败或太慢时，直接点另一条线重试，
+        // 不用重新检查更新。下载成功后用右上角的关闭按钮关掉即可。
         onclick: () => {
-          closeChooser();
           openExternal(line.url);
         },
       },
