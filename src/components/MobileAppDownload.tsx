@@ -28,6 +28,7 @@ function findAsset(assets: ReleaseAsset[], suffix: string): string | null {
 
 export default function MobileAppDownload() {
   const [release, setRelease] = useState<LatestRelease | null>(null);
+  const [mirrorUrl, setMirrorUrl] = useState<string | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -50,6 +51,7 @@ export default function MobileAppDownload() {
                   ]
                 : [],
             });
+            if (data.androidMirrorUrl) setMirrorUrl(data.androidMirrorUrl);
             return;
           }
         }
@@ -67,7 +69,13 @@ export default function MobileAppDownload() {
         );
         if (res.ok) {
           const data: LatestRelease = await res.json();
-          if (data && Array.isArray(data.assets)) setRelease(data);
+          if (data && Array.isArray(data.assets)) {
+            setRelease(data);
+            const apk = findAsset(data.assets, '_android.apk');
+            if (apk && apk.startsWith('https://github.com/')) {
+              setMirrorUrl(`https://ghfast.top/${apk}`);
+            }
+          }
         }
       } catch {
         // 读取失败不影响页面：按钮已经指向 Release 页面
@@ -119,6 +127,14 @@ export default function MobileAppDownload() {
             <Download className='h-4 w-4' aria-hidden />
             下载安卓版 APK
           </a>
+          {mirrorUrl ? (
+            <a
+              href={mirrorUrl}
+              className='text-xs text-gray-500 underline hover:text-gray-700 sm:self-start dark:text-gray-400 dark:hover:text-gray-200'
+            >
+              下载慢？试试国内线路
+            </a>
+          ) : null}
         </div>
 
         <div className='flex flex-col gap-3 rounded-lg border border-gray-100 p-4 dark:border-gray-800'>

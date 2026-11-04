@@ -75,10 +75,18 @@ export async function GET() {
     const android = data.assets.find((asset) =>
       asset.name.endsWith('_android.apk')
     );
+    const androidUrl = android ? android.browser_download_url : null;
+    // 国内用户直连 GitHub 下载 APK 很慢或打不开时用的公开代理线路；
+    // 只有 github.com 的地址才拼代理，其它地址不动。
+    const androidMirrorUrl =
+      androidUrl && androidUrl.startsWith('https://github.com/')
+        ? `https://ghfast.top/${androidUrl}`
+        : null;
     const body = JSON.stringify({
       ok: true,
       tag: data.tag_name,
-      androidUrl: android ? android.browser_download_url : null,
+      androidUrl,
+      androidMirrorUrl,
       releaseUrl: data.html_url || RELEASES_PAGE,
       altstoreUrl: ALTSTORE_SOURCE,
     });

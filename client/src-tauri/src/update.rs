@@ -18,12 +18,15 @@ pub const MANIFEST_URL: &str =
 
 /// 下载地址只允许这些域名，防止清单被篡改后跳到钓鱼网站。
 /// 和 scripts/make-update-manifest.mjs 里的列表保持一致。
+/// ghfast.top 是公开的 GitHub 加速代理（国内用户直连 GitHub 很慢或打不开时用），
+/// 只用来代理 github.com 的下载地址，不接受其它来源。
 const ALLOWED_LINK_HOSTS: &[&str] = &[
     "github.com",
     "objects.githubusercontent.com",
     "release-assets.githubusercontent.com",
     "tv.chuankangkk.top",
     "ck-tv.pages.dev",
+    "ghfast.top",
 ];
 
 const FIRST_CHECK_DELAY: Duration = Duration::from_secs(12);
@@ -295,14 +298,16 @@ pub struct PlatformEntry {
     pub source: Option<String>,
 }
 
-async fn fetch_manifest() -> Result<Manifest, String> {
-    let client = crate::http::client_builder()
-        .timeout(MANIFEST_TIMEOUT)
-        .user_agent(crate::servers::user_agent())
-        .build()
-        .map_err(|err| err.to_string())?;
+/// 国内用户直连 GitHub 拿不到清单时，走公开代理再试一次。
+/// 清单本身很小（1KB 多），直连只是慢、还没到超时时不会触发这一级；
+/// 真正的大文件下载走下面的国内线路，不走这里。
+fn proxy_manifest_url() -> String {
+    format!("https://ghfast.top/{MANIFEST_URL}")
+}
+
+async fn fetch_manifest_once(client: &reqwest::Client, url: &str) -> Result<Manifest, String> {
     let response = client
-        .get(MANIFEST_URL)
+        .get(url)
         .send()
         .await
         .map_err(|_| "无法获取更新信息，请检查网络".to_string())?;
@@ -318,6 +323,32 @@ async fn fetch_manifest() -> Result<Manifest, String> {
         .map_err(|_| "更新信息格式不对".to_string())
 }
 
+async fn fetch_manifest() -> Result<Manifest, String> {
+    let client = crate::http::client_builder()
+        .timeout(MANIFEST_TIMEOUT)
+        .user_agent(crate::servers::user_agent())
+        .build()
+        .map_err(|err| err.to_string())?;
+    // 先走直连（可信源）；直连失败再走代理，代理也失败就报直连的错。
+    match fetch_manifest_once(&client, MANIFEST_URL).await {
+        Ok(manifest) => Ok(manifest),
+        Err(direct_err) => match fetch_manifest_once(&client, &proxy_manifest_url()).await {
+            Ok(manifest) => Ok(manifest),
+            Err(_) => Err(direct_err),
+        },
+    }
+}
+
+/// 清单里没有配国内线路时，给 github.com 的下载地址自动配一条公开代理线路。
+/// 这样国内用户不用等仓库配 CN_MIRROR_BASE 也能看到“国内线路”；其它域名的地址不动。
+fn proxy_mirror_url(url: &str) -> Option<String> {
+    let host = url.split("://").nth(1)?.split('/').next()?;
+    if host != "github.com" {
+        return None;
+    }
+    Some(format!("https://ghfast.top/{url}"))
+}
+
 /// 找出本机平台的安装包。主线路必须可信；国内线路不可信或没有，就忽略它。
 fn pick_download(manifest: &Manifest, platform: &str) -> Result<Option<Download>, String> {
     let Some(entry) = manifest.platforms.get(platform) else {
@@ -327,7 +358,10 @@ fn pick_download(manifest: &Manifest, platform: &str) -> Result<Option<Download>
     let mirror_url = entry
         .mirror
         .as_deref()
-        .and_then(|raw| validate_link(raw).ok());
+        .and_then(|raw| validate_link(raw).ok())
+        .or_else(|| {
+            proxy_mirror_url(&url).and_then(|raw| validate_link(&raw).ok())
+        });
     let source_url = entry
         .source
         .as_deref()
@@ -488,8 +522,14 @@ mod tests {
             .expect("有安装包");
         assert_eq!(android.sha256.as_deref(), Some("abc"));
         assert_eq!(android.size, Some(10));
-        // 国内线路不在白名单里，忽略它，不影响主线路
-        assert_eq!(android.mirror_url, None);
+        // 清单里的国内线路不在白名单里，不直接用它；但主线路是 github.com，
+        // 会自动配一条公开代理线路，不影响主线路
+        assert_eq!(
+            android.mirror_url.as_deref(),
+            Some(
+                "https://ghfast.top/https://github.com/1837620622/ck_tv/releases/download/app-v1.1.0/CKTV_1.1.0_android.apk"
+            )
+        );
         let ios = pick_download(&manifest, "ios")
             .expect("iOS 的地址可信")
             .expect("有安装包");

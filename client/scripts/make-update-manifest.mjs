@@ -60,6 +60,8 @@ export const ALLOWED_HOSTS = [
   'release-assets.githubusercontent.com',
   'tv.chuankangkk.top',
   'ck-tv.pages.dev',
+  // 公开的 GitHub 加速代理，客户端没有配 CN_MIRROR_BASE 时自动用它拼国内线路
+  'ghfast.top',
 ];
 
 // 五个平台。key 与应用里的 platform_name() 一致；test 根据文件名判断是哪个平台的安装包。

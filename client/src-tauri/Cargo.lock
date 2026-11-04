@@ -572,7 +572,7 @@ dependencies = [
 
 [[package]]
 name = "cktv-app"
-version = "1.2.3"
+version = "1.2.4"
 dependencies = [
  "aes",
  "bytes",
