@@ -225,6 +225,10 @@ jobs:
       - name: 生成 Android 工程
         run: pnpm tauri android init --ci
 
+      # 生成的工程用 Tauri 默认图标、浅色主题，内容还会画到状态栏下面；这一步换成 CKTV 图标和深色主题，并让网页避开系统栏
+      - name: 给 Android 工程打补丁（图标、主题、状态栏）
+        run: node scripts/patch-mobile.mjs android
+
       - name: 写入签名配置
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -291,8 +295,8 @@ jobs:
           SIGNED="$RUNNER_TEMP/CKTV_${VERSION}_android.apk"
           "$APKSIGNER" sign --ks "$STORE_FILE" --ks-pass "pass:$PASSWORD" --ks-key-alias "$ALIAS" --key-pass "pass:$PASSWORD" --out "$SIGNED" "$UNSIGNED"
           "$APKSIGNER" verify --verbose "$SIGNED"
-          gh release upload "$GITHUB_REF_NAME" "$SIGNED" --clobber          
-              
+          gh release upload "$GITHUB_REF_NAME" "$SIGNED" --clobber
+
   ios:
     name: iPhone / iPad（未签名 IPA）
     needs: verify
@@ -328,6 +332,10 @@ jobs:
         run: |
           command -v xcodegen >/dev/null || brew install xcodegen
           pnpm tauri ios init --ci
+
+      # 生成的工程用 Tauri 默认图标；这一步换成 CKTV 图标
+      - name: 给 iOS 工程打补丁（图标）
+        run: node scripts/patch-mobile.mjs ios
 
       # Rust 编译时会把 dist/ 打包进程序，所以先构建界面
       - name: 构建界面（供 Rust 编译使用）

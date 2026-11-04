@@ -2,11 +2,12 @@
  * CKTV 客户端的站点注入脚本。站点页面开始加载前执行一次；本地页面（启动页、离线页、更新中心）不做界面的事。
  *
  * 1. 给 <html> 加上平台标记（data-cktv-platform / data-cktv-mobile），站点可以据此微调样式。
- * 2. 开场：应用启动后第一次进入站点时，盖一层品牌画面，页面加载完再淡出。
+ * 2. 进站画面：应用启动后第一次进入站点时，先显示和启动页最后一帧一样的画面，页面加载好再淡出。
  * 3. 断网或线路响应异常时在顶部提示，可以一键切换线路；网络恢复后提示刷新。
  * 4. 收到「发现新版本」事件时，在右下角（手机上是底部）显示提示卡片。
  * 5. 切回前台时通知原生层，由它决定要不要检查更新。
- * 6. 页面在播放视频时，左下角显示「下载本集」和「列表」：只读取资源加载记录，不改写站点的请求。
+ * 6. 左下角的应用工具条：菜单（刷新、首页、下载管理、切换线路、检查更新、复制链接、用浏览器打开、关于）；
+ *    页面在播放视频时再显示「下载本集」和「列表」：只读取资源加载记录，不改写站点的请求。
  *
  * 站点不能直接调用原生功能：所有操作都是跳转到 cktv:// 地址，由原生侧拦截处理
  * （见 src-tauri/src/window.rs 的 handle_action）。界面都放在 Shadow DOM 里，
@@ -37,17 +38,56 @@
 
   // 动画和提示只在顶层页面出现；站点里嵌入的 iframe（比如播放器）不管
   const isTopFrame = window.top === window;
-  const reduceMotion = window.matchMedia(
-    '(prefers-reduced-motion: reduce)'
-  ).matches;
+
+  /*
+   * 「下载本集」请求的一次性签名（原生层 src-tauri/src/action_key.rs 验证）。
+   * 密钥由原生层在生成注入脚本时写进下面的占位符，只存在这个闭包里，站点自己的脚本读不到；
+   * 用到的加密接口也在这里先拿到，站点之后改动全局对象也影响不到。
+   * 有效签名的请求会直接开始下载；拿不到签名（例如浏览器预览里占位符没被替换）时退回到只填好下载页。
+   */
+  const signAction = makeSigner('__CKTV_ACTION_KEY__');
+
+  function makeSigner(hexKey) {
+    const cryptoApi = window.crypto;
+    if (!cryptoApi?.subtle || !/^[0-9a-f]{64}$/.test(hexKey)) return null;
+    const importKey = cryptoApi.subtle.importKey.bind(cryptoApi.subtle);
+    const sign = cryptoApi.subtle.sign.bind(cryptoApi.subtle);
+    const randomValues = cryptoApi.getRandomValues.bind(cryptoApi);
+    const encoder = new TextEncoder();
+    const toHex = (bytes) =>
+      Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+    const raw = new Uint8Array(
+      hexKey.match(/../g).map((pair) => Number.parseInt(pair, 16))
+    );
+    const keyReady = importKey(
+      'raw',
+      raw,
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign']
+    ).catch(() => null);
+    return async (action, value) => {
+      const key = await keyReady;
+      if (!key) return null;
+      const nonce = toHex(randomValues(new Uint8Array(16)));
+      const signature = await sign(
+        'HMAC',
+        key,
+        encoder.encode(`${action}|${value}|${nonce}`)
+      );
+      return { nonce, sig: toHex(new Uint8Array(signature)) };
+    };
+  }
 
   const FONT =
     '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif';
   const CURTAIN_KEY = 'cktv-curtain-shown';
   const DISMISS_KEY = 'cktv-update-dismissed';
-  // 开场画面至少停留这么久；页面超过最长时间还没加载完，也会先退场
-  const CURTAIN_MIN_MS = 1600;
-  const CURTAIN_MAX_MS = 3500;
+  // 进站画面：站点加载完（或 DOMContentLoaded 之后 CURTAIN_AFTER_READY_MS）就淡出，
+  // 但至少停留 CURTAIN_MIN_MS，最多 CURTAIN_MAX_MS
+  const CURTAIN_MIN_MS = 350;
+  const CURTAIN_AFTER_READY_MS = 800;
+  const CURTAIN_MAX_MS = 4000;
   // 30 秒内连续失败 3 次才提示，偶尔一次失败不打扰
   const FAILURE_WINDOW_MS = 30_000;
   const FAILURE_LIMIT = 3;
@@ -97,84 +137,77 @@
 
   /* ---------- 样式和图形 ---------- */
 
-  // 和 src/assets/logo.svg 是同一个标志，只是拆成了几个部件，方便做动画
-  const MARK_SVG = `
-    <svg viewBox="0 0 512 512" focusable="false" aria-hidden="true">
-      <defs>
-        <linearGradient id="cktv-bg" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stop-color="#18231F"/>
-          <stop offset="1" stop-color="#060908"/>
-        </linearGradient>
-        <radialGradient id="cktv-glow" cx="0.42" cy="0.4" r="0.62">
-          <stop offset="0" stop-color="#22C55E" stop-opacity="0.3"/>
-          <stop offset="1" stop-color="#22C55E" stop-opacity="0"/>
-        </radialGradient>
-        <linearGradient id="cktv-ring" x1="0.1" y1="0" x2="0.9" y2="1">
-          <stop offset="0" stop-color="#A7F3D0"/>
-          <stop offset="0.45" stop-color="#34D399"/>
-          <stop offset="1" stop-color="#059669"/>
-        </linearGradient>
-        <linearGradient id="cktv-play" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stop-color="#FFFFFF"/>
-          <stop offset="1" stop-color="#D1FAE5"/>
-        </linearGradient>
-      </defs>
-      <rect width="512" height="512" rx="116" fill="url(#cktv-bg)"/>
-      <rect width="512" height="512" rx="116" fill="url(#cktv-glow)"/>
+  /*
+   * 进站画面和启动页（src/index.html）的最后一帧完全一样：同一张 240×180 的图（网站标志和站名
+   * 「CKTV-传康播放器」），同样的位置（品牌组 240×207，中心在高度 46% 处），下面同样的进度条。
+   * 所以从启动页进入站点时画面不动，站点加载好后在原地淡入。改动时两边要一起改，
+   * test/brand-lockup.test.mjs 会检查两边的图形和位置一致。
+   */
+  const LOCKUP_FONT =
+    "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI Variable', 'Segoe UI', 'PingFang SC', 'HarmonyOS Sans SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans CJK SC', 'WenQuanYi Micro Hei', system-ui, sans-serif";
+  const LOCKUP_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 180" width="240" height="180" font-family="${LOCKUP_FONT}">
+    <defs>
+      <linearGradient id="bk-bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#18231F"/><stop offset="1" stop-color="#060908"/></linearGradient>
+      <radialGradient id="bk-glow" cx="0.42" cy="0.4" r="0.62"><stop offset="0" stop-color="#22C55E" stop-opacity="0.3"/><stop offset="1" stop-color="#22C55E" stop-opacity="0"/></radialGradient>
+      <linearGradient id="bk-ring" x1="0.1" y1="0" x2="0.9" y2="1"><stop offset="0" stop-color="#A7F3D0"/><stop offset="0.45" stop-color="#34D399"/><stop offset="1" stop-color="#059669"/></linearGradient>
+      <linearGradient id="bk-play" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#D1FAE5"/></linearGradient>
+    </defs>
+    <g transform="translate(68 0) scale(0.203125)">
+      <rect width="512" height="512" rx="116" fill="url(#bk-bg)"/>
+      <rect width="512" height="512" rx="116" fill="url(#bk-glow)"/>
       <rect x="3" y="3" width="506" height="506" rx="113" fill="none" stroke="#FFFFFF" stroke-opacity="0.1" stroke-width="3"/>
-      <path class="mk-ring" pathLength="100" d="M 372.6 347.1 A 148 148 0 1 1 372.6 164.9" fill="none" stroke="url(#cktv-ring)" stroke-width="46" stroke-linecap="round"/>
-      <path class="mk-play" d="M 222 196 L 222 316 L 322 256 Z" fill="url(#cktv-play)" stroke="url(#cktv-play)" stroke-width="26" stroke-linejoin="round"/>
-      <circle class="mk-dot" cx="404" cy="256" r="17" fill="#6EE7B7"/>
-    </svg>`;
+      <path d="M 372.6 347.1 A 148 148 0 1 1 372.6 164.9" fill="none" stroke="url(#bk-ring)" stroke-width="46" stroke-linecap="round"/>
+      <path d="M 222 196 L 222 316 L 322 256 Z" fill="url(#bk-play)" stroke="url(#bk-play)" stroke-width="26" stroke-linejoin="round"/>
+      <circle cx="404" cy="256" r="17" fill="#6EE7B7"/>
+    </g>
+    <text x="120" y="150" text-anchor="middle" font-size="22" font-weight="700" letter-spacing="-0.5" fill="#F0FDF4">CKTV-传康播放器</text>
+  </svg>`;
 
-  const MARK_CSS = `
-    .mk-ring { stroke-dasharray: 100 100; stroke-dashoffset: 100; animation: draw 1s cubic-bezier(.2,.8,.2,1) .12s forwards; }
-    .mk-play { transform-box: fill-box; transform-origin: center; transform: scale(.4); opacity: 0; animation: pop .6s cubic-bezier(.34,1.56,.64,1) .5s forwards; }
-    .mk-dot { opacity: 0; animation: fade-in .4s ease .85s forwards; }
-    @keyframes draw { to { stroke-dashoffset: 0; } }
-    @keyframes pop { to { opacity: 1; transform: scale(1); } }
-  `;
-
-  const CURTAIN_CSS = `
-    :host { all: initial; }
-    .curtain {
-      position: fixed; inset: 0; z-index: 2147483646;
-      display: flex; flex-direction: column; align-items: center; justify-content: center;
-      box-sizing: border-box; padding: env(safe-area-inset-top, 0px) 24px env(safe-area-inset-bottom, 0px);
-      color: #ecfdf5; font: 14px/1.5 ${FONT};
-      background: radial-gradient(90% 60% at 50% 38%, #0f2e25 0%, #060a13 60%, #04060d 100%);
-      transition: opacity .5s cubic-bezier(.4,0,.2,1), transform .5s cubic-bezier(.4,0,.2,1);
-    }
-    .curtain.out { opacity: 0; transform: scale(1.03); pointer-events: none; }
-    .mark { width: 96px; height: 96px; animation: mark-in .8s cubic-bezier(.2,.8,.2,1) both; }
-    .mark svg { display: block; width: 100%; height: 100%; overflow: visible; }
-    .name {
-      margin-top: 18px; font-size: 26px; font-weight: 800; letter-spacing: .3em; padding-left: .3em;
-      animation: rise .6s cubic-bezier(.2,.8,.2,1) .3s both;
-    }
-    .sub {
-      margin-top: 4px; color: #8ea3a0; font-size: 12px; letter-spacing: .3em; padding-left: .3em;
-      animation: rise .6s cubic-bezier(.2,.8,.2,1) .45s both;
-    }
-    .pledge {
-      margin-top: 14px; color: #6ee7b7; font-size: 12px; letter-spacing: .12em;
-      animation: fade-in .6s ease .55s both;
-    }
-    .loader {
-      position: relative; overflow: hidden; width: 120px; height: 3px; margin-top: 26px; border-radius: 3px;
-      background: rgba(255,255,255,.08); animation: fade-in .4s ease .5s both;
-    }
-    .loader i {
-      position: absolute; top: 0; bottom: 0; width: 40%; border-radius: inherit;
-      background: linear-gradient(90deg, rgba(74,222,128,0), #4ade80, rgba(74,222,128,0));
-      animation: sweep 1.3s cubic-bezier(.45,0,.55,1) infinite;
-    }
-    @keyframes mark-in { from { opacity: 0; transform: scale(.84) rotate(-6deg); } to { opacity: 1; transform: none; } }
-    @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
-    @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
-    @keyframes sweep { from { left: -40%; } to { left: 100%; } }
-    @media (prefers-reduced-motion: reduce) { .curtain { transition: none; } }
-  `;
+  /*
+   * 进站画面只用样式表画（html::before 是底色和品牌图，html::after 是进度条），不往页面里加任何元素：
+   * 站点是 React 应用，注水（hydration）之前多出来的元素会让 React 判定页面不一致而整页重绘，造成闪烁。
+   * 品牌图的纵向位置：要让图片顶边落在 46% 高度减去品牌组一半（103.5px）处；
+   * background-position 的百分比按（容器高 - 图片高 180px）计算，所以写成 calc(46% - 20.7px)。
+   */
+  function curtainCss(leaving) {
+    const image = `url("data:image/svg+xml,${encodeURIComponent(LOCKUP_SVG)}")`;
+    return `
+      html::before {
+        content: ''; position: fixed; inset: 0; z-index: 2147483646;
+        background:
+          ${image} no-repeat 50% calc(46% - 20.7px) / 240px 180px,
+          radial-gradient(56% 36% at 50% 40%, rgb(34 197 94 / 0.14), rgb(34 197 94 / 0.04) 50%, transparent 78%),
+          #060a13;
+      }
+      html::after {
+        content: ''; position: fixed; z-index: 2147483647; pointer-events: none;
+        left: 50%; top: calc(46% + 100.5px); width: 132px; height: 3px; margin-left: -66px; border-radius: 3px;
+        background:
+          linear-gradient(90deg, rgb(74 222 128 / 0), #4ade80, rgb(74 222 128 / 0)) no-repeat,
+          rgb(255 255 255 / 0.08);
+        background-size: 40% 100%, 100% 100%;
+        animation: cktv-curtain-sweep 1.2s cubic-bezier(.45, 0, .55, 1) infinite;
+      }
+      @keyframes cktv-curtain-sweep {
+        from { background-position: -66.67% 0, 0 0; }
+        to { background-position: 166.67% 0, 0 0; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        html::after { animation: none; background-position: 50% 0, 0 0; }
+      }
+      ${
+        leaving
+          ? `html::before, html::after {
+              opacity: 0; pointer-events: none;
+              transition: opacity .45s cubic-bezier(.4, 0, .2, 1);
+            }
+            @media (prefers-reduced-motion: reduce) {
+              html::before, html::after { transition: none; }
+            }`
+          : ''
+      }
+    `;
+  }
 
   const UPDATE_CSS = `
     :host { all: initial; }
@@ -191,7 +224,8 @@
       animation: rise .42s cubic-bezier(.2,.8,.2,1) both;
     }
     @media (max-width: 640px) {
-      .card { left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); width: auto; }
+      /* 手机上放在站点底部导航（3.5rem）和左下角工具条（40px）的上方，不挡住它们 */
+      .card { left: 12px; right: 12px; bottom: calc(3.5rem + 64px + env(safe-area-inset-bottom, 0px)); width: auto; }
     }
     .row { display: flex; gap: 12px; align-items: flex-start; }
     .badge {
@@ -264,6 +298,98 @@
     @media (prefers-reduced-motion: reduce) { .banner { animation: none; } }
   `;
 
+  /* ---------- 应用里的站点外观：更像原生应用，不像照搬网页 ---------- */
+
+  /*
+   * 只在应用里生效（这段脚本只在应用里运行），网页版不受影响。和进站画面一样只用可构造样式表，
+   * 不往页面里加元素。站点组件上有 data-app 标记（header / tabbar / welcome）；
+   * 站点还没更新到带标记的版本时，用后面的备用选择器匹配。
+   * - 隐藏网页才需要的东西：首次访问的免责卡片（启动页已经写了）、「手机客户端下载」卡片
+   * - 手机上顶栏、底栏换成半透明毛玻璃，底栏一屏 5 个、按格滑动，当前一项有底色
+   * - 去掉网页式的点击高亮和长按弹出菜单
+   */
+  const APP_CSS = `
+    [data-app='welcome'],
+    div.fixed[class*='z-[999]'][class*='bottom-[calc(4.25rem'],
+    section[aria-labelledby='mobile-download-title'] {
+      display: none !important;
+    }
+    html {
+      -webkit-tap-highlight-color: transparent;
+    }
+    a, button, img, [role='button'] {
+      -webkit-touch-callout: none;
+    }
+    @media (max-width: 767px) {
+      [data-app='header'], header.md\\:hidden {
+        position: sticky !important;
+        top: 0;
+        z-index: 500;
+        border-bottom: 0.5px solid rgb(127 127 127 / 0.18) !important;
+        background: rgb(255 255 255 / 0.82) !important;
+        backdrop-filter: saturate(180%) blur(20px);
+        -webkit-backdrop-filter: saturate(180%) blur(20px);
+        -webkit-user-select: none;
+        user-select: none;
+      }
+      html.dark [data-app='header'], html.dark header.md\\:hidden {
+        background: rgb(8 10 16 / 0.78) !important;
+      }
+      [data-app='tabbar'], nav.fixed[class*='z-[600]'] {
+        border-top: 0.5px solid rgb(127 127 127 / 0.2) !important;
+        background: rgb(255 255 255 / 0.86) !important;
+        backdrop-filter: saturate(180%) blur(20px);
+        -webkit-backdrop-filter: saturate(180%) blur(20px);
+        -webkit-user-select: none;
+        user-select: none;
+      }
+      html.dark [data-app='tabbar'], html.dark nav.fixed[class*='z-[600]'] {
+        background: rgb(8 10 16 / 0.82) !important;
+      }
+      [data-app='tabbar'] ul, nav.fixed[class*='z-[600]'] ul {
+        scroll-snap-type: x mandatory;
+        padding: 0 4px;
+      }
+      [data-app='tabbar'] li, nav.fixed[class*='z-[600]'] li {
+        flex: 0 0 20% !important;
+        min-width: 0 !important;
+        scroll-snap-align: start;
+      }
+      [data-app='tabbar'] li a, nav.fixed[class*='z-[600]'] li a {
+        position: relative;
+        font-weight: 500;
+      }
+      [data-app='tabbar'] li[data-active='true'] a::before,
+      nav.fixed[class*='z-[600]'] li[data-active='true'] a::before {
+        content: '';
+        position: absolute;
+        top: 7px;
+        left: 50%;
+        width: 44px;
+        height: 26px;
+        margin-left: -22px;
+        border-radius: 999px;
+        background: rgb(34 197 94 / 0.16);
+      }
+    }
+  `;
+
+  function applyAppStyle() {
+    if (
+      typeof CSSStyleSheet !== 'function' ||
+      !('adoptedStyleSheets' in Document.prototype)
+    ) {
+      return;
+    }
+    try {
+      const sheet = new CSSStyleSheet();
+      sheet.replaceSync(APP_CSS);
+      document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+    } catch {
+      // 样式没加上只是外观和网页一样，不影响使用
+    }
+  }
+
   /* ---------- 开场：第一次进入站点时的品牌画面 ---------- */
 
   function curtainShown() {
@@ -283,39 +409,49 @@
   }
 
   function entryCurtain() {
-    // 系统要求减少动态效果，或者这次打开应用已经播过了，就不再盖画面
-    if (reduceMotion || curtainShown()) return;
+    // 这次打开应用已经播过了，就不再盖画面
+    if (curtainShown()) return;
+    // 不支持可构造样式表的旧系统（iOS 16.4 以前）不盖画面，直接显示站点
+    if (
+      typeof CSSStyleSheet !== 'function' ||
+      !('adoptedStyleSheets' in Document.prototype)
+    ) {
+      return;
+    }
+    let sheet;
+    try {
+      sheet = new CSSStyleSheet();
+      sheet.replaceSync(curtainCss(false));
+      document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+    } catch {
+      return;
+    }
     markCurtainShown();
 
     const started = performance.now();
-    const curtain = el('div', 'curtain');
-    curtain.setAttribute('aria-hidden', 'true');
-    const mark = el('div', 'mark');
-    mark.innerHTML = MARK_SVG;
-    const loader = el('div', 'loader');
-    loader.append(el('i'));
-    curtain.append(
-      mark,
-      el('div', 'name', 'CKTV'),
-      el('div', 'sub', '传康播放器'),
-      el('div', 'pledge', '非盈利 · 免费 · 无偿提供'),
-      loader
-    );
-    const layer = mountLayer('curtain', CURTAIN_CSS + MARK_CSS, curtain);
-
-    // 页面加载完成后退场，但至少停留 CURTAIN_MIN_MS；超过 CURTAIN_MAX_MS 不管加载没加载完都退场
     let closing = false;
     const close = () => {
       if (closing) return;
       closing = true;
       const wait = Math.max(0, CURTAIN_MIN_MS - (performance.now() - started));
       setTimeout(() => {
-        curtain.classList.add('out');
-        setTimeout(() => layer.host.remove(), 520);
+        sheet.replaceSync(curtainCss(true));
+        setTimeout(() => {
+          document.adoptedStyleSheets = document.adoptedStyleSheets.filter(
+            (item) => item !== sheet
+          );
+        }, 500);
       }, wait);
     };
+    // 页面加载完成就退场；图片多的页面 load 来得晚，DOM 就绪后最多再等 CURTAIN_AFTER_READY_MS
     if (document.readyState === 'complete') close();
     else window.addEventListener('load', close, { once: true });
+    const afterReady = () => setTimeout(close, CURTAIN_AFTER_READY_MS);
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', afterReady, { once: true });
+    } else {
+      afterReady();
+    }
     setTimeout(close, CURTAIN_MAX_MS);
   }
 
@@ -541,10 +677,13 @@
   // 只读取资源加载记录，不改写站点自己的请求。分片列表（.m3u8）优先，没有时用 .mp4 直链。
   const DOWNLOAD_LABEL = '下载本集';
   // 点了只是打开下载页、把地址填好，还要在那边确认，所以不能写成「已开始下载」
+  // 没有签名时只是打开下载页、把地址填好，还要在那边确认，所以不能写成「已开始下载」
   const DOWNLOAD_DONE_LABEL = '已打开下载页';
+  const DOWNLOAD_STARTING_LABEL = '正在开始…';
+  const DOWNLOAD_STARTED_LABEL = '已开始下载';
+  const DOWNLOAD_FAILED_LABEL = '下载失败';
   const DOWNLOAD_DONE_MS = 2500;
   const latestStream = { m3u8: '', mp4: '' };
-  let dock = null; // { node, download, list, close, url }
   let dismissedStream = '';
 
   // 返回 'm3u8' 或 'mp4'；不是 http(s) 的视频地址返回空字符串（blob: 之类的地址播放器内部用，无法下载）
@@ -579,9 +718,135 @@
       .slice(0, 60);
   }
 
+  /* ---------- 应用工具条：左下角的菜单按钮，播放视频时再加上「下载本集」和「列表」 ---------- */
+
+  // 菜单里的图标（线条风格，和站点一致）
+  const ICON_PATHS = {
+    menu: 'M4 7h16M4 12h16M4 17h16',
+    play: 'M7 5v14l12-7z',
+    refresh: 'M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7',
+    home: 'M3 11l9-7 9 7M5 10v10h5v-6h4v6h5V10',
+    download: 'M12 4v11m0 0l-4.5-4.5M12 15l4.5-4.5M5 20h14',
+    route: 'M4 17l5-5-5-5M12 19h8M12 5h8M12 12h8',
+    update:
+      'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 16V8m0 0l-3.5 3.5M12 8l3.5 3.5',
+    link: 'M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1',
+    browser:
+      'M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5',
+    info: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v5M12 8h.01',
+  };
+
+  function svgIcon(name) {
+    const span = el('span', 'icon');
+    span.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${ICON_PATHS[name]}"/></svg>`;
+    return span;
+  }
+
+  // 复制文字：剪贴板接口不可用时，退回到选中文本再复制
+  async function copyText(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      const area = el('textarea');
+      area.value = text;
+      area.setAttribute('readonly', '');
+      area.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0';
+      document.body.append(area);
+      area.select();
+      let ok = false;
+      try {
+        ok = document.execCommand('copy');
+      } catch {
+        ok = false;
+      }
+      area.remove();
+      return ok;
+    }
+  }
+
+  // 菜单项：[图标, 文字, 点击后做的事]。null 是分隔线。
+  function menuItems() {
+    return [
+      ['refresh', '刷新页面', () => location.reload()],
+      ['home', '回到首页', () => location.assign('/')],
+      null,
+      ['download', '下载管理', () => nativeAction('downloads')],
+      ['route', '切换线路', () => nativeAction('updater?tab=servers')],
+      ['update', '检查更新', () => nativeAction('updater?tab=update')],
+      null,
+      ['link', '复制本页链接', (button) => copyLink(button)],
+      [
+        'browser',
+        '用浏览器打开',
+        () => nativeAction(`browser?url=${encodeURIComponent(location.href)}`),
+      ],
+      ['info', '关于 CKTV', () => nativeAction('updater?tab=about')],
+    ];
+  }
+
+  async function copyLink(button) {
+    const label = button.querySelector('.label');
+    const ok = await copyText(location.href);
+    label.textContent = ok ? '已复制链接' : '复制失败，请长按地址栏';
+    setTimeout(() => {
+      label.textContent = '复制本页链接';
+    }, 1600);
+  }
+
+  let dock = null; // { host, node, menuButton, panel, stream, download, url }
+  // 视频地址在工具条挂上之前就可能出现，先记下来，挂上后再显示
+  let pendingStream = '';
+
+  function setMenuOpen(open) {
+    if (!dock) return;
+    dock.panel.hidden = !open;
+    dock.menuButton.setAttribute('aria-expanded', String(open));
+    dock.node.classList.toggle('open', open);
+  }
+
   function mountDock() {
+    if (dock) return;
     const node = el('div', 'dock');
-    node.hidden = true;
+
+    // 菜单按钮和菜单
+    const menuButton = el('button', 'menu-button');
+    menuButton.type = 'button';
+    menuButton.setAttribute('aria-label', 'CKTV 菜单');
+    menuButton.setAttribute('aria-haspopup', 'menu');
+    menuButton.setAttribute('aria-expanded', 'false');
+    menuButton.append(svgIcon('menu'));
+
+    const panel = el('div', 'panel');
+    panel.setAttribute('role', 'menu');
+    panel.hidden = true;
+    panel.append(el('div', 'panel-title', 'CKTV 传康播放器'));
+    for (const item of menuItems()) {
+      if (!item) {
+        panel.append(el('div', 'sep'));
+        continue;
+      }
+      const [iconName, text, run] = item;
+      const button = el('button', 'item');
+      button.type = 'button';
+      button.setAttribute('role', 'menuitem');
+      button.append(svgIcon(iconName), el('span', 'label', text));
+      button.addEventListener('click', () => {
+        run(button);
+        // 复制链接要在菜单里显示结果，其它项点完就收起
+        if (iconName !== 'link') setMenuOpen(false);
+      });
+      panel.append(button);
+    }
+
+    // 播放视频时才出现的两个按钮
+    const stream = el('div', 'stream');
+    stream.hidden = true;
+    // 用 CKTV 播放器看：手势、长按倍速、横屏全屏，和站点的播放器分开
+    const watch = el('button', 'watch');
+    watch.type = 'button';
+    watch.setAttribute('aria-label', '用 CKTV 播放器播放');
+    watch.append(svgIcon('play'), el('span', null, '播放器'));
     const download = el('button', 'main', DOWNLOAD_LABEL);
     download.type = 'button';
     const list = el('button', 'sub', '列表');
@@ -589,39 +854,108 @@
     const close = el('button', 'close', '×');
     close.type = 'button';
     close.setAttribute('aria-label', '隐藏下载按钮');
-    node.append(download, list, close);
-    dock = { node, download, list, close, url: '' };
+    stream.append(watch, download, list, close);
 
-    download.addEventListener('click', () => {
-      if (!dock.url) return;
-      const query = `url=${encodeURIComponent(
-        dock.url
-      )}&title=${encodeURIComponent(pageTitle())}`;
+    node.append(panel, menuButton, stream);
+    const layer = mountLayer('dock', DOCK_CSS, node);
+    dock = {
+      host: layer.host,
+      node,
+      menuButton,
+      panel,
+      stream,
+      download,
+      url: '',
+    };
+
+    menuButton.addEventListener('click', () => setMenuOpen(panel.hidden));
+    // 点菜单以外的地方或按 Esc 收起
+    document.addEventListener(
+      'pointerdown',
+      (event) => {
+        if (!panel.hidden && !event.composedPath().includes(layer.host)) {
+          setMenuOpen(false);
+        }
+      },
+      true
+    );
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && !panel.hidden) {
+        setMenuOpen(false);
+        menuButton.focus();
+      }
+    });
+
+    download.addEventListener('click', async (event) => {
+      // 只认用户真的点击；站点脚本模拟的点击（isTrusted 为 false）不算
+      if (!dock.url || !event.isTrusted) return;
+      const url = dock.url;
+      let query = `url=${encodeURIComponent(url)}&title=${encodeURIComponent(
+        pageTitle()
+      )}`;
+      const signed = signAction
+        ? await signAction('download', url).catch(() => null)
+        : null;
+      if (signed) query += `&nonce=${signed.nonce}&sig=${signed.sig}`;
+      showDownloadLabel(signed ? DOWNLOAD_STARTING_LABEL : DOWNLOAD_DONE_LABEL);
       nativeAction(`download?${query}`);
-      download.textContent = DOWNLOAD_DONE_LABEL;
-      setTimeout(() => {
-        download.textContent = DOWNLOAD_LABEL;
-      }, DOWNLOAD_DONE_MS);
     });
     list.addEventListener('click', () => nativeAction('downloads'));
+    watch.addEventListener('click', () => {
+      if (!dock.url) return;
+      // 站点的播放器先停下，免得两边同时出声
+      document.querySelectorAll('video').forEach((item) => item.pause());
+      nativeAction(
+        `player?url=${encodeURIComponent(dock.url)}&title=${encodeURIComponent(
+          pageTitle()
+        )}&back=${encodeURIComponent(location.href)}`
+      );
+    });
     close.addEventListener('click', () => {
       dismissedStream = dock.url;
-      dock.node.hidden = true;
+      stream.hidden = true;
     });
-    mountLayer('dock', DOCK_CSS, node);
+
+    if (pendingStream) showStream(pendingStream);
+  }
+
+  let labelTimer = 0;
+  function showDownloadLabel(text, title = '') {
+    if (!dock) return;
+    dock.download.textContent = text;
+    dock.download.title = title;
+    clearTimeout(labelTimer);
+    labelTimer = setTimeout(() => {
+      dock.download.textContent = DOWNLOAD_LABEL;
+      dock.download.title = '';
+    }, DOWNLOAD_DONE_MS);
+  }
+
+  // 原生层直接开始下载后的结果
+  window.addEventListener('cktv:download', (event) => {
+    const detail = event.detail || {};
+    if (detail.ok) {
+      showDownloadLabel(
+        DOWNLOAD_STARTED_LABEL,
+        '在菜单的「下载管理」里查看进度'
+      );
+    } else {
+      showDownloadLabel(DOWNLOAD_FAILED_LABEL, String(detail.error || ''));
+    }
+  });
+
+  function showStream(url) {
+    if (!dock) {
+      pendingStream = url;
+      return;
+    }
+    pendingStream = '';
+    dock.url = url;
+    dock.stream.hidden = !url || url === dismissedStream;
   }
 
   function refreshDock() {
-    const url = latestStream.m3u8 || latestStream.mp4;
-    if (!url || url === dismissedStream) {
-      if (dock) dock.node.hidden = true;
-      return;
-    }
-    whenBody(() => {
-      if (!dock) mountDock();
-      dock.url = url;
-      dock.node.hidden = false;
-    });
+    showStream(latestStream.m3u8 || latestStream.mp4);
   }
 
   function watchStreams() {
@@ -638,6 +972,16 @@
     document.addEventListener('loadedmetadata', scanVideos, true);
   }
 
+  /**
+   * 工具条要等站点完成注水（hydration）之后再挂上：站点是 React 应用，注水前 <body> 里多出来的
+   * 元素会让 React 判定页面不一致而整页重绘。load 之后再等一会儿，注水早就完成了。
+   */
+  function mountDockAfterHydration() {
+    const later = () => setTimeout(() => whenBody(mountDock), 600);
+    if (document.readyState === 'complete') later();
+    else window.addEventListener('load', later, { once: true });
+  }
+
   const DOCK_CSS = `
     [hidden] { display: none !important; }
     .dock {
@@ -647,54 +991,129 @@
       z-index: 2147483000;
       display: flex;
       align-items: center;
-      gap: 4px;
-      padding: 4px;
-      border-radius: 999px;
-      background: rgb(9 14 26 / 0.9);
-      border: 1px solid rgb(148 163 184 / 0.22);
-      box-shadow: 0 10px 28px rgb(0 0 0 / 0.4);
-      backdrop-filter: blur(12px);
+      gap: 6px;
       font: 500 13px/1 ${FONT};
       color: #e2e8f0;
       animation: dock-in 0.32s ease both;
     }
-    .dock button {
+    /* 手机上站点底部有导航栏（高 3.5rem），工具条放在它上面，不挡导航 */
+    @media (max-width: 767px) {
+      .dock { bottom: calc(3.5rem + 12px + env(safe-area-inset-bottom, 0px)); }
+    }
+    button {
       appearance: none;
       margin: 0;
-      height: 32px;
-      padding: 0 12px;
       border: 0;
-      border-radius: 999px;
-      background: transparent;
       color: inherit;
       font: inherit;
       cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
     }
-    .dock .main {
+    button:focus-visible { outline: 2px solid #4ade80; outline-offset: 2px; }
+    .icon { display: inline-grid; place-items: center; flex: none; }
+    .menu-button, .stream {
+      background: rgb(9 14 26 / 0.9);
+      border: 1px solid rgb(148 163 184 / 0.22);
+      box-shadow: 0 10px 28px rgb(0 0 0 / 0.4);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+    .menu-button {
+      width: 40px;
+      height: 40px;
+      padding: 0;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      opacity: 0.82;
+      transition: opacity 0.15s ease, transform 0.15s ease, color 0.15s ease;
+    }
+    .menu-button:hover, .open .menu-button { opacity: 1; color: #4ade80; }
+    .menu-button:active { transform: scale(0.94); }
+    .stream {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px;
+      border-radius: 999px;
+    }
+    .stream button {
+      height: 32px;
+      padding: 0 12px;
+      border-radius: 999px;
+      background: transparent;
+    }
+    .stream .watch {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 0 12px 0 9px;
+      color: #4ade80;
+      font-weight: 700;
+    }
+    .stream .watch:hover { background: rgb(74 222 128 / 0.14); }
+    .stream .watch svg { width: 15px; height: 15px; }
+    .stream .main {
       padding: 0 14px;
       color: #052e16;
       font-weight: 700;
       background: linear-gradient(135deg, #4ade80, #16a34a);
     }
-    .dock .sub:hover {
-      background: rgb(148 163 184 / 0.16);
+    .stream .sub:hover { background: rgb(148 163 184 / 0.16); }
+    .stream .close { width: 30px; padding: 0; color: #94a3b8; font-size: 18px; }
+    .stream .close:hover { color: #e2e8f0; background: rgb(148 163 184 / 0.16); }
+
+    .panel {
+      position: absolute;
+      left: 0;
+      bottom: calc(100% + 10px);
+      width: 220px;
+      max-height: min(440px, calc(100vh - 140px));
+      overflow-y: auto;
+      box-sizing: border-box;
+      padding: 6px;
+      border-radius: 16px;
+      background: rgb(9 14 26 / 0.97);
+      border: 1px solid rgb(148 163 184 / 0.22);
+      box-shadow: 0 18px 50px rgb(0 0 0 / 0.5);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      transform-origin: bottom left;
+      animation: panel-in 0.18s cubic-bezier(.2, .8, .2, 1) both;
     }
-    .dock .close {
-      width: 30px;
-      padding: 0;
-      color: #94a3b8;
-      font-size: 18px;
+    .panel-title {
+      padding: 8px 10px 6px;
+      color: #64748b;
+      font-size: 11.5px;
+      letter-spacing: 0.08em;
     }
-    .dock .close:hover {
-      color: #e2e8f0;
-      background: rgb(148 163 184 / 0.16);
+    .item {
+      width: 100%;
+      height: 40px;
+      padding: 0 10px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border-radius: 10px;
+      background: transparent;
+      text-align: left;
+      font-size: 14px;
     }
+    .item .icon { color: #94a3b8; }
+    .item:hover, .item:focus-visible { background: rgb(148 163 184 / 0.14); outline: none; }
+    .item:hover .icon { color: #4ade80; }
+    .sep { height: 1px; margin: 4px 8px; background: rgb(148 163 184 / 0.16); }
+
     @keyframes dock-in {
       from { opacity: 0; transform: translateY(8px); }
       to { opacity: 1; transform: none; }
     }
+    @keyframes panel-in {
+      from { opacity: 0; transform: translateY(6px) scale(0.98); }
+      to { opacity: 1; transform: none; }
+    }
     @media (prefers-reduced-motion: reduce) {
-      .dock { animation: none; }
+      .dock, .panel { animation: none; }
     }
   `;
 
@@ -707,9 +1126,10 @@
     watchSiteHealth();
     watchResume();
     watchStreams();
-    whenBody(() => {
-      entryCurtain();
-      watchNetwork();
-    });
+    // 进站画面只用样式表，不需要等 <body>：越早盖上，越不会露出站点加载中的样子
+    applyAppStyle();
+    entryCurtain();
+    whenBody(watchNetwork);
+    mountDockAfterHydration();
   }
 })();

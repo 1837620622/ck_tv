@@ -131,6 +131,8 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
 
   return (
     <nav
+      // 客户端（App）里用这个标记换成原生应用风格的底栏（样式在 client/src/inject/remote.js）
+      data-app='tabbar'
       className='fixed left-0 right-0 z-[600] overflow-hidden border-t border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 md:hidden'
       style={{
         /* 紧贴视口底部，同时在内部留出安全区高度 */

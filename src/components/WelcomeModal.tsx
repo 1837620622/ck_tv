@@ -69,6 +69,8 @@ export const WelcomeModal: React.FC = () => {
   return createPortal(
     <div
       ref={cardRef}
+      // 客户端（App）里用这个标记隐藏：应用的启动页已经写明了免责说明
+      data-app='welcome'
       className={`fixed bottom-[calc(4.25rem+env(safe-area-inset-bottom))] md:bottom-6 right-4 sm:right-6 z-[999] max-w-sm w-[calc(100%-2rem)] sm:w-80 transition-all duration-300 ${
         coversPager
           ? 'pointer-events-none invisible translate-y-2 opacity-0'

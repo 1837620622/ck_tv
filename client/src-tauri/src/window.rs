@@ -1,5 +1,6 @@
 //! 窗口：主窗口（启动页 → 远程站点）、更新中心窗口、导航拦截、站点注入。
 
+use crate::action_key::ActionKey;
 use crate::update::{self, Status, UpdateManager, UpdateState};
 use crate::{downloads, platform_name, servers, settings};
 use tauri::webview::PageLoadEvent;
@@ -12,6 +13,8 @@ pub const UPDATER: &str = "updater";
 pub const DOWNLOADS: &str = "downloads";
 /// 注入到远程站点页面里的脚本（开场、断网提示、更新提示、回到前台检查）
 const REMOTE_SCRIPT: &str = include_str!("../../src/inject/remote.js");
+/// 注入脚本里签名密钥的占位符，生成脚本时换成本次启动的随机密钥（见 action_key 模块）
+const ACTION_KEY_PLACEHOLDER: &str = "__CKTV_ACTION_KEY__";
 /// 窗口底色和启动页一致。站点加载前窗口是这个颜色，不会闪出白屏。
 const BACKGROUND: Color = Color(6, 10, 19, 255);
 
@@ -33,7 +36,12 @@ fn init_script(app: &AppHandle) -> String {
         "platform": platform_name(),
         "mobile": cfg!(any(target_os = "android", target_os = "ios")),
     });
-    format!("window.__CKTV_APP__ = Object.freeze({info});\n{REMOTE_SCRIPT}")
+    // 密钥只写进注入脚本的闭包，不挂在 window 上，站点自己的脚本读不到
+    let script = REMOTE_SCRIPT.replace(
+        ACTION_KEY_PLACEHOLDER,
+        &app.state::<ActionKey>().secret_hex(),
+    );
+    format!("window.__CKTV_APP__ = Object.freeze({info});\n{script}")
 }
 
 /// 创建主窗口。先打开本地启动页，启动页测速后再进入远程站点。
@@ -99,9 +107,9 @@ fn handle_action(app: &AppHandle, url: &Url) {
         "home" => {
             let _ = open_home(app);
         }
-        // 站点页面上的下载按钮：cktv://download?url=…&title=…。只打开下载页并填好地址，
-        // 不直接开始下载，要用户在下载页里确认。
-        "download" => prefill_download(app, url),
+        // 站点页面上的下载按钮：cktv://download?url=…&title=…[&nonce=…&sig=…]。
+        // 带着有效的一次性签名（用户真的点了注入的按钮）就直接开始下载；否则只打开下载页并填好地址。
+        "download" => start_or_prefill_download(app, url),
         // 站点页面上的「下载列表」按钮
         "downloads" => {
             if let Err(err) = open_downloads(app, None) {
@@ -110,19 +118,58 @@ fn handle_action(app: &AppHandle, url: &Url) {
         }
         // 站点页面切回前台时发来的：距离上次检查够久了才真的去检查
         "resume" => update::spawn_resume_check(app.clone()),
+        // 应用菜单里的「用浏览器打开」：cktv://browser?url=…
+        "browser" => open_in_browser(app, url),
+        // 站点播放时的「CKTV 播放器」：cktv://player?url=…&title=…&back=…
+        "player" => open_player(app, url),
         other => log::info!("忽略未知动作：{other}"),
     }
 }
 
-/// 站点页面请求下载（cktv://download?url=…&title=…）：只打开下载页，并把地址和名称填进表单，
-/// 不会直接开始。页面内容不可信，不能让它替用户写文件；开始下载要用户在下载页里点「开始下载」。
-fn prefill_download(app: &AppHandle, action: &Url) {
-    let query = |name: &str| {
-        action
-            .query_pairs()
-            .find(|(key, _)| key == name)
-            .map(|(_, value)| value.into_owned())
+fn query_value(action: &Url, name: &str) -> Option<String> {
+    action
+        .query_pairs()
+        .find(|(key, _)| key == name)
+        .map(|(_, value)| value.into_owned())
+}
+
+/// 站点页面请求下载。页面内容不可信，不能让它替用户写文件：
+/// - 请求带着注入脚本的一次性签名（只有用户真的点了「下载本集」才会有），直接在后台开始下载，
+///   并告诉页面结果，用户不用离开正在看的页面；
+/// - 否则只打开下载页、把地址和名称填进表单，由用户点「开始下载」。
+fn start_or_prefill_download(app: &AppHandle, action: &Url) {
+    let raw = query_value(action, "url").unwrap_or_default();
+    let signed = match (query_value(action, "nonce"), query_value(action, "sig")) {
+        (Some(nonce), Some(signature)) => app
+            .state::<ActionKey>()
+            .verify("download", &raw, &nonce, &signature),
+        _ => false,
     };
+    if !signed {
+        prefill_download(app, action);
+        return;
+    }
+    let title = query_value(action, "title");
+    let result = app
+        .state::<downloads::DownloadManager>()
+        .start(&raw, title.as_deref());
+    let detail = match &result {
+        Ok(view) => serde_json::json!({ "ok": true, "title": view.item.title }),
+        Err(err) => {
+            log::warn!("开始下载失败：{err}");
+            serde_json::json!({ "ok": false, "error": err })
+        }
+    };
+    if let Some(main) = app.get_webview_window(MAIN) {
+        let _ = main.eval(format!(
+            "window.dispatchEvent(new CustomEvent('cktv:download', {{ detail: {detail} }}));"
+        ));
+    }
+}
+
+/// 只打开下载页，并把地址和名称填进表单，不会直接开始；开始下载要用户在下载页里点「开始下载」。
+fn prefill_download(app: &AppHandle, action: &Url) {
+    let query = |name: &str| query_value(action, name);
     let source = match downloads::parse_source(&query("url").unwrap_or_default()) {
         Ok(url) => url.to_string(),
         Err(err) => {
@@ -133,6 +180,77 @@ fn prefill_download(app: &AppHandle, action: &Url) {
     let title = query("title").unwrap_or_default();
     if let Err(err) = open_downloads(app, Some((source.as_str(), title.as_str()))) {
         log::warn!("打开下载页失败：{err}");
+    }
+}
+
+/// 「用浏览器打开」的目标地址。页面内容不可信，不能借这个动作打开任意网址：
+/// 只接受 http(s)，并且必须是线路列表里的站点（也就是用户正在看的站点）。
+fn browser_target(settings: &settings::Settings, action: &Url) -> Option<Url> {
+    let raw = action
+        .query_pairs()
+        .find(|(key, _)| key == "url")
+        .map(|(_, value)| value.into_owned())?;
+    let target = Url::parse(&raw).ok()?;
+    if !matches!(target.scheme(), "http" | "https") {
+        return None;
+    }
+    servers::is_known_host(settings, &target).then_some(target)
+}
+
+fn open_in_browser(app: &AppHandle, action: &Url) {
+    let Some(target) = browser_target(&settings::current(app), action) else {
+        log::warn!("忽略不在线路列表里的地址：{action}");
+        return;
+    };
+    if let Err(err) = app.opener().open_url(target.as_str(), None::<&str>) {
+        log::warn!("用浏览器打开失败：{err}");
+    }
+}
+
+/// CKTV 播放器页面的地址。参数来自站点页面，不可信：
+/// 视频地址只接受 http(s)；返回地址只接受线路列表里的站点，否则不带（播放器里按「返回」走历史记录）。
+fn player_page(settings: &settings::Settings, action: &Url) -> Option<String> {
+    let source = Url::parse(&query_value(action, "url")?).ok()?;
+    if !matches!(source.scheme(), "http" | "https") {
+        return None;
+    }
+    let title: String = query_value(action, "title")
+        .unwrap_or_default()
+        .chars()
+        .take(120)
+        .collect();
+    let back = query_value(action, "back")
+        .and_then(|raw| Url::parse(&raw).ok())
+        .filter(|url| matches!(url.scheme(), "http" | "https"))
+        .filter(|url| servers::is_known_host(settings, url));
+    let mut page = Url::parse("http://localhost/player.html").expect("固定的地址");
+    {
+        let mut query = page.query_pairs_mut();
+        query.append_pair("src", source.as_str());
+        if !title.is_empty() {
+            query.append_pair("title", &title);
+        }
+        if let Some(back) = &back {
+            query.append_pair("back", back.as_str());
+        }
+    }
+    Some(format!("player.html?{}", page.query().unwrap_or_default()))
+}
+
+/// 在主窗口里打开 CKTV 播放器（手机和电脑都是主窗口，返回时回到站点页面）
+fn open_player(app: &AppHandle, action: &Url) {
+    let Some(page) = player_page(&settings::current(app), action) else {
+        log::warn!("忽略无效的播放请求：{action}");
+        return;
+    };
+    let result = local_url(&page).and_then(|url| {
+        app.get_webview_window(MAIN)
+            .ok_or_else(|| "主窗口不存在".to_string())?
+            .navigate(url)
+            .map_err(|err| err.to_string())
+    });
+    if let Err(err) = result {
+        log::warn!("打开播放器失败：{err}");
     }
 }
 
@@ -315,5 +433,100 @@ mod tests {
         assert_eq!(updater_page(Some("about")), "updates.html?tab=about");
         assert_eq!(updater_page(Some("x');alert(1);//")), "updates.html");
         assert_eq!(updater_page(None), "updates.html");
+    }
+
+    fn browser_action(target: &str) -> Url {
+        let mut action = Url::parse("cktv://browser").expect("固定的地址");
+        action.query_pairs_mut().append_pair("url", target);
+        action
+    }
+
+    fn player_action(pairs: &[(&str, &str)]) -> Url {
+        let mut action = Url::parse("cktv://player").expect("固定的地址");
+        for (key, value) in pairs {
+            action.query_pairs_mut().append_pair(key, value);
+        }
+        action
+    }
+
+    fn player_params(page: &str) -> Vec<(String, String)> {
+        let query = page.strip_prefix("player.html?").expect("播放器页面");
+        Url::parse(&format!("http://localhost/?{query}"))
+            .unwrap()
+            .query_pairs()
+            .map(|(key, value)| (key.into_owned(), value.into_owned()))
+            .collect()
+    }
+
+    #[test]
+    fn player_page_keeps_valid_parameters_only() {
+        let settings = settings::Settings::default();
+        let page = player_page(
+            &settings,
+            &player_action(&[
+                ("url", "https://cdn.example.com/a/index.m3u8?t=1&x=2"),
+                ("title", "第 1 集 & 特别篇"),
+                ("back", "https://tv.chuankangkk.top/play?id=9"),
+            ]),
+        )
+        .unwrap();
+        assert_eq!(
+            player_params(&page),
+            vec![
+                (
+                    "src".to_string(),
+                    "https://cdn.example.com/a/index.m3u8?t=1&x=2".to_string()
+                ),
+                ("title".to_string(), "第 1 集 & 特别篇".to_string()),
+                (
+                    "back".to_string(),
+                    "https://tv.chuankangkk.top/play?id=9".to_string()
+                ),
+            ]
+        );
+        // 返回地址不是线路站点（或是 javascript:）时丢掉
+        for back in ["https://evil.example.com/", "javascript:alert(1)"] {
+            let page = player_page(
+                &settings,
+                &player_action(&[("url", "https://cdn.example.com/v.mp4"), ("back", back)]),
+            )
+            .unwrap();
+            assert!(
+                player_params(&page).iter().all(|(key, _)| key != "back"),
+                "{back}"
+            );
+        }
+        // 视频地址必须是 http(s)
+        for source in ["javascript:alert(1)", "file:///etc/passwd", ""] {
+            assert_eq!(
+                player_page(&settings, &player_action(&[("url", source)])),
+                None
+            );
+        }
+    }
+
+    #[test]
+    fn browser_action_only_opens_the_current_site() {
+        let settings = settings::Settings::default();
+        let page = "https://tv.chuankangkk.top/play?id=1&ep=2";
+        assert_eq!(
+            browser_target(&settings, &browser_action(page)).map(|url| url.to_string()),
+            Some(page.to_string())
+        );
+        // 不在线路列表里的站点、非 http(s) 地址、缺少参数，一律不打开
+        for target in [
+            "https://evil.example.com/",
+            "javascript:alert(1)",
+            "file:///etc/passwd",
+            "not a url",
+        ] {
+            assert_eq!(
+                browser_target(&settings, &browser_action(target)),
+                None,
+                "{target}"
+            );
+        }
+        let empty = Url::parse("cktv://browser").expect("固定的地址");
+        assert_eq!(browser_target(&settings, &empty), None);
     }
 }

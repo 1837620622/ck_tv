@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#000000" />
+    <meta name="referrer" content="no-referrer" />
+    <title>CKTV 播放器</title>
+    <link rel="stylesheet" href="./styles/tokens.css" />
+    <link rel="stylesheet" href="./styles/base.css" />
+    <link rel="stylesheet" href="./styles/components.css" />
+    <link rel="stylesheet" href="./styles/player.css" />
+    <script type="module" src="./js/player.js"></script>
+  </head>
+  <body>
+    <!--
+      CKTV 播放器：和站点自己的播放器分开，手势操作参考手机视频应用的习惯。
+      竖屏时画面在上、信息在下；横屏或全屏时画面铺满。界面由 js/player.js 控制。
+    -->
+    <div class="pl" id="pl" data-ui="shown">
+      <div class="pl-stage" id="stage">
+        <video
+          id="video"
+          playsinline
+          webkit-playsinline
+          preload="auto"
+          x-webkit-airplay="allow"
+        ></video>
+        <div class="pl-dim" id="dim" aria-hidden="true"></div>
+        <div class="pl-touch" id="touch" aria-hidden="true"></div>
+
+        <div class="pl-spinner" id="spinner" hidden aria-hidden="true">
+          <span></span>
+        </div>
+
+        <div class="pl-hud" id="hud" hidden role="status" aria-live="polite">
+          <span class="pl-hud-icon" id="hud-icon"></span>
+          <span class="pl-hud-text" id="hud-text"></span>
+          <span class="pl-hud-bar" id="hud-bar"><i></i></span>
+        </div>
+
+        <header class="pl-top">
+          <button class="pl-btn" id="back" type="button" aria-label="返回"></button>
+          <div class="pl-top-title" id="top-title"></div>
+        </header>
+
+        <button
+          class="pl-big-play"
+          id="big-play"
+          type="button"
+          aria-label="播放"
+        ></button>
+
+        <button
+          class="pl-btn pl-lock"
+          id="lock"
+          type="button"
+          aria-label="锁定屏幕"
+        ></button>
+
+        <footer class="pl-bottom">
+          <button class="pl-btn" id="play" type="button" aria-label="播放"></button>
+          <span class="pl-time" id="time-current">00:00</span>
+          <div
+            class="pl-seek"
+            id="seek"
+            role="slider"
+            tabindex="0"
+            aria-label="播放进度"
+            aria-valuemin="0"
+            aria-valuemax="0"
+            aria-valuenow="0"
+          >
+            <div class="pl-seek-track">
+              <div class="pl-seek-buffer" id="seek-buffer"></div>
+              <div class="pl-seek-played" id="seek-played"></div>
+            </div>
+            <div class="pl-seek-thumb" id="seek-thumb"></div>
+          </div>
+          <span class="pl-time" id="time-total">00:00</span>
+          <button class="pl-btn pl-text-btn" id="speed" type="button">
+            倍速
+          </button>
+          <button
+            class="pl-btn"
+            id="fullscreen"
+            type="button"
+            aria-label="全屏"
+          ></button>
+        </footer>
+
+        <div class="pl-menu" id="speed-menu" hidden role="menu" aria-label="播放速度"></div>
+
+        <div class="pl-error" id="error" hidden role="alert">
+          <p class="pl-error-text" id="error-text"></p>
+          <div class="pl-error-actions">
+            <button class="btn btn-primary btn-sm" id="retry" type="button">
+              重试
+            </button>
+            <button class="btn btn-ghost btn-sm" id="error-back" type="button">
+              返回
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <section class="pl-info" id="info">
+        <h1 class="pl-title" id="title">CKTV 播放器</h1>
+        <p class="pl-meta" id="meta"></p>
+        <div class="pl-actions" id="actions"></div>
+        <ul class="pl-tips">
+          <li>单击显示或隐藏控制栏，双击暂停 / 播放</li>
+          <li>左右滑动调进度，左侧上下滑调亮度，右侧上下滑调音量</li>
+          <li>长按画面 2 倍速播放，松手恢复</li>
+        </ul>
+      </section>
+    </div>
+  </body>
+</html>

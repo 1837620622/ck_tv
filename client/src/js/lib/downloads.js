@@ -4,6 +4,8 @@ export const STATUS_RUNNING = 'running';
 export const STATUS_DONE = 'done';
 export const STATUS_FAILED = 'failed';
 export const STATUS_CANCELED = 'canceled';
+/** 分片已下载完、正在合成 MP4（原生层 downloads.rs 的 STAGE_CONVERTING） */
+export const STAGE_CONVERTING = 'converting';
 
 const UNITS = ['B', 'KB', 'MB', 'GB', 'TB'];
 
@@ -23,12 +25,17 @@ export function formatBytes(bytes) {
 /** 进度百分比（0–100）。总量未知时返回 null，界面显示成不确定的进度条。 */
 export function progressPercent(item) {
   if (item.status === STATUS_DONE) return 100;
+  // 合成 MP4 时没有可报的进度，显示不确定的进度条
+  if (item.stage === STAGE_CONVERTING) return null;
   if (!item.total) return null;
   return Math.min(100, Math.floor((item.done / item.total) * 100));
 }
 
 /** 进度文字：分片视频显示“已完成 / 总数 个分片”，文件显示大小 */
 export function progressText(item) {
+  if (item.status === STATUS_RUNNING && item.stage === STAGE_CONVERTING) {
+    return '正在合成 MP4…';
+  }
   if (item.kind === 'hls') {
     return item.total ? `${item.done} / ${item.total} 个分片` : '准备中…';
   }

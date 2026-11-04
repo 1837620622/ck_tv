@@ -20,102 +20,107 @@
     <div id="app" class="boot">
       <div class="boot-bg" aria-hidden="true"></div>
 
-      <div class="boot-stage">
-        <!-- 上半部分是品牌区，位置固定；下半部分是状态区，高度固定，线路出现时品牌区不会跳动 -->
-        <div class="boot-hero">
-          <!-- 标志的各部件由 pages.css 里的动画依次出现：光晕呼吸、涟漪一次、圆环描画、播放三角弹出、高光扫过 -->
-          <div class="mark" aria-hidden="true">
-            <span class="halo"></span>
-            <svg class="mark-svg" viewBox="0 0 512 512" focusable="false">
-              <defs>
-                <linearGradient id="bk-bg" x1="0" y1="0" x2="1" y2="1">
-                  <stop offset="0" stop-color="#18231F" />
-                  <stop offset="1" stop-color="#060908" />
-                </linearGradient>
-                <radialGradient id="bk-glow" cx="0.42" cy="0.4" r="0.62">
-                  <stop offset="0" stop-color="#22C55E" stop-opacity="0.3" />
-                  <stop offset="1" stop-color="#22C55E" stop-opacity="0" />
-                </radialGradient>
-                <linearGradient id="bk-ring" x1="0.1" y1="0" x2="0.9" y2="1">
-                  <stop offset="0" stop-color="#A7F3D0" />
-                  <stop offset="0.45" stop-color="#34D399" />
-                  <stop offset="1" stop-color="#059669" />
-                </linearGradient>
-                <linearGradient id="bk-play" x1="0" y1="0" x2="1" y2="1">
-                  <stop offset="0" stop-color="#FFFFFF" />
-                  <stop offset="1" stop-color="#D1FAE5" />
-                </linearGradient>
-              </defs>
-              <rect width="512" height="512" rx="116" fill="url(#bk-bg)" />
-              <rect width="512" height="512" rx="116" fill="url(#bk-glow)" />
-              <rect
-                x="3"
-                y="3"
-                width="506"
-                height="506"
-                rx="113"
-                fill="none"
-                stroke="#FFFFFF"
-                stroke-opacity="0.1"
-                stroke-width="3"
-              />
-              <path
-                class="mk-ring"
-                pathLength="100"
-                d="M 372.6 347.1 A 148 148 0 1 1 372.6 164.9"
-                fill="none"
-                stroke="url(#bk-ring)"
-                stroke-width="46"
-                stroke-linecap="round"
-              />
-              <path
-                class="mk-play"
-                d="M 222 196 L 222 316 L 322 256 Z"
-                fill="url(#bk-play)"
-                stroke="url(#bk-play)"
-                stroke-width="26"
-                stroke-linejoin="round"
-              />
-              <circle class="mk-dot" cx="404" cy="256" r="17" fill="#6EE7B7" />
-            </svg>
-            <span class="sheen"></span>
-          </div>
+      <!--
+        品牌组：网站标志和站名「CKTV-传康播放器」（和网站顶栏一样）画在同一张 240×180 的 SVG 里，下面是进度条。
+        进入站点时 src/inject/remote.js 会在同一位置画出同一张图（静止的最终画面），
+        所以从启动页切到站点时画面不动，只有站点淡入。改这里的图形或位置时，两边要一起改
+        （test/brand-lockup.test.mjs 会检查两边一致）。
+      -->
+      <main class="boot-center">
+        <h1 class="visually-hidden">CKTV 传康播放器</h1>
+        <svg
+          class="lockup"
+          viewBox="0 0 240 180"
+          width="240"
+          height="180"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <defs>
+            <linearGradient id="bk-bg" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#18231F" />
+              <stop offset="1" stop-color="#060908" />
+            </linearGradient>
+            <radialGradient id="bk-glow" cx="0.42" cy="0.4" r="0.62">
+              <stop offset="0" stop-color="#22C55E" stop-opacity="0.3" />
+              <stop offset="1" stop-color="#22C55E" stop-opacity="0" />
+            </radialGradient>
+            <linearGradient id="bk-ring" x1="0.1" y1="0" x2="0.9" y2="1">
+              <stop offset="0" stop-color="#A7F3D0" />
+              <stop offset="0.45" stop-color="#34D399" />
+              <stop offset="1" stop-color="#059669" />
+            </linearGradient>
+            <linearGradient id="bk-play" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#FFFFFF" />
+              <stop offset="1" stop-color="#D1FAE5" />
+            </linearGradient>
+          </defs>
+          <g class="lk-mark">
+          <g transform="translate(68 0) scale(0.203125)">
+            <rect width="512" height="512" rx="116" fill="url(#bk-bg)" />
+            <rect width="512" height="512" rx="116" fill="url(#bk-glow)" />
+            <rect
+              x="3"
+              y="3"
+              width="506"
+              height="506"
+              rx="113"
+              fill="none"
+              stroke="#FFFFFF"
+              stroke-opacity="0.1"
+              stroke-width="3"
+            />
+            <path
+              class="lk-ring"
+              pathLength="100"
+              d="M 372.6 347.1 A 148 148 0 1 1 372.6 164.9"
+              fill="none"
+              stroke="url(#bk-ring)"
+              stroke-width="46"
+              stroke-linecap="round"
+            />
+            <path
+              class="lk-play"
+              d="M 222 196 L 222 316 L 322 256 Z"
+              fill="url(#bk-play)"
+              stroke="url(#bk-play)"
+              stroke-width="26"
+              stroke-linejoin="round"
+            />
+            <circle class="lk-dot" cx="404" cy="256" r="17" fill="#6EE7B7" />
+          </g>
+          </g>
+          <text
+            class="lk-name"
+            x="120"
+            y="150"
+            text-anchor="middle"
+            font-size="22"
+            font-weight="700"
+            letter-spacing="-0.5"
+            fill="#F0FDF4"
+          >CKTV-传康播放器</text>
+        </svg>
 
-          <h1 class="brand" aria-label="CKTV">
-            <span class="ch" style="--i: 0" aria-hidden="true">C</span>
-            <span class="ch" style="--i: 1" aria-hidden="true">K</span>
-            <span class="ch" style="--i: 2" aria-hidden="true">T</span>
-            <span class="ch" style="--i: 3" aria-hidden="true">V</span>
-          </h1>
-          <span class="boot-rule" aria-hidden="true"></span>
-          <p class="brand-sub">传康播放器</p>
+        <div class="boot-progress" aria-hidden="true"><i></i></div>
 
-          <ul class="pledge" aria-label="非盈利、免费、无偿提供">
-            <li class="chip" style="--i: 0">非盈利</li>
-            <li class="chip" style="--i: 1">免费</li>
-            <li class="chip" style="--i: 2">无偿提供</li>
-          </ul>
-
-          <p class="caption">
-            本应用不内置、不传播任何影视资源，内容来自公开的第三方接口，在线播放。下载的视频只保存在你自己的设备上，仅供个人离线观看。
-          </p>
+        <div class="status" id="status" role="status" aria-live="polite">
+          <span class="status-icon" id="status-icon"></span>
+          <span class="status-text" id="status-text">正在准备…</span>
         </div>
-
-        <div class="boot-panel">
-          <div class="status" id="status" role="status" aria-live="polite">
-            <span class="status-icon" id="status-icon"></span>
-            <span id="status-text">正在准备…</span>
-          </div>
-
-          <ul class="routes" id="routes" aria-label="线路测速"></ul>
-        </div>
-      </div>
+      </main>
 
       <footer class="boot-foot">
-        <span class="boot-version" id="version"></span>
-        <button class="btn btn-ghost btn-sm" id="open-updates" type="button">
-          线路与更新
-        </button>
+        <p class="boot-pledge">非盈利 · 免费 · 无偿提供</p>
+        <p class="caption">
+          本应用不内置、不传播任何影视资源，内容来自公开的第三方接口，在线播放。下载的视频只保存在你自己的设备上，仅供个人离线观看。
+        </p>
+        <div class="boot-foot-row">
+          <span class="boot-version" id="version"></span>
+          <button class="btn btn-ghost btn-sm" id="open-updates" type="button">
+            线路与更新
+          </button>
+        </div>
       </footer>
     </div>
   </body>
