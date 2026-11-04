@@ -212,15 +212,33 @@ function updateSummary() {
   $('empty').hidden = state.items.length > 0;
 }
 
+/** 进度事件攒一下再画：原生层每 1MB 就发一条，高速下载时一秒能来上百条，
+ * 每条都重建整行 DOM 会把页面拖卡。200ms 内只重绘一次，中间的新状态先记下来，
+ * 到时间一次画出来；期间被删除的行不再画出来。 */
+let pendingRows = new Map();
+let flushTimer = null;
+
+function flushRows() {
+  flushTimer = null;
+  const pending = pendingRows;
+  pendingRows = new Map();
+  for (const view of pending.values()) {
+    if (!state.items.some((row) => row.id === view.id)) continue;
+    const row = renderRow(view);
+    const previous = state.rows.get(view.id);
+    if (previous) previous.replaceWith(row);
+    else list.prepend(row);
+    state.rows.set(view.id, row);
+  }
+  updateSummary();
+}
+
 /** 替换或新增一行。原生层每次进度变化都会发来一条记录，只动这一行。 */
 function showItem(view) {
   state.items = upsertItem(state.items, view);
-  const row = renderRow(view);
-  const previous = state.rows.get(view.id);
-  if (previous) previous.replaceWith(row);
-  else list.prepend(row);
-  state.rows.set(view.id, row);
-  updateSummary();
+  pendingRows.set(view.id, view);
+  if (flushTimer) return;
+  flushTimer = setTimeout(flushRows, 200);
 }
 
 function dropItem(id) {
