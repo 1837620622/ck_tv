@@ -18,6 +18,8 @@ const MobileHeader = ({ showBackButton = false }: MobileHeaderProps) => {
     // 顶部留出安全区：iPhone 刘海屏、手机客户端和添加到主屏幕后，页面会延伸到状态栏下面（viewport-fit=cover）。
     // 普通浏览器里这个值是 0，没有影响。
     <header
+      // 客户端（App）里用这个标记换成原生应用风格的顶栏（样式在 client/src/inject/remote.js）
+      data-app='header'
       className='w-full border-b border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-950 md:hidden'
       style={{ paddingTop: 'env(safe-area-inset-top)' }}
     >

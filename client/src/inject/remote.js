@@ -298,6 +298,98 @@
     @media (prefers-reduced-motion: reduce) { .banner { animation: none; } }
   `;
 
+  /* ---------- 应用里的站点外观：更像原生应用，不像照搬网页 ---------- */
+
+  /*
+   * 只在应用里生效（这段脚本只在应用里运行），网页版不受影响。和进站画面一样只用可构造样式表，
+   * 不往页面里加元素。站点组件上有 data-app 标记（header / tabbar / welcome）；
+   * 站点还没更新到带标记的版本时，用后面的备用选择器匹配。
+   * - 隐藏网页才需要的东西：首次访问的免责卡片（启动页已经写了）、「手机客户端下载」卡片
+   * - 手机上顶栏、底栏换成半透明毛玻璃，底栏一屏 5 个、按格滑动，当前一项有底色
+   * - 去掉网页式的点击高亮和长按弹出菜单
+   */
+  const APP_CSS = `
+    [data-app='welcome'],
+    div.fixed[class*='z-[999]'][class*='bottom-[calc(4.25rem'],
+    section[aria-labelledby='mobile-download-title'] {
+      display: none !important;
+    }
+    html {
+      -webkit-tap-highlight-color: transparent;
+    }
+    a, button, img, [role='button'] {
+      -webkit-touch-callout: none;
+    }
+    @media (max-width: 767px) {
+      [data-app='header'], header.md\\:hidden {
+        position: sticky !important;
+        top: 0;
+        z-index: 500;
+        border-bottom: 0.5px solid rgb(127 127 127 / 0.18) !important;
+        background: rgb(255 255 255 / 0.82) !important;
+        backdrop-filter: saturate(180%) blur(20px);
+        -webkit-backdrop-filter: saturate(180%) blur(20px);
+        -webkit-user-select: none;
+        user-select: none;
+      }
+      html.dark [data-app='header'], html.dark header.md\\:hidden {
+        background: rgb(8 10 16 / 0.78) !important;
+      }
+      [data-app='tabbar'], nav.fixed[class*='z-[600]'] {
+        border-top: 0.5px solid rgb(127 127 127 / 0.2) !important;
+        background: rgb(255 255 255 / 0.86) !important;
+        backdrop-filter: saturate(180%) blur(20px);
+        -webkit-backdrop-filter: saturate(180%) blur(20px);
+        -webkit-user-select: none;
+        user-select: none;
+      }
+      html.dark [data-app='tabbar'], html.dark nav.fixed[class*='z-[600]'] {
+        background: rgb(8 10 16 / 0.82) !important;
+      }
+      [data-app='tabbar'] ul, nav.fixed[class*='z-[600]'] ul {
+        scroll-snap-type: x mandatory;
+        padding: 0 4px;
+      }
+      [data-app='tabbar'] li, nav.fixed[class*='z-[600]'] li {
+        flex: 0 0 20% !important;
+        min-width: 0 !important;
+        scroll-snap-align: start;
+      }
+      [data-app='tabbar'] li a, nav.fixed[class*='z-[600]'] li a {
+        position: relative;
+        font-weight: 500;
+      }
+      [data-app='tabbar'] li[data-active='true'] a::before,
+      nav.fixed[class*='z-[600]'] li[data-active='true'] a::before {
+        content: '';
+        position: absolute;
+        top: 7px;
+        left: 50%;
+        width: 44px;
+        height: 26px;
+        margin-left: -22px;
+        border-radius: 999px;
+        background: rgb(34 197 94 / 0.16);
+      }
+    }
+  `;
+
+  function applyAppStyle() {
+    if (
+      typeof CSSStyleSheet !== 'function' ||
+      !('adoptedStyleSheets' in Document.prototype)
+    ) {
+      return;
+    }
+    try {
+      const sheet = new CSSStyleSheet();
+      sheet.replaceSync(APP_CSS);
+      document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+    } catch {
+      // 样式没加上只是外观和网页一样，不影响使用
+    }
+  }
+
   /* ---------- 开场：第一次进入站点时的品牌画面 ---------- */
 
   function curtainShown() {
@@ -1035,6 +1127,7 @@
     watchResume();
     watchStreams();
     // 进站画面只用样式表，不需要等 <body>：越早盖上，越不会露出站点加载中的样子
+    applyAppStyle();
     entryCurtain();
     whenBody(watchNetwork);
     mountDockAfterHydration();
