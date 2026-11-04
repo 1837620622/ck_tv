@@ -14,6 +14,7 @@ import {
   progressPercent,
   progressText,
   rewritePlaylist,
+  STAGE_CONVERTING,
   STATUS_CANCELED,
   STATUS_DONE,
   STATUS_FAILED,
@@ -234,4 +235,25 @@ test('prefillFrom 读出站点发来的地址和名称，没有地址时返回 n
     prefillFrom(`?url=x&title=${'字'.repeat(100)}`).title.length,
     80
   );
+});
+
+test('分片下载完正在合成 MP4：显示合成中，进度条不确定', () => {
+  const converting = {
+    kind: 'hls',
+    status: STATUS_RUNNING,
+    stage: STAGE_CONVERTING,
+    done: 40,
+    total: 40,
+  };
+  assert.equal(progressText(converting), '正在合成 MP4…');
+  assert.equal(progressPercent(converting), null);
+  // 合成好以后原生层把这一项改成普通视频文件，按大小显示
+  const converted = {
+    kind: 'file',
+    status: STATUS_DONE,
+    done: 3 * 1024 * 1024,
+    total: 3 * 1024 * 1024,
+  };
+  assert.equal(progressText(converted), '3.0 MB / 3.0 MB');
+  assert.equal(kindLabel('file'), '视频文件');
 });

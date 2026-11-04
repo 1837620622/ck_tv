@@ -1,5 +1,6 @@
 //! 窗口：主窗口（启动页 → 远程站点）、更新中心窗口、导航拦截、站点注入。
 
+use crate::action_key::ActionKey;
 use crate::update::{self, Status, UpdateManager, UpdateState};
 use crate::{downloads, platform_name, servers, settings};
 use tauri::webview::PageLoadEvent;
@@ -12,6 +13,8 @@ pub const UPDATER: &str = "updater";
 pub const DOWNLOADS: &str = "downloads";
 /// 注入到远程站点页面里的脚本（开场、断网提示、更新提示、回到前台检查）
 const REMOTE_SCRIPT: &str = include_str!("../../src/inject/remote.js");
+/// 注入脚本里签名密钥的占位符，生成脚本时换成本次启动的随机密钥（见 action_key 模块）
+const ACTION_KEY_PLACEHOLDER: &str = "__CKTV_ACTION_KEY__";
 /// 窗口底色和启动页一致。站点加载前窗口是这个颜色，不会闪出白屏。
 const BACKGROUND: Color = Color(6, 10, 19, 255);
 
@@ -33,7 +36,12 @@ fn init_script(app: &AppHandle) -> String {
         "platform": platform_name(),
         "mobile": cfg!(any(target_os = "android", target_os = "ios")),
     });
-    format!("window.__CKTV_APP__ = Object.freeze({info});\n{REMOTE_SCRIPT}")
+    // 密钥只写进注入脚本的闭包，不挂在 window 上，站点自己的脚本读不到
+    let script = REMOTE_SCRIPT.replace(
+        ACTION_KEY_PLACEHOLDER,
+        &app.state::<ActionKey>().secret_hex(),
+    );
+    format!("window.__CKTV_APP__ = Object.freeze({info});\n{script}")
 }
 
 /// 创建主窗口。先打开本地启动页，启动页测速后再进入远程站点。
@@ -99,9 +107,9 @@ fn handle_action(app: &AppHandle, url: &Url) {
         "home" => {
             let _ = open_home(app);
         }
-        // 站点页面上的下载按钮：cktv://download?url=…&title=…。只打开下载页并填好地址，
-        // 不直接开始下载，要用户在下载页里确认。
-        "download" => prefill_download(app, url),
+        // 站点页面上的下载按钮：cktv://download?url=…&title=…[&nonce=…&sig=…]。
+        // 带着有效的一次性签名（用户真的点了注入的按钮）就直接开始下载；否则只打开下载页并填好地址。
+        "download" => start_or_prefill_download(app, url),
         // 站点页面上的「下载列表」按钮
         "downloads" => {
             if let Err(err) = open_downloads(app, None) {
@@ -116,15 +124,50 @@ fn handle_action(app: &AppHandle, url: &Url) {
     }
 }
 
-/// 站点页面请求下载（cktv://download?url=…&title=…）：只打开下载页，并把地址和名称填进表单，
-/// 不会直接开始。页面内容不可信，不能让它替用户写文件；开始下载要用户在下载页里点「开始下载」。
-fn prefill_download(app: &AppHandle, action: &Url) {
-    let query = |name: &str| {
-        action
-            .query_pairs()
-            .find(|(key, _)| key == name)
-            .map(|(_, value)| value.into_owned())
+fn query_value(action: &Url, name: &str) -> Option<String> {
+    action
+        .query_pairs()
+        .find(|(key, _)| key == name)
+        .map(|(_, value)| value.into_owned())
+}
+
+/// 站点页面请求下载。页面内容不可信，不能让它替用户写文件：
+/// - 请求带着注入脚本的一次性签名（只有用户真的点了「下载本集」才会有），直接在后台开始下载，
+///   并告诉页面结果，用户不用离开正在看的页面；
+/// - 否则只打开下载页、把地址和名称填进表单，由用户点「开始下载」。
+fn start_or_prefill_download(app: &AppHandle, action: &Url) {
+    let raw = query_value(action, "url").unwrap_or_default();
+    let signed = match (query_value(action, "nonce"), query_value(action, "sig")) {
+        (Some(nonce), Some(signature)) => app
+            .state::<ActionKey>()
+            .verify("download", &raw, &nonce, &signature),
+        _ => false,
     };
+    if !signed {
+        prefill_download(app, action);
+        return;
+    }
+    let title = query_value(action, "title");
+    let result = app
+        .state::<downloads::DownloadManager>()
+        .start(&raw, title.as_deref());
+    let detail = match &result {
+        Ok(view) => serde_json::json!({ "ok": true, "title": view.item.title }),
+        Err(err) => {
+            log::warn!("开始下载失败：{err}");
+            serde_json::json!({ "ok": false, "error": err })
+        }
+    };
+    if let Some(main) = app.get_webview_window(MAIN) {
+        let _ = main.eval(format!(
+            "window.dispatchEvent(new CustomEvent('cktv:download', {{ detail: {detail} }}));"
+        ));
+    }
+}
+
+/// 只打开下载页，并把地址和名称填进表单，不会直接开始；开始下载要用户在下载页里点「开始下载」。
+fn prefill_download(app: &AppHandle, action: &Url) {
+    let query = |name: &str| query_value(action, name);
     let source = match downloads::parse_source(&query("url").unwrap_or_default()) {
         Ok(url) => url.to_string(),
         Err(err) => {

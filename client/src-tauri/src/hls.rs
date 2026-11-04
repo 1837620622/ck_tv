@@ -1,6 +1,7 @@
 //! HLS 播放列表（.m3u8）解析和分片解密，只包含下载需要的部分：
 //! 主播放列表选最高码率；分片可以是明文，也可以是 AES-128 加密。
-//! fMP4 和字节范围分片暂不支持，遇到时直接说明原因，不生成残缺的文件。
+//! 分片可以是 TS，也可以是 fMP4（#EXT-X-MAP 指定的初始化分片排在最前面，`init` 为 true）。
+//! 字节范围分片、中途更换初始化分片暂不支持，遇到时直接说明原因，不生成残缺的文件。
 
 use reqwest::Url;
 
@@ -27,6 +28,8 @@ pub struct Segment {
     pub sequence: u64,
     /// 分片时长（秒），来自 #EXTINF，生成本地播放列表时要用
     pub duration: f64,
+    /// fMP4 的初始化分片（#EXT-X-MAP）：没有画面，只描述编码，要放在所有分片前面
+    pub init: bool,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -70,8 +73,21 @@ pub fn parse(text: &str, base: &Url) -> Result<Playlist, String> {
                 .trim()
                 .parse()
                 .map_err(|_| "播放列表的序号格式不对".to_string())?;
-        } else if line.starts_with("#EXT-X-MAP") {
-            return Err("这是 fMP4 格式的视频，暂不支持下载".into());
+        } else if let Some(rest) = line.strip_prefix("#EXT-X-MAP:") {
+            if !segments.is_empty() {
+                return Err("播放列表中途更换了初始化分片，暂不支持下载".into());
+            }
+            if value(rest, "BYTERANGE").is_some() {
+                return Err("初始化分片使用了字节范围，暂不支持下载".into());
+            }
+            let uri = value(rest, "URI").ok_or("初始化分片缺少地址")?;
+            segments.push(Segment {
+                uri: resolve(base, &uri)?,
+                key: key.clone(),
+                sequence,
+                duration: 0.0,
+                init: true,
+            });
         } else if line.starts_with("#EXT-X-BYTERANGE") {
             return Err("分片使用了字节范围，暂不支持下载".into());
         } else if line.starts_with('#') {
@@ -81,12 +97,14 @@ pub fn parse(text: &str, base: &Url) -> Result<Playlist, String> {
             match bandwidth.take() {
                 Some(bandwidth) => variants.push(Variant { bandwidth, uri }),
                 None => {
-                    let index = segments.len() as u64;
+                    // 初始化分片不占序号，序号只按真正的分片数
+                    let index = segments.iter().filter(|segment| !segment.init).count() as u64;
                     segments.push(Segment {
                         uri,
                         key: key.clone(),
                         sequence: sequence + index,
                         duration: std::mem::take(&mut duration),
+                        init: false,
                     });
                 }
             }
@@ -267,14 +285,29 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_encryption_and_fmp4_are_refused_with_a_reason() {
+    fn unsupported_encryption_and_byte_ranges_are_refused_with_a_reason() {
         let sample_aes = "#EXTM3U\n#EXT-X-KEY:METHOD=SAMPLE-AES,URI=\"k\"\nx.ts\n";
         let error = parse(sample_aes, &base()).unwrap_err();
         assert!(error.contains("SAMPLE-AES"), "{error}");
-        let fmp4 = "#EXTM3U\n#EXT-X-MAP:URI=\"init.mp4\"\nx.m4s\n";
-        assert!(parse(fmp4, &base()).unwrap_err().contains("fMP4"));
         let ranges = "#EXTM3U\n#EXT-X-BYTERANGE:100@0\nx.ts\n";
         assert!(parse(ranges, &base()).is_err());
+        let two_maps =
+            "#EXTM3U\n#EXT-X-MAP:URI=\"a.mp4\"\nx.m4s\n#EXT-X-MAP:URI=\"b.mp4\"\ny.m4s\n";
+        assert!(parse(two_maps, &base()).unwrap_err().contains("初始化分片"));
+    }
+
+    #[test]
+    fn fmp4_playlists_put_the_init_section_first() {
+        let text = "#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:5\n#EXT-X-MAP:URI=\"init.mp4\"\n#EXTINF:4,\na.m4s\n#EXTINF:3,\nb.m4s\n";
+        let Playlist::Media(segments) = parse(text, &base()).unwrap() else {
+            panic!("应该是媒体播放列表");
+        };
+        assert_eq!(segments.len(), 3);
+        assert!(segments[0].init);
+        assert!(segments[0].uri.as_str().ends_with("/init.mp4"));
+        assert!(!segments[1].init && !segments[2].init);
+        assert_eq!((segments[1].sequence, segments[2].sequence), (5, 6));
+        assert_eq!(segments[1].duration, 4.0);
     }
 
     #[test]

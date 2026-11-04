@@ -3,8 +3,9 @@
 //! 两种来源：
 //! - 直链视频（mp4、webm 等）：边下载边写入文件，内存里只保留一个数据块。
 //! - HLS（.m3u8）：选最高码率，分片最多 4 个并发下载；AES-128 分片在本机解密后，
-//!   按顺序写成 00000.ts、00001.ts……，再生成一个指向本地分片的 index.m3u8。
-//!   应用内用 hls.js 播放，系统播放器也能打开 index.m3u8。
+//!   按顺序写成 00000.ts、00001.ts……，然后合成一个 `<id>.mp4`（见 remux 模块），删掉分片，
+//!   得到一个任何播放器都能直接打开的视频文件。fMP4 分片直接拼接成 MP4。
+//!   TS 里是 H.265 等暂不支持的编码时，保留分片和本地 index.m3u8，应用内照样能播放。
 //!   SAMPLE-AES 等 DRM 加密直接报错，不生成残缺的文件。
 //!
 //! 进度只在内存里更新，并通过事件通知界面；写进 downloads.json 的只有开始、完成、失败、取消几次，避免频繁写盘。
@@ -26,7 +27,7 @@ use tauri_plugin_opener::OpenerExt;
 use tokio::io::AsyncWriteExt;
 
 use crate::hls::{self, Playlist, Segment};
-use crate::{lock, servers};
+use crate::{lock, remux, servers};
 
 /// 下载状态变化时发给界面的事件，载荷是 [`View`]
 pub const EVENT: &str = "download-changed";
@@ -44,15 +45,18 @@ const SEGMENT_PARALLELISM: usize = 4;
 /// 直链视频每写入这么多字节，通知界面一次
 const PROGRESS_STEP: u64 = 1024 * 1024;
 const CANCELLED: &str = "已取消";
+/// 分片下载完、正在合成 MP4 时的阶段名，界面据此显示「正在合成 MP4」
+pub const STAGE_CONVERTING: &str = "converting";
 const VIDEO_EXTENSIONS: [&str; 7] = ["mp4", "webm", "m4v", "mov", "mkv", "flv", "ts"];
 
 /// 下载的种类
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Kind {
-    /// 直链视频：一个文件，进度单位是字节
+    /// 直链视频，或已经合成好的 MP4：一个文件，进度单位是字节
     File,
-    /// HLS：一个文件夹，里面是分片和 index.m3u8，进度单位是分片
+    /// HLS：下载时是一个装着分片的文件夹，进度单位是分片。合成 MP4 成功后改成 File；
+    /// 编码不支持合成时保留文件夹和 index.m3u8
     Hls,
 }
 
@@ -73,7 +77,7 @@ pub struct Item {
     pub title: String,
     pub source: String,
     pub kind: Kind,
-    /// 入口文件，相对于下载目录：直链是 `<id>.mp4`，HLS 是 `<id>/index.m3u8`
+    /// 入口文件，相对于下载目录：直链和合成好的视频是 `<id>.mp4`，保留分片时是 `<id>/index.m3u8`
     pub entry: String,
     pub status: Status,
     /// 已完成的进度：直链是字节数，HLS 是分片数
@@ -82,6 +86,9 @@ pub struct Item {
     pub total: u64,
     pub error: Option<String>,
     pub created_ms: u64,
+    /// 下载中的阶段：None 是正在下载，`converting` 是分片已下载完、正在合成 MP4
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stage: Option<String>,
 }
 
 /// 发给界面的一项：多了入口文件的绝对路径，界面用它播放
@@ -181,6 +188,7 @@ impl DownloadManager {
             total: 0,
             error: None,
             created_ms: now_ms(),
+            stage: None,
         };
         let cancel = Arc::new(AtomicBool::new(false));
         let view = {
@@ -321,13 +329,19 @@ impl DownloadManager {
         if !is_safe_id(&item.id) {
             return;
         }
-        let result = match item.kind {
-            Kind::Hls => std::fs::remove_dir_all(self.dir.join(&item.id)),
-            Kind::File => std::fs::remove_file(self.dir.join(&item.entry)),
+        let results = match item.kind {
+            // 分片文件夹，以及可能已经合成了一半的 MP4
+            Kind::Hls => vec![
+                std::fs::remove_dir_all(self.dir.join(&item.id)),
+                std::fs::remove_file(self.dir.join(format!("{}.mp4", item.id))),
+            ],
+            Kind::File => vec![std::fs::remove_file(self.dir.join(&item.entry))],
         };
-        if let Err(err) = result {
-            if err.kind() != std::io::ErrorKind::NotFound {
-                log::warn!("删除下载文件失败：{err}");
+        for result in results {
+            if let Err(err) = result {
+                if err.kind() != std::io::ErrorKind::NotFound {
+                    log::warn!("删除下载文件失败：{err}");
+                }
             }
         }
     }
@@ -389,13 +403,14 @@ async fn download(manager: &DownloadManager, id: &str, cancel: &AtomicBool) -> R
             item.entry = format!("{id}/index.m3u8");
         });
         let folder = manager.dir().join(id);
-        return fetch_hls(&client, &source, &text, &folder, cancel, |done, total| {
+        let fetched = fetch_hls(&client, &source, &text, &folder, cancel, |done, total| {
             manager.update(id, |item| {
                 item.done = done;
                 item.total = total;
             });
         })
-        .await;
+        .await?;
+        return convert_hls(manager, id, &folder, fetched, cancel).await;
     }
     write_file(manager, id, cancel, response, first).await
 }
@@ -452,8 +467,77 @@ async fn write_file(
     Ok(())
 }
 
-/// 把 HLS 播放列表下载到 folder：选最高码率，解密分片，按顺序写成 00000.ts……，最后写 index.m3u8。
-/// 进度通过 progress(已完成分片数, 分片总数) 报告。
+/// 分片下载的结果：文件个数（含 fMP4 的初始化分片）和是否是 fMP4
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Fetched {
+    files: usize,
+    fmp4: bool,
+}
+
+/// 分片合成一个 `<id>.mp4`：成功后这一项改成普通视频文件，删掉分片文件夹。
+/// TS 编码不支持或内容异常时保留分片（应用内照样能播放），不算下载失败；fMP4 拼接失败才算失败。
+async fn convert_hls(
+    manager: &DownloadManager,
+    id: &str,
+    folder: &Path,
+    fetched: Fetched,
+    cancel: &AtomicBool,
+) -> Result<(), String> {
+    if cancel.load(Ordering::SeqCst) {
+        return Err(CANCELLED.into());
+    }
+    manager.update(id, |item| item.stage = Some(STAGE_CONVERTING.into()));
+    let parts: Vec<PathBuf> = (0..fetched.files)
+        .map(|index| folder.join(segment_file(index)))
+        .collect();
+    let out = manager.dir().join(format!("{id}.mp4"));
+    let target = out.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        if fetched.fmp4 {
+            remux::concat_fmp4(&parts, &target).map(|()| None)
+        } else {
+            remux::ts_to_mp4(&parts, &target).map(Some)
+        }
+    })
+    .await
+    .map_err(|err| format!("合成 MP4 的任务出错：{err}"))?;
+    manager.update(id, |item| item.stage = None);
+    if cancel.load(Ordering::SeqCst) {
+        return Err(CANCELLED.into());
+    }
+    match result {
+        Ok(stats) => {
+            if let Some(stats) = stats {
+                log::info!("已合成 MP4：{id}，{stats:?}");
+            }
+            let size = tokio::fs::metadata(&out)
+                .await
+                .map(|meta| meta.len())
+                .unwrap_or(0);
+            manager.update(id, |item| {
+                item.kind = Kind::File;
+                item.entry = format!("{id}.mp4");
+                item.done = size;
+                item.total = size;
+            });
+            if let Err(err) = tokio::fs::remove_dir_all(folder).await {
+                log::warn!("删除分片文件夹失败：{err}");
+            }
+            Ok(())
+        }
+        Err(err) => {
+            let _ = tokio::fs::remove_file(&out).await;
+            if fetched.fmp4 {
+                return Err(err.to_string());
+            }
+            log::warn!("没有合成 MP4，保留分片：{err}");
+            Ok(())
+        }
+    }
+}
+
+/// 把 HLS 播放列表下载到 folder：选最高码率，解密分片，按顺序写成 00000.ts……，再写 index.m3u8
+/// （合成 MP4 失败时应用内用它播放）。进度通过 progress(已完成分片数, 分片总数) 报告。
 async fn fetch_hls(
     client: &reqwest::Client,
     source: &Url,
@@ -461,7 +545,7 @@ async fn fetch_hls(
     folder: &Path,
     cancel: &AtomicBool,
     mut progress: impl FnMut(u64, u64),
-) -> Result<(), String> {
+) -> Result<Fetched, String> {
     let playlist = match hls::parse(text, source)? {
         Playlist::Master(variants) => {
             let best = hls::best_variant(variants).ok_or("播放列表里没有可用的画质")?;
@@ -484,6 +568,7 @@ async fn fetch_hls(
         .await
         .map_err(write_error)?;
     let total = segments.len() as u64;
+    let fmp4 = segments.first().is_some_and(|segment| segment.init);
     let durations: Vec<f64> = segments.iter().map(|segment| segment.duration).collect();
     let keys = Arc::new(fetch_keys(client, &segments).await?);
     progress(0, total);
@@ -508,16 +593,25 @@ async fn fetch_hls(
         done += 1;
         progress(done, total);
     }
-    write_local_playlist(folder, &durations).await
+    write_local_playlist(folder, &durations, fmp4).await?;
+    Ok(Fetched {
+        files: done as usize,
+        fmp4,
+    })
 }
 
-/// 本地播放列表：只指向已经解密好的分片，不带任何密钥
-async fn write_local_playlist(folder: &Path, durations: &[f64]) -> Result<(), String> {
+/// 本地播放列表：只指向已经解密好的分片，不带任何密钥。fMP4 的第一个文件是初始化分片。
+async fn write_local_playlist(folder: &Path, durations: &[f64], fmp4: bool) -> Result<(), String> {
     let target = durations.iter().copied().fold(1.0_f64, f64::max).ceil() as u64;
     let mut text = format!(
-        "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-TARGETDURATION:{target}\n#EXT-X-MEDIA-SEQUENCE:0\n"
+        "#EXTM3U\n#EXT-X-VERSION:{}\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXT-X-TARGETDURATION:{target}\n#EXT-X-MEDIA-SEQUENCE:0\n",
+        if fmp4 { 7 } else { 3 }
     );
-    for (index, duration) in durations.iter().enumerate() {
+    let skip = usize::from(fmp4);
+    if fmp4 {
+        let _ = writeln!(text, "#EXT-X-MAP:URI=\"{}\"", segment_file(0));
+    }
+    for (index, duration) in durations.iter().enumerate().skip(skip) {
         let _ = writeln!(
             text,
             "#EXTINF:{:.3},\n{}",
@@ -814,7 +908,9 @@ mod tests {
     async fn local_playlist_lists_every_segment_with_its_duration() {
         let dir = std::env::temp_dir().join(format!("cktv-playlist-{}", now_ms()));
         tokio::fs::create_dir_all(&dir).await.unwrap();
-        write_local_playlist(&dir, &[4.0, 3.5]).await.unwrap();
+        write_local_playlist(&dir, &[4.0, 3.5], false)
+            .await
+            .unwrap();
         let text = std::fs::read_to_string(dir.join("index.m3u8")).unwrap();
         assert!(text.starts_with("#EXTM3U\n"));
         assert!(text.contains("#EXT-X-TARGETDURATION:4\n"));
@@ -822,6 +918,22 @@ mod tests {
         assert!(text.contains("#EXTINF:3.500,\n00001.ts\n"));
         assert!(text.ends_with("#EXT-X-ENDLIST\n"));
         assert!(!text.contains("KEY"));
+        assert!(!text.contains("MAP"));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn fmp4_local_playlist_points_at_the_init_section() {
+        let dir = std::env::temp_dir().join(format!("cktv-playlist-fmp4-{}", now_ms()));
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+        write_local_playlist(&dir, &[0.0, 4.0, 2.0], true)
+            .await
+            .unwrap();
+        let text = std::fs::read_to_string(dir.join("index.m3u8")).unwrap();
+        assert!(text.contains("#EXT-X-MAP:URI=\"00000.ts\"\n"));
+        assert!(!text.contains("#EXTINF:0.001,\n00000.ts"));
+        assert!(text.contains("#EXTINF:4.000,\n00001.ts\n"));
+        assert!(text.contains("#EXTINF:2.000,\n00002.ts\n"));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -886,12 +998,19 @@ mod tests {
         let client = reqwest::Client::new();
         let cancel = AtomicBool::new(false);
         let mut reports = Vec::new();
-        fetch_hls(&client, &source, master, &folder, &cancel, |done, total| {
+        let fetched = fetch_hls(&client, &source, master, &folder, &cancel, |done, total| {
             reports.push((done, total))
         })
         .await
         .unwrap();
 
+        assert_eq!(
+            fetched,
+            Fetched {
+                files: 2,
+                fmp4: false
+            }
+        );
         assert_eq!(reports.last(), Some(&(2, 2)));
         assert_eq!(std::fs::read(folder.join("00000.ts")).unwrap(), plain[0]);
         assert_eq!(std::fs::read(folder.join("00001.ts")).unwrap(), plain[1]);

@@ -39,6 +39,46 @@
   // 动画和提示只在顶层页面出现；站点里嵌入的 iframe（比如播放器）不管
   const isTopFrame = window.top === window;
 
+  /*
+   * 「下载本集」请求的一次性签名（原生层 src-tauri/src/action_key.rs 验证）。
+   * 密钥由原生层在生成注入脚本时写进下面的占位符，只存在这个闭包里，站点自己的脚本读不到；
+   * 用到的加密接口也在这里先拿到，站点之后改动全局对象也影响不到。
+   * 有效签名的请求会直接开始下载；拿不到签名（例如浏览器预览里占位符没被替换）时退回到只填好下载页。
+   */
+  const signAction = makeSigner('__CKTV_ACTION_KEY__');
+
+  function makeSigner(hexKey) {
+    const cryptoApi = window.crypto;
+    if (!cryptoApi?.subtle || !/^[0-9a-f]{64}$/.test(hexKey)) return null;
+    const importKey = cryptoApi.subtle.importKey.bind(cryptoApi.subtle);
+    const sign = cryptoApi.subtle.sign.bind(cryptoApi.subtle);
+    const randomValues = cryptoApi.getRandomValues.bind(cryptoApi);
+    const encoder = new TextEncoder();
+    const toHex = (bytes) =>
+      Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+    const raw = new Uint8Array(
+      hexKey.match(/../g).map((pair) => Number.parseInt(pair, 16))
+    );
+    const keyReady = importKey(
+      'raw',
+      raw,
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign']
+    ).catch(() => null);
+    return async (action, value) => {
+      const key = await keyReady;
+      if (!key) return null;
+      const nonce = toHex(randomValues(new Uint8Array(16)));
+      const signature = await sign(
+        'HMAC',
+        key,
+        encoder.encode(`${action}|${value}|${nonce}`)
+      );
+      return { nonce, sig: toHex(new Uint8Array(signature)) };
+    };
+  }
+
   const FONT =
     '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif';
   const CURTAIN_KEY = 'cktv-curtain-shown';
@@ -545,7 +585,11 @@
   // 只读取资源加载记录，不改写站点自己的请求。分片列表（.m3u8）优先，没有时用 .mp4 直链。
   const DOWNLOAD_LABEL = '下载本集';
   // 点了只是打开下载页、把地址填好，还要在那边确认，所以不能写成「已开始下载」
+  // 没有签名时只是打开下载页、把地址填好，还要在那边确认，所以不能写成「已开始下载」
   const DOWNLOAD_DONE_LABEL = '已打开下载页';
+  const DOWNLOAD_STARTING_LABEL = '正在开始…';
+  const DOWNLOAD_STARTED_LABEL = '已开始下载';
+  const DOWNLOAD_FAILED_LABEL = '下载失败';
   const DOWNLOAD_DONE_MS = 2500;
   const latestStream = { m3u8: '', mp4: '' };
   let dismissedStream = '';
@@ -744,16 +788,19 @@
       }
     });
 
-    download.addEventListener('click', () => {
-      if (!dock.url) return;
-      const query = `url=${encodeURIComponent(
-        dock.url
-      )}&title=${encodeURIComponent(pageTitle())}`;
+    download.addEventListener('click', async (event) => {
+      // 只认用户真的点击；站点脚本模拟的点击（isTrusted 为 false）不算
+      if (!dock.url || !event.isTrusted) return;
+      const url = dock.url;
+      let query = `url=${encodeURIComponent(url)}&title=${encodeURIComponent(
+        pageTitle()
+      )}`;
+      const signed = signAction
+        ? await signAction('download', url).catch(() => null)
+        : null;
+      if (signed) query += `&nonce=${signed.nonce}&sig=${signed.sig}`;
+      showDownloadLabel(signed ? DOWNLOAD_STARTING_LABEL : DOWNLOAD_DONE_LABEL);
       nativeAction(`download?${query}`);
-      download.textContent = DOWNLOAD_DONE_LABEL;
-      setTimeout(() => {
-        download.textContent = DOWNLOAD_LABEL;
-      }, DOWNLOAD_DONE_MS);
     });
     list.addEventListener('click', () => nativeAction('downloads'));
     close.addEventListener('click', () => {
@@ -763,6 +810,31 @@
 
     if (pendingStream) showStream(pendingStream);
   }
+
+  let labelTimer = 0;
+  function showDownloadLabel(text, title = '') {
+    if (!dock) return;
+    dock.download.textContent = text;
+    dock.download.title = title;
+    clearTimeout(labelTimer);
+    labelTimer = setTimeout(() => {
+      dock.download.textContent = DOWNLOAD_LABEL;
+      dock.download.title = '';
+    }, DOWNLOAD_DONE_MS);
+  }
+
+  // 原生层直接开始下载后的结果
+  window.addEventListener('cktv:download', (event) => {
+    const detail = event.detail || {};
+    if (detail.ok) {
+      showDownloadLabel(
+        DOWNLOAD_STARTED_LABEL,
+        '在菜单的「下载管理」里查看进度'
+      );
+    } else {
+      showDownloadLabel(DOWNLOAD_FAILED_LABEL, String(detail.error || ''));
+    }
+  });
 
   function showStream(url) {
     if (!dock) {

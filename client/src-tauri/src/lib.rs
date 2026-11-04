@@ -11,6 +11,7 @@
 //! - `hls`：HLS 播放列表解析和 AES-128 分片解密，供下载使用。
 //! - `menu` / `tray`：桌面端原生菜单和托盘。
 
+mod action_key;
 mod commands;
 mod downloads;
 mod hls;
@@ -18,6 +19,7 @@ mod http;
 #[cfg(desktop)]
 mod menu;
 mod region;
+mod remux;
 mod servers;
 mod settings;
 #[cfg(desktop)]
@@ -112,6 +114,8 @@ pub fn run() {
             });
             app.manage(update::UpdateManager::new());
             app.manage(downloads::DownloadManager::load(&handle)?);
+            // 站点页面「下载本集」的一次性签名密钥，必须在创建主窗口（生成注入脚本）之前准备好
+            app.manage(action_key::ActionKey::new()?);
 
             window::create_main(&handle)?;
 
