@@ -72,7 +72,15 @@ pub fn create_main(app: &AppHandle) -> tauri::Result<WebviewWindow> {
 fn handle_navigation(app: &AppHandle, url: &Url) -> bool {
     match url.scheme() {
         "cktv" => {
-            handle_action(app, url);
+            // 注意：这个回调跑在网页导航所在的 UI 线程上。以前在这里直接建窗口
+            //（打开更新中心、下载页），新窗口的 WebView 初始化又要等 UI 线程，
+            // 两边互相等，整个应用就会卡死无响应。只在这里取消导航，
+            // 真正的动作挪到异步任务里做，回调立刻返回。
+            let action_app = app.clone();
+            let action_url = url.clone();
+            tauri::async_runtime::spawn(async move {
+                handle_action(&action_app, &action_url);
+            });
             false
         }
         "tauri" | "about" | "data" | "blob" => true,
