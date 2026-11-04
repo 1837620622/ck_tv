@@ -4,7 +4,8 @@ import { Download, Smartphone } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 // 手机客户端的安装包都放在 GitHub Release 里。这里总是指向「最新的正式版本」：
-// 读取接口成功时，按钮直接指向最新的安装包文件；读取失败时，按钮指向 Release 页面，
+// 每次打开页面都重新查最新发布：先走本站的 /api/latest（服务端查、边缘缓存 5 分钟，
+// 访客不用直连 GitHub API），失败再直连 api.github.com，最后回落到 Release 页面，
 // 那里永远列着最新版本，所以链接不会失效。
 const REPO = '1837620622/ck_tv';
 const RELEASES_PAGE = `https://github.com/${REPO}/releases/latest`;
@@ -30,17 +31,48 @@ export default function MobileAppDownload() {
 
   useEffect(() => {
     const controller = new AbortController();
-    fetch(`https://api.github.com/repos/${REPO}/releases/latest`, {
-      headers: { Accept: 'application/vnd.github+json' },
-      signal: controller.signal,
-    })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: LatestRelease | null) => {
-        if (data && Array.isArray(data.assets)) setRelease(data);
-      })
-      .catch(() => {
+    const signal = controller.signal;
+    (async () => {
+      // 1) 本站接口：服务端查最新发布，访客网络屏蔽 GitHub API 时也能显示版本号
+      try {
+        const res = await fetch('/api/latest', { signal });
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.ok && data.tag) {
+            setRelease({
+              tag_name: data.tag,
+              assets: data.androidUrl
+                ? [
+                    {
+                      name: 'CKTV_android.apk',
+                      browser_download_url: data.androidUrl,
+                    },
+                  ]
+                : [],
+            });
+            return;
+          }
+        }
+      } catch {
+        // 掉到下一级
+      }
+      // 2) 直连 GitHub API
+      try {
+        const res = await fetch(
+          `https://api.github.com/repos/${REPO}/releases/latest`,
+          {
+            headers: { Accept: 'application/vnd.github+json' },
+            signal,
+          }
+        );
+        if (res.ok) {
+          const data: LatestRelease = await res.json();
+          if (data && Array.isArray(data.assets)) setRelease(data);
+        }
+      } catch {
         // 读取失败不影响页面：按钮已经指向 Release 页面
-      });
+      }
+    })();
     return () => controller.abort();
   }, []);
 
