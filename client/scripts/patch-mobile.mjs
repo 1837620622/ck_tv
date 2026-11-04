@@ -144,7 +144,8 @@ class MainActivity : TauriActivity() {
     return null
   }
 
-  private fun setImmersive(on: Boolean) {
+  // 不能叫 setImmersive：Activity 自己有这个方法
+  private fun applyFullscreen(on: Boolean) {
     immersive = on
     val controller = WindowCompat.getInsetsController(window, window.decorView)
     if (on) {
@@ -163,7 +164,7 @@ class MainActivity : TauriActivity() {
   inner class NativeBridge {
     @JavascriptInterface
     fun setFullscreen(on: Boolean) {
-      runOnUiThread { setImmersive(on) }
+      runOnUiThread { applyFullscreen(on) }
     }
   }
 
