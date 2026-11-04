@@ -2470,14 +2470,20 @@ function PlayPageClient() {
             <div className='mt-4 flex gap-2'>
               <button
                 type='button'
-                onClick={() =>
-                  videoTitle
-                    ? router.push(`/search?q=${encodeURIComponent(videoTitle)}`)
-                    : router.back()
-                }
+                onClick={() => {
+                  // 播放失败时也要回到“当初搜的那次”列表，而不是只按片名重搜：
+                  // 用户可能是按别名、错别字搜进来的，片名和搜索词不一样。
+                  // 选集面板的“去搜索”已经是 searchTitle || videoTitle，这里保持一致。
+                  const backQuery = searchTitle || videoTitle;
+                  if (backQuery) {
+                    router.push(`/search?q=${encodeURIComponent(backQuery)}`);
+                  } else {
+                    router.back();
+                  }
+                }}
                 className='border border-green-600 bg-green-600 px-4 py-2 text-sm text-white'
               >
-                {videoTitle ? '返回搜索' : '返回上页'}
+                {searchTitle || videoTitle ? '返回搜索' : '返回上页'}
               </button>
               <button
                 type='button'

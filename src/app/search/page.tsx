@@ -391,11 +391,10 @@ function SearchPageClient() {
                           <VideoCard
                             from='search'
                             items={group}
-                            query={
-                              searchQuery.trim() !== group[0].title
-                                ? searchQuery.trim()
-                                : ''
-                            }
+                            // 搜索词就算和片名完全一样也要传下去：播放页靠
+                            // stitle + from=search 判断“是从搜索来的”，
+                            // 以前这里传空，返回时就认不出搜索来源。
+                            query={searchQuery.trim()}
                           />
                         </div>
                       );
@@ -414,11 +413,7 @@ function SearchPageClient() {
                           source={item.source}
                           source_name={item.source_name}
                           douban_id={item.douban_id?.toString()}
-                          query={
-                            searchQuery.trim() !== item.title
-                              ? searchQuery.trim()
-                              : ''
-                          }
+                          query={searchQuery.trim()}
                           year={item.year}
                           from='search'
                           type={
