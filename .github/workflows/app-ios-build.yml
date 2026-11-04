@@ -1,0 +1,86 @@
+name: App iOS Build
+
+# 只构建未签名的 IPA，上传为运行产物（Artifact），不创建 Release、不推送标签。
+# 用来在发布前验证 iOS 包能否构建、图标补丁（scripts/patch-mobile.mjs ios）是否生效。
+# 步骤和 app-release.yml 的 ios 任务一致。
+
+on:
+  workflow_dispatch:
+  # 工作流文件还没进入默认分支时，手动触发不可用；在工作分支上改了客户端就自动构建一次
+  push:
+    branches: [claude/affectionate-gates-u4cey5]
+    paths: ['client/**', '.github/workflows/app-ios-build.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-ios-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ipa:
+    name: iPhone / iPad IPA（仅构建）
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: client/pnpm-lock.yaml
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: client/src-tauri
+
+      - name: 安装前端依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 生成 iOS 工程
+        run: |
+          command -v xcodegen >/dev/null || brew install xcodegen
+          pnpm tauri ios init --ci
+
+      - name: 给 iOS 工程打补丁（图标）
+        run: node scripts/patch-mobile.mjs ios
+
+      - name: 构建界面（供 Rust 编译使用）
+        run: pnpm build
+
+      - name: 构建未签名的 IPA
+        run: pnpm tauri ios build --ci --no-sign --target aarch64
+
+      # 列出 IPA 里编译好的图标，确认是 AppIcon（不是空的或默认的）
+      - name: 检查 IPA 和图标
+        run: |
+          IPA_SRC=$(find src-tauri/gen/apple -name '*.ipa' | head -n 1)
+          if [ -z "$IPA_SRC" ]; then
+            echo "没有找到 IPA" >&2
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/out" "$RUNNER_TEMP/ipa"
+          cp "$IPA_SRC" "$RUNNER_TEMP/out/CKTV_build_ios-unsigned.ipa"
+          unzip -q "$IPA_SRC" -d "$RUNNER_TEMP/ipa"
+          APP=$(find "$RUNNER_TEMP/ipa/Payload" -maxdepth 1 -name '*.app' | head -n 1)
+          ls -l "$APP" | grep -i 'appicon\|Assets.car' || true
+          xcrun --sdk iphoneos assetutil --info "$APP/Assets.car" | grep -i '"Name"' | sort -u | head -20
+          # 图标的 PNG 也一起保存，方便下载后直接查看
+          cp "$APP"/AppIcon*.png "$RUNNER_TEMP/out/" 2>/dev/null || true
+          ls -l "$RUNNER_TEMP/out"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cktv-ios-ipa
+          path: ${{ runner.temp }}/out/
+          if-no-files-found: error
