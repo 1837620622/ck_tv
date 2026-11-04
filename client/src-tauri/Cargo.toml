@@ -1,6 +1,6 @@
 [package]
 name = "cktv-app"
-version = "1.2.4"
+version = "1.2.5"
 description = "CKTV 传康播放器客户端"
 authors = ["CKTV"]
 license = "MIT"
