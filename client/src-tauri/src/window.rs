@@ -110,6 +110,8 @@ fn handle_action(app: &AppHandle, url: &Url) {
         }
         // 站点页面切回前台时发来的：距离上次检查够久了才真的去检查
         "resume" => update::spawn_resume_check(app.clone()),
+        // 应用菜单里的「用浏览器打开」：cktv://browser?url=…
+        "browser" => open_in_browser(app, url),
         other => log::info!("忽略未知动作：{other}"),
     }
 }
@@ -133,6 +135,30 @@ fn prefill_download(app: &AppHandle, action: &Url) {
     let title = query("title").unwrap_or_default();
     if let Err(err) = open_downloads(app, Some((source.as_str(), title.as_str()))) {
         log::warn!("打开下载页失败：{err}");
+    }
+}
+
+/// 「用浏览器打开」的目标地址。页面内容不可信，不能借这个动作打开任意网址：
+/// 只接受 http(s)，并且必须是线路列表里的站点（也就是用户正在看的站点）。
+fn browser_target(settings: &settings::Settings, action: &Url) -> Option<Url> {
+    let raw = action
+        .query_pairs()
+        .find(|(key, _)| key == "url")
+        .map(|(_, value)| value.into_owned())?;
+    let target = Url::parse(&raw).ok()?;
+    if !matches!(target.scheme(), "http" | "https") {
+        return None;
+    }
+    servers::is_known_host(settings, &target).then_some(target)
+}
+
+fn open_in_browser(app: &AppHandle, action: &Url) {
+    let Some(target) = browser_target(&settings::current(app), action) else {
+        log::warn!("忽略不在线路列表里的地址：{action}");
+        return;
+    };
+    if let Err(err) = app.opener().open_url(target.as_str(), None::<&str>) {
+        log::warn!("用浏览器打开失败：{err}");
     }
 }
 
@@ -315,5 +341,36 @@ mod tests {
         assert_eq!(updater_page(Some("about")), "updates.html?tab=about");
         assert_eq!(updater_page(Some("x');alert(1);//")), "updates.html");
         assert_eq!(updater_page(None), "updates.html");
+    }
+
+    fn browser_action(target: &str) -> Url {
+        let mut action = Url::parse("cktv://browser").expect("固定的地址");
+        action.query_pairs_mut().append_pair("url", target);
+        action
+    }
+
+    #[test]
+    fn browser_action_only_opens_the_current_site() {
+        let settings = settings::Settings::default();
+        let page = "https://tv.chuankangkk.top/play?id=1&ep=2";
+        assert_eq!(
+            browser_target(&settings, &browser_action(page)).map(|url| url.to_string()),
+            Some(page.to_string())
+        );
+        // 不在线路列表里的站点、非 http(s) 地址、缺少参数，一律不打开
+        for target in [
+            "https://evil.example.com/",
+            "javascript:alert(1)",
+            "file:///etc/passwd",
+            "not a url",
+        ] {
+            assert_eq!(
+                browser_target(&settings, &browser_action(target)),
+                None,
+                "{target}"
+            );
+        }
+        let empty = Url::parse("cktv://browser").expect("固定的地址");
+        assert_eq!(browser_target(&settings, &empty), None);
     }
 }

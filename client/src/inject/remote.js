@@ -6,7 +6,8 @@
  * 3. 断网或线路响应异常时在顶部提示，可以一键切换线路；网络恢复后提示刷新。
  * 4. 收到「发现新版本」事件时，在右下角（手机上是底部）显示提示卡片。
  * 5. 切回前台时通知原生层，由它决定要不要检查更新。
- * 6. 页面在播放视频时，左下角显示「下载本集」和「列表」：只读取资源加载记录，不改写站点的请求。
+ * 6. 左下角的应用工具条：菜单（刷新、首页、下载管理、切换线路、检查更新、复制链接、用浏览器打开、关于）；
+ *    页面在播放视频时再显示「下载本集」和「列表」：只读取资源加载记录，不改写站点的请求。
  *
  * 站点不能直接调用原生功能：所有操作都是跳转到 cktv:// 地址，由原生侧拦截处理
  * （见 src-tauri/src/window.rs 的 handle_action）。界面都放在 Shadow DOM 里，
@@ -547,7 +548,6 @@
   const DOWNLOAD_DONE_LABEL = '已打开下载页';
   const DOWNLOAD_DONE_MS = 2500;
   const latestStream = { m3u8: '', mp4: '' };
-  let dock = null; // { node, download, list, close, url }
   let dismissedStream = '';
 
   // 返回 'm3u8' 或 'mp4'；不是 http(s) 的视频地址返回空字符串（blob: 之类的地址播放器内部用，无法下载）
@@ -582,9 +582,129 @@
       .slice(0, 60);
   }
 
+  /* ---------- 应用工具条：左下角的菜单按钮，播放视频时再加上「下载本集」和「列表」 ---------- */
+
+  // 菜单里的图标（线条风格，和站点一致）
+  const ICON_PATHS = {
+    menu: 'M4 7h16M4 12h16M4 17h16',
+    refresh: 'M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7',
+    home: 'M3 11l9-7 9 7M5 10v10h5v-6h4v6h5V10',
+    download: 'M12 4v11m0 0l-4.5-4.5M12 15l4.5-4.5M5 20h14',
+    route: 'M4 17l5-5-5-5M12 19h8M12 5h8M12 12h8',
+    update:
+      'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 16V8m0 0l-3.5 3.5M12 8l3.5 3.5',
+    link: 'M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1',
+    browser:
+      'M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5',
+    info: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v5M12 8h.01',
+  };
+
+  function svgIcon(name) {
+    const span = el('span', 'icon');
+    span.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${ICON_PATHS[name]}"/></svg>`;
+    return span;
+  }
+
+  // 复制文字：剪贴板接口不可用时，退回到选中文本再复制
+  async function copyText(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      const area = el('textarea');
+      area.value = text;
+      area.setAttribute('readonly', '');
+      area.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0';
+      document.body.append(area);
+      area.select();
+      let ok = false;
+      try {
+        ok = document.execCommand('copy');
+      } catch {
+        ok = false;
+      }
+      area.remove();
+      return ok;
+    }
+  }
+
+  // 菜单项：[图标, 文字, 点击后做的事]。null 是分隔线。
+  function menuItems() {
+    return [
+      ['refresh', '刷新页面', () => location.reload()],
+      ['home', '回到首页', () => location.assign('/')],
+      null,
+      ['download', '下载管理', () => nativeAction('downloads')],
+      ['route', '切换线路', () => nativeAction('updater?tab=servers')],
+      ['update', '检查更新', () => nativeAction('updater?tab=update')],
+      null,
+      ['link', '复制本页链接', (button) => copyLink(button)],
+      [
+        'browser',
+        '用浏览器打开',
+        () => nativeAction(`browser?url=${encodeURIComponent(location.href)}`),
+      ],
+      ['info', '关于 CKTV', () => nativeAction('updater?tab=about')],
+    ];
+  }
+
+  async function copyLink(button) {
+    const label = button.querySelector('.label');
+    const ok = await copyText(location.href);
+    label.textContent = ok ? '已复制链接' : '复制失败，请长按地址栏';
+    setTimeout(() => {
+      label.textContent = '复制本页链接';
+    }, 1600);
+  }
+
+  let dock = null; // { host, node, menuButton, panel, stream, download, url }
+  // 视频地址在工具条挂上之前就可能出现，先记下来，挂上后再显示
+  let pendingStream = '';
+
+  function setMenuOpen(open) {
+    if (!dock) return;
+    dock.panel.hidden = !open;
+    dock.menuButton.setAttribute('aria-expanded', String(open));
+    dock.node.classList.toggle('open', open);
+  }
+
   function mountDock() {
+    if (dock) return;
     const node = el('div', 'dock');
-    node.hidden = true;
+
+    // 菜单按钮和菜单
+    const menuButton = el('button', 'menu-button');
+    menuButton.type = 'button';
+    menuButton.setAttribute('aria-label', 'CKTV 菜单');
+    menuButton.setAttribute('aria-haspopup', 'menu');
+    menuButton.setAttribute('aria-expanded', 'false');
+    menuButton.append(svgIcon('menu'));
+
+    const panel = el('div', 'panel');
+    panel.setAttribute('role', 'menu');
+    panel.hidden = true;
+    panel.append(el('div', 'panel-title', 'CKTV 传康播放器'));
+    for (const item of menuItems()) {
+      if (!item) {
+        panel.append(el('div', 'sep'));
+        continue;
+      }
+      const [iconName, text, run] = item;
+      const button = el('button', 'item');
+      button.type = 'button';
+      button.setAttribute('role', 'menuitem');
+      button.append(svgIcon(iconName), el('span', 'label', text));
+      button.addEventListener('click', () => {
+        run(button);
+        // 复制链接要在菜单里显示结果，其它项点完就收起
+        if (iconName !== 'link') setMenuOpen(false);
+      });
+      panel.append(button);
+    }
+
+    // 播放视频时才出现的两个按钮
+    const stream = el('div', 'stream');
+    stream.hidden = true;
     const download = el('button', 'main', DOWNLOAD_LABEL);
     download.type = 'button';
     const list = el('button', 'sub', '列表');
@@ -592,8 +712,37 @@
     const close = el('button', 'close', '×');
     close.type = 'button';
     close.setAttribute('aria-label', '隐藏下载按钮');
-    node.append(download, list, close);
-    dock = { node, download, list, close, url: '' };
+    stream.append(download, list, close);
+
+    node.append(panel, menuButton, stream);
+    const layer = mountLayer('dock', DOCK_CSS, node);
+    dock = {
+      host: layer.host,
+      node,
+      menuButton,
+      panel,
+      stream,
+      download,
+      url: '',
+    };
+
+    menuButton.addEventListener('click', () => setMenuOpen(panel.hidden));
+    // 点菜单以外的地方或按 Esc 收起
+    document.addEventListener(
+      'pointerdown',
+      (event) => {
+        if (!panel.hidden && !event.composedPath().includes(layer.host)) {
+          setMenuOpen(false);
+        }
+      },
+      true
+    );
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && !panel.hidden) {
+        setMenuOpen(false);
+        menuButton.focus();
+      }
+    });
 
     download.addEventListener('click', () => {
       if (!dock.url) return;
@@ -609,22 +758,24 @@
     list.addEventListener('click', () => nativeAction('downloads'));
     close.addEventListener('click', () => {
       dismissedStream = dock.url;
-      dock.node.hidden = true;
+      stream.hidden = true;
     });
-    mountLayer('dock', DOCK_CSS, node);
+
+    if (pendingStream) showStream(pendingStream);
+  }
+
+  function showStream(url) {
+    if (!dock) {
+      pendingStream = url;
+      return;
+    }
+    pendingStream = '';
+    dock.url = url;
+    dock.stream.hidden = !url || url === dismissedStream;
   }
 
   function refreshDock() {
-    const url = latestStream.m3u8 || latestStream.mp4;
-    if (!url || url === dismissedStream) {
-      if (dock) dock.node.hidden = true;
-      return;
-    }
-    whenBody(() => {
-      if (!dock) mountDock();
-      dock.url = url;
-      dock.node.hidden = false;
-    });
+    showStream(latestStream.m3u8 || latestStream.mp4);
   }
 
   function watchStreams() {
@@ -641,6 +792,16 @@
     document.addEventListener('loadedmetadata', scanVideos, true);
   }
 
+  /**
+   * 工具条要等站点完成注水（hydration）之后再挂上：站点是 React 应用，注水前 <body> 里多出来的
+   * 元素会让 React 判定页面不一致而整页重绘。load 之后再等一会儿，注水早就完成了。
+   */
+  function mountDockAfterHydration() {
+    const later = () => setTimeout(() => whenBody(mountDock), 600);
+    if (document.readyState === 'complete') later();
+    else window.addEventListener('load', later, { once: true });
+  }
+
   const DOCK_CSS = `
     [hidden] { display: none !important; }
     .dock {
@@ -650,54 +811,119 @@
       z-index: 2147483000;
       display: flex;
       align-items: center;
-      gap: 4px;
-      padding: 4px;
-      border-radius: 999px;
-      background: rgb(9 14 26 / 0.9);
-      border: 1px solid rgb(148 163 184 / 0.22);
-      box-shadow: 0 10px 28px rgb(0 0 0 / 0.4);
-      backdrop-filter: blur(12px);
+      gap: 6px;
       font: 500 13px/1 ${FONT};
       color: #e2e8f0;
       animation: dock-in 0.32s ease both;
     }
-    .dock button {
+    /* 手机上站点底部有导航栏（高 3.5rem），工具条放在它上面，不挡导航 */
+    @media (max-width: 767px) {
+      .dock { bottom: calc(3.5rem + 12px + env(safe-area-inset-bottom, 0px)); }
+    }
+    button {
       appearance: none;
       margin: 0;
-      height: 32px;
-      padding: 0 12px;
       border: 0;
-      border-radius: 999px;
-      background: transparent;
       color: inherit;
       font: inherit;
       cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
     }
-    .dock .main {
+    button:focus-visible { outline: 2px solid #4ade80; outline-offset: 2px; }
+    .icon { display: inline-grid; place-items: center; flex: none; }
+    .menu-button, .stream {
+      background: rgb(9 14 26 / 0.9);
+      border: 1px solid rgb(148 163 184 / 0.22);
+      box-shadow: 0 10px 28px rgb(0 0 0 / 0.4);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+    .menu-button {
+      width: 40px;
+      height: 40px;
+      padding: 0;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      opacity: 0.82;
+      transition: opacity 0.15s ease, transform 0.15s ease, color 0.15s ease;
+    }
+    .menu-button:hover, .open .menu-button { opacity: 1; color: #4ade80; }
+    .menu-button:active { transform: scale(0.94); }
+    .stream {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px;
+      border-radius: 999px;
+    }
+    .stream button {
+      height: 32px;
+      padding: 0 12px;
+      border-radius: 999px;
+      background: transparent;
+    }
+    .stream .main {
       padding: 0 14px;
       color: #052e16;
       font-weight: 700;
       background: linear-gradient(135deg, #4ade80, #16a34a);
     }
-    .dock .sub:hover {
-      background: rgb(148 163 184 / 0.16);
+    .stream .sub:hover { background: rgb(148 163 184 / 0.16); }
+    .stream .close { width: 30px; padding: 0; color: #94a3b8; font-size: 18px; }
+    .stream .close:hover { color: #e2e8f0; background: rgb(148 163 184 / 0.16); }
+
+    .panel {
+      position: absolute;
+      left: 0;
+      bottom: calc(100% + 10px);
+      width: 220px;
+      max-height: min(440px, calc(100vh - 140px));
+      overflow-y: auto;
+      box-sizing: border-box;
+      padding: 6px;
+      border-radius: 16px;
+      background: rgb(9 14 26 / 0.97);
+      border: 1px solid rgb(148 163 184 / 0.22);
+      box-shadow: 0 18px 50px rgb(0 0 0 / 0.5);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      transform-origin: bottom left;
+      animation: panel-in 0.18s cubic-bezier(.2, .8, .2, 1) both;
     }
-    .dock .close {
-      width: 30px;
-      padding: 0;
-      color: #94a3b8;
-      font-size: 18px;
+    .panel-title {
+      padding: 8px 10px 6px;
+      color: #64748b;
+      font-size: 11.5px;
+      letter-spacing: 0.08em;
     }
-    .dock .close:hover {
-      color: #e2e8f0;
-      background: rgb(148 163 184 / 0.16);
+    .item {
+      width: 100%;
+      height: 40px;
+      padding: 0 10px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border-radius: 10px;
+      background: transparent;
+      text-align: left;
+      font-size: 14px;
     }
+    .item .icon { color: #94a3b8; }
+    .item:hover, .item:focus-visible { background: rgb(148 163 184 / 0.14); outline: none; }
+    .item:hover .icon { color: #4ade80; }
+    .sep { height: 1px; margin: 4px 8px; background: rgb(148 163 184 / 0.16); }
+
     @keyframes dock-in {
       from { opacity: 0; transform: translateY(8px); }
       to { opacity: 1; transform: none; }
     }
+    @keyframes panel-in {
+      from { opacity: 0; transform: translateY(6px) scale(0.98); }
+      to { opacity: 1; transform: none; }
+    }
     @media (prefers-reduced-motion: reduce) {
-      .dock { animation: none; }
+      .dock, .panel { animation: none; }
     }
   `;
 
@@ -713,5 +939,6 @@
     // 进站画面只用样式表，不需要等 <body>：越早盖上，越不会露出站点加载中的样子
     entryCurtain();
     whenBody(watchNetwork);
+    mountDockAfterHydration();
   }
 })();
