@@ -8,7 +8,8 @@
 // 为什么需要：src-tauri/gen/ 不进仓库，CI 每次构建都会重新生成。生成的工程用的是 Tauri 自带的
 // 默认图标（蓝黄两个圆环），也不处理状态栏，所以：
 //   安卓  1. 把 src-tauri/icons/android/ 里的 CKTV 图标覆盖进去（含自适应图标和深色底）
-//         2. 换掉 MainActivity：网页内容避开状态栏、导航栏、刘海和输入法，状态栏图标用浅色
+//         2. 换掉 MainActivity：网页内容避开状态栏、导航栏、刘海和输入法，状态栏图标用浅色；
+//            提供 window.CKTVNative.setFullscreen，CKTV 播放器全屏时横屏并隐藏系统栏
 //         3. 主题改成深色、窗口底色 #060A13：启动时不再闪白，和启动页颜色一致
 //   iOS   把 src-tauri/icons/ios/ 里的图标放进 AppIcon.appiconset，并写好 Contents.json
 //
@@ -67,13 +68,20 @@ function findFile(dir, name) {
 export function mainActivitySource(packageName) {
   return `package ${packageName}
 
+import android.content.pm.ActivityInfo
 import android.graphics.Color
 import android.os.Bundle
 import android.view.View
+import android.view.ViewGroup
+import android.view.ViewTreeObserver
+import android.webkit.JavascriptInterface
+import android.webkit.WebView
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 
 // 由 client/scripts/patch-mobile.mjs 生成。gen/ 目录每次构建都会重新生成，改这里没有用，要改那个脚本。
 //
@@ -81,7 +89,12 @@ import androidx.core.view.WindowInsetsCompat
 // 2. 网页内容不画到状态栏、导航栏、刘海和输入法下面：把这些区域的大小作为内边距加在内容外层。
 //    安卓 15 起应用一律全面屏显示，系统 WebView 又不一定把这些区域告诉网页，
 //    所以在原生层统一处理，所有安卓版本上的排版都一样。
+// 3. 给网页一个原生接口 window.CKTVNative.setFullscreen(true/false)：CKTV 播放器全屏时横屏、
+//    隐藏状态栏和导航栏（从边缘滑动可以临时调出），内容铺满整个屏幕；退出时恢复。
 class MainActivity : TauriActivity() {
+  private var immersive = false
+  private var content: View? = null
+
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge(
       statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
@@ -89,14 +102,68 @@ class MainActivity : TauriActivity() {
     )
     super.onCreate(savedInstanceState)
     window.decorView.setBackgroundColor(BACKGROUND)
-    val content = findViewById<View>(android.R.id.content)
-    ViewCompat.setOnApplyWindowInsetsListener(content) { view, insets ->
-      val bars = insets.getInsets(
-        WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout(),
-      )
-      val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
-      view.setPadding(bars.left, bars.top, bars.right, maxOf(bars.bottom, ime.bottom))
+    val root = findViewById<View>(android.R.id.content)
+    content = root
+    ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
+      if (immersive) {
+        view.setPadding(0, 0, 0, 0)
+      } else {
+        val bars = insets.getInsets(
+          WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout(),
+        )
+        val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+        view.setPadding(bars.left, bars.top, bars.right, maxOf(bars.bottom, ime.bottom))
+      }
       WindowInsetsCompat.CONSUMED
+    }
+    attachBridgeWhenReady()
+  }
+
+  // WebView 由 Rust 在 onCreate 之后才创建：等它出现在界面里，再注册原生接口（下一次打开页面起生效）
+  private fun attachBridgeWhenReady() {
+    val decor = window.decorView
+    decor.viewTreeObserver.addOnGlobalLayoutListener(
+      object : ViewTreeObserver.OnGlobalLayoutListener {
+        override fun onGlobalLayout() {
+          val webView = findWebView(decor) ?: return
+          decor.viewTreeObserver.removeOnGlobalLayoutListener(this)
+          webView.addJavascriptInterface(NativeBridge(), "CKTVNative")
+        }
+      },
+    )
+  }
+
+  private fun findWebView(view: View): WebView? {
+    if (view is WebView) return view
+    if (view is ViewGroup) {
+      for (index in 0 until view.childCount) {
+        val found = findWebView(view.getChildAt(index))
+        if (found != null) return found
+      }
+    }
+    return null
+  }
+
+  private fun setImmersive(on: Boolean) {
+    immersive = on
+    val controller = WindowCompat.getInsetsController(window, window.decorView)
+    if (on) {
+      controller.systemBarsBehavior =
+        WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+      controller.hide(WindowInsetsCompat.Type.systemBars())
+      requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+    } else {
+      controller.show(WindowInsetsCompat.Type.systemBars())
+      requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+    }
+    content?.let { ViewCompat.requestApplyInsets(it) }
+  }
+
+  // 给网页用的原生接口：只能切换全屏，任何页面调用都没有危害
+  inner class NativeBridge {
+    @JavascriptInterface
+    fun setFullscreen(on: Boolean) {
+      runOnUiThread { setImmersive(on) }
     }
   }
 

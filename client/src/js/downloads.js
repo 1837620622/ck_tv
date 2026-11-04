@@ -1,4 +1,4 @@
-// 下载页：新建下载、看进度、播放、全屏、取消和删除。
+// 下载页：新建下载、看进度、播放（用 CKTV 播放器）、取消和删除。
 // 桌面端是独立窗口，使用自绘标题栏；手机端是主窗口里的页面，顶部有返回按钮。
 // 视频保存在本机，播放时直接读本机文件，不经过网络。
 // 进度事件到了只替换对应的那一行，不重建整个列表。
@@ -12,14 +12,12 @@ import {
   canPlay,
   checkSource,
   displayTitle,
-  folderOf,
   hostOf,
   isRunning,
   kindLabel,
   prefillFrom,
   progressPercent,
   progressText,
-  rewritePlaylist,
   STATUS_DONE,
   statusLabel,
   statusTone,
@@ -29,8 +27,6 @@ import {
 
 const $ = (id) => document.getElementById(id);
 
-const player = $('player');
-const video = $('video');
 const list = $('list');
 
 const state = {
@@ -38,10 +34,6 @@ const state = {
   mobile: false,
   items: [], // 最新的在前，和原生层的顺序一致
   rows: new Map(), // id → 列表里对应的那一行
-  playing: null, // 正在播放的记录
-  hls: null, // hls.js 实例，只有播放分片视频时才有
-  blobUrl: null, // 分片播放列表的临时地址，关闭播放时释放
-  fullscreen: false, // 桌面端：窗口是否处于全屏
 };
 
 /* ================= 窗口与导航 ================= */
@@ -82,8 +74,6 @@ function applyChrome() {
 
 function onKeydown(event) {
   if (state.mobile) return;
-  // 播放器打开时，Esc 由播放器处理，不关闭整个下载窗口
-  if (document.querySelector('dialog[open]')) return;
   const typing =
     event.target instanceof Element &&
     event.target.closest('input, select, textarea');
@@ -234,7 +224,6 @@ function showItem(view) {
 }
 
 function dropItem(id) {
-  if (state.playing?.id === id) closePlayer();
   state.items = state.items.filter((row) => row.id !== id);
   state.rows.get(id)?.remove();
   state.rows.delete(id);
@@ -379,134 +368,25 @@ function prefillFromPage() {
   prefill(detail);
 }
 
-/* ================= 播放器 ================= */
-
-function setPlayerError(message) {
-  const node = $('player-error');
-  node.hidden = !message;
-  node.textContent = message || '';
-}
-
-function updateFullscreenButton() {
-  const on = state.mobile
-    ? Boolean(document.fullscreenElement)
-    : state.fullscreen;
-  const button = $('player-fs');
-  fill(button, icon(on ? 'exitFullscreen' : 'fullscreen', { size: 20 }));
-  button.setAttribute('aria-label', on ? '退出全屏' : '全屏');
-}
-
-async function setWindowFullscreen(on) {
-  try {
-    await getCurrentWindow().setFullscreen(on);
-    state.fullscreen = on;
-  } catch (error) {
-    logError('切换全屏失败', error);
-  }
-  updateFullscreenButton();
-}
-
-async function toggleFullscreen() {
-  if (inTauri && !state.mobile) {
-    await setWindowFullscreen(!state.fullscreen);
-    return;
-  }
-  // 手机端和浏览器预览：用网页的全屏接口。iPhone 不支持整块全屏，只能让视频本身全屏。
-  if (document.fullscreenElement) {
-    await document.exitFullscreen().catch(() => undefined);
-  } else if (document.fullscreenEnabled && player.requestFullscreen) {
-    await player.requestFullscreen().catch(() => undefined);
-  } else if (video.webkitEnterFullscreen) {
-    video.webkitEnterFullscreen();
-  } else {
-    toast('这个系统不支持全屏播放', 'info');
-  }
-  updateFullscreenButton();
-}
-
-/** 第一次按 Esc 先退出全屏，第二次才关闭播放器 */
-function onPlayerCancel(event) {
-  if (!state.fullscreen) return;
-  event.preventDefault();
-  setWindowFullscreen(false);
-}
-
-/** 释放视频占用的内存：解码器、缓冲的数据、分片播放列表 */
-function releasePlayer() {
-  state.playing = null;
-  state.hls?.destroy();
-  state.hls = null;
-  if (state.blobUrl) {
-    URL.revokeObjectURL(state.blobUrl);
-    state.blobUrl = null;
-  }
-  video.pause();
-  video.removeAttribute('src');
-  video.load();
-}
-
-function closePlayer() {
-  if (state.fullscreen) setWindowFullscreen(false);
-  releasePlayer();
-  if (player.open) player.close();
-}
+/* ================= 播放 ================= */
 
 /**
- * 分片视频：读取本地 index.m3u8，把分片文件名换成完整地址，交给 hls.js 播放。
- * hls.js 只在播放分片视频时才下载，所以放在这里动态加载。
+ * 用 CKTV 播放器播放下载好的视频：手势、长按倍速、横屏全屏、记住看到哪里，都和在线播放一样。
+ * 播放器里按「返回」回到下载页。
  */
-async function playSegments(item) {
-  const { default: Hls } = await import('hls.js/light');
-  const folder = folderOf(item.path);
-  const response = await fetch(fileSrc(item.path));
-  if (!response.ok) throw new Error('找不到播放列表，文件可能被移动或删除了');
-  const playlist = rewritePlaylist(await response.text(), (name) =>
-    fileSrc(folder + name)
-  );
-  state.blobUrl = URL.createObjectURL(
-    new Blob([playlist], { type: 'application/vnd.apple.mpegurl' })
-  );
-
-  if (Hls.isSupported()) {
-    // 只保留当前位置前后一小段，不把整部视频都留在内存里
-    const hls = new Hls({ maxBufferLength: 30, backBufferLength: 20 });
-    hls.on(Hls.Events.ERROR, (_event, data) => {
-      if (data.fatal)
-        setPlayerError('播放中断了，文件可能不完整。可以删除后重新下载。');
-    });
-    hls.loadSource(state.blobUrl);
-    hls.attachMedia(video);
-    state.hls = hls;
-    return;
-  }
-  // 没有 MSE 的系统（部分旧版 iPhone）：使用系统自带的 HLS 播放
-  if (video.canPlayType('application/vnd.apple.mpegurl')) {
-    video.src = state.blobUrl;
-    return;
-  }
-  throw new Error('这个系统的网页引擎不支持分片视频播放');
-}
-
-async function openPlayer(item) {
+function openPlayer(item) {
   if (!canPlay(item)) return;
   if (!fileSrc(item.path)) {
     toast('预览模式下没有本机文件可以播放', 'info');
     return;
   }
-  closePlayer();
-  state.playing = item;
-  $('player-title').textContent = displayTitle(item);
-  setPlayerError('');
-  if (!player.open) player.showModal();
-  try {
-    if (item.kind === 'hls') await playSegments(item);
-    else video.src = fileSrc(item.path);
-    // 自动播放可能被系统拦截，失败时用户点一下播放按钮即可
-    video.play().catch(() => undefined);
-  } catch (error) {
-    logError('播放失败', error);
-    setPlayerError(errorText(error, '这个视频无法播放'));
-  }
+  const query = new URLSearchParams({
+    file: item.path,
+    kind: item.kind,
+    title: displayTitle(item),
+    back: 'downloads.html',
+  });
+  location.href = `player.html?${query}`;
 }
 
 /* ================= 启动 ================= */
@@ -516,18 +396,6 @@ function bindEvents() {
   // 下载页已经开着时，站点的下载按钮会发来这个事件（见 window.rs 的 open_downloads）
   window.addEventListener('cktv:prefill', (event) => prefill(event.detail));
   $('open-folder').addEventListener('click', openFolder);
-  $('player-close').addEventListener('click', closePlayer);
-  $('player-fs').addEventListener('click', toggleFullscreen);
-  player.addEventListener('cancel', onPlayerCancel);
-  // 关闭事件是异步的：如果此时又打开了新的视频，就不能释放它
-  player.addEventListener('close', () => {
-    if (!player.open) releasePlayer();
-  });
-  video.addEventListener('error', () => {
-    if (state.playing && !state.hls)
-      setPlayerError('视频无法播放，文件可能不完整。');
-  });
-  document.addEventListener('fullscreenchange', updateFullscreenButton);
   document.addEventListener('keydown', onKeydown);
 }
 
@@ -540,7 +408,6 @@ function showPageError(message) {
 async function init() {
   bindEvents();
   prefillFromPage();
-  updateFullscreenButton();
   try {
     state.app = await invoke('app_info');
     state.mobile = Boolean(state.app.mobile);

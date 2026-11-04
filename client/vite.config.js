@@ -18,6 +18,7 @@ export default defineConfig({
         offline: at('./src/offline.html'),
         updates: at('./src/updates.html'),
         downloads: at('./src/downloads.html'),
+        player: at('./src/player.html'),
       },
     },
   },

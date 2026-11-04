@@ -631,6 +631,7 @@
   // 菜单里的图标（线条风格，和站点一致）
   const ICON_PATHS = {
     menu: 'M4 7h16M4 12h16M4 17h16',
+    play: 'M7 5v14l12-7z',
     refresh: 'M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7',
     home: 'M3 11l9-7 9 7M5 10v10h5v-6h4v6h5V10',
     download: 'M12 4v11m0 0l-4.5-4.5M12 15l4.5-4.5M5 20h14',
@@ -749,6 +750,11 @@
     // 播放视频时才出现的两个按钮
     const stream = el('div', 'stream');
     stream.hidden = true;
+    // 用 CKTV 播放器看：手势、长按倍速、横屏全屏，和站点的播放器分开
+    const watch = el('button', 'watch');
+    watch.type = 'button';
+    watch.setAttribute('aria-label', '用 CKTV 播放器播放');
+    watch.append(svgIcon('play'), el('span', null, '播放器'));
     const download = el('button', 'main', DOWNLOAD_LABEL);
     download.type = 'button';
     const list = el('button', 'sub', '列表');
@@ -756,7 +762,7 @@
     const close = el('button', 'close', '×');
     close.type = 'button';
     close.setAttribute('aria-label', '隐藏下载按钮');
-    stream.append(download, list, close);
+    stream.append(watch, download, list, close);
 
     node.append(panel, menuButton, stream);
     const layer = mountLayer('dock', DOCK_CSS, node);
@@ -803,6 +809,16 @@
       nativeAction(`download?${query}`);
     });
     list.addEventListener('click', () => nativeAction('downloads'));
+    watch.addEventListener('click', () => {
+      if (!dock.url) return;
+      // 站点的播放器先停下，免得两边同时出声
+      document.querySelectorAll('video').forEach((item) => item.pause());
+      nativeAction(
+        `player?url=${encodeURIComponent(dock.url)}&title=${encodeURIComponent(
+          pageTitle()
+        )}&back=${encodeURIComponent(location.href)}`
+      );
+    });
     close.addEventListener('click', () => {
       dismissedStream = dock.url;
       stream.hidden = true;
@@ -935,6 +951,16 @@
       border-radius: 999px;
       background: transparent;
     }
+    .stream .watch {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 0 12px 0 9px;
+      color: #4ade80;
+      font-weight: 700;
+    }
+    .stream .watch:hover { background: rgb(74 222 128 / 0.14); }
+    .stream .watch svg { width: 15px; height: 15px; }
     .stream .main {
       padding: 0 14px;
       color: #052e16;

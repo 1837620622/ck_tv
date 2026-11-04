@@ -105,6 +105,16 @@ test('安卓：MainActivity 保留包名，处理状态栏、导航栏和输入�
   assert.match(source, /WindowInsetsCompat\.Type\.systemBars\(\)/);
   assert.match(source, /WindowInsetsCompat\.Type\.displayCutout\(\)/);
   assert.match(source, /WindowInsetsCompat\.Type\.ime\(\)/);
+  // 播放器全屏用的原生接口
+  assert.match(
+    source,
+    /addJavascriptInterface\(NativeBridge\(\), "CKTVNative"\)/
+  );
+  assert.match(
+    source,
+    /@JavascriptInterface\s+fun setFullscreen\(on: Boolean\)/
+  );
+  assert.match(source, /SCREEN_ORIENTATION_SENSOR_LANDSCAPE/);
   rmSync(dirname(gen), { recursive: true, force: true });
 });
 

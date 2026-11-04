@@ -120,6 +120,8 @@ fn handle_action(app: &AppHandle, url: &Url) {
         "resume" => update::spawn_resume_check(app.clone()),
         // 应用菜单里的「用浏览器打开」：cktv://browser?url=…
         "browser" => open_in_browser(app, url),
+        // 站点播放时的「CKTV 播放器」：cktv://player?url=…&title=…&back=…
+        "player" => open_player(app, url),
         other => log::info!("忽略未知动作：{other}"),
     }
 }
@@ -202,6 +204,53 @@ fn open_in_browser(app: &AppHandle, action: &Url) {
     };
     if let Err(err) = app.opener().open_url(target.as_str(), None::<&str>) {
         log::warn!("用浏览器打开失败：{err}");
+    }
+}
+
+/// CKTV 播放器页面的地址。参数来自站点页面，不可信：
+/// 视频地址只接受 http(s)；返回地址只接受线路列表里的站点，否则不带（播放器里按「返回」走历史记录）。
+fn player_page(settings: &settings::Settings, action: &Url) -> Option<String> {
+    let source = Url::parse(&query_value(action, "url")?).ok()?;
+    if !matches!(source.scheme(), "http" | "https") {
+        return None;
+    }
+    let title: String = query_value(action, "title")
+        .unwrap_or_default()
+        .chars()
+        .take(120)
+        .collect();
+    let back = query_value(action, "back")
+        .and_then(|raw| Url::parse(&raw).ok())
+        .filter(|url| matches!(url.scheme(), "http" | "https"))
+        .filter(|url| servers::is_known_host(settings, url));
+    let mut page = Url::parse("http://localhost/player.html").expect("固定的地址");
+    {
+        let mut query = page.query_pairs_mut();
+        query.append_pair("src", source.as_str());
+        if !title.is_empty() {
+            query.append_pair("title", &title);
+        }
+        if let Some(back) = &back {
+            query.append_pair("back", back.as_str());
+        }
+    }
+    Some(format!("player.html?{}", page.query().unwrap_or_default()))
+}
+
+/// 在主窗口里打开 CKTV 播放器（手机和电脑都是主窗口，返回时回到站点页面）
+fn open_player(app: &AppHandle, action: &Url) {
+    let Some(page) = player_page(&settings::current(app), action) else {
+        log::warn!("忽略无效的播放请求：{action}");
+        return;
+    };
+    let result = local_url(&page).and_then(|url| {
+        app.get_webview_window(MAIN)
+            .ok_or_else(|| "主窗口不存在".to_string())?
+            .navigate(url)
+            .map_err(|err| err.to_string())
+    });
+    if let Err(err) = result {
+        log::warn!("打开播放器失败：{err}");
     }
 }
 
@@ -390,6 +439,70 @@ mod tests {
         let mut action = Url::parse("cktv://browser").expect("固定的地址");
         action.query_pairs_mut().append_pair("url", target);
         action
+    }
+
+    fn player_action(pairs: &[(&str, &str)]) -> Url {
+        let mut action = Url::parse("cktv://player").expect("固定的地址");
+        for (key, value) in pairs {
+            action.query_pairs_mut().append_pair(key, value);
+        }
+        action
+    }
+
+    fn player_params(page: &str) -> Vec<(String, String)> {
+        let query = page.strip_prefix("player.html?").expect("播放器页面");
+        Url::parse(&format!("http://localhost/?{query}"))
+            .unwrap()
+            .query_pairs()
+            .map(|(key, value)| (key.into_owned(), value.into_owned()))
+            .collect()
+    }
+
+    #[test]
+    fn player_page_keeps_valid_parameters_only() {
+        let settings = settings::Settings::default();
+        let page = player_page(
+            &settings,
+            &player_action(&[
+                ("url", "https://cdn.example.com/a/index.m3u8?t=1&x=2"),
+                ("title", "第 1 集 & 特别篇"),
+                ("back", "https://tv.chuankangkk.top/play?id=9"),
+            ]),
+        )
+        .unwrap();
+        assert_eq!(
+            player_params(&page),
+            vec![
+                (
+                    "src".to_string(),
+                    "https://cdn.example.com/a/index.m3u8?t=1&x=2".to_string()
+                ),
+                ("title".to_string(), "第 1 集 & 特别篇".to_string()),
+                (
+                    "back".to_string(),
+                    "https://tv.chuankangkk.top/play?id=9".to_string()
+                ),
+            ]
+        );
+        // 返回地址不是线路站点（或是 javascript:）时丢掉
+        for back in ["https://evil.example.com/", "javascript:alert(1)"] {
+            let page = player_page(
+                &settings,
+                &player_action(&[("url", "https://cdn.example.com/v.mp4"), ("back", back)]),
+            )
+            .unwrap();
+            assert!(
+                player_params(&page).iter().all(|(key, _)| key != "back"),
+                "{back}"
+            );
+        }
+        // 视频地址必须是 http(s)
+        for source in ["javascript:alert(1)", "file:///etc/passwd", ""] {
+            assert_eq!(
+                player_page(&settings, &player_action(&[("url", source)])),
+                None
+            );
+        }
     }
 
     #[test]

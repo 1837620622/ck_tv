@@ -128,32 +128,5 @@
     </div>
 
     <!-- 播放器：全屏遮罩。关闭时释放视频占用的内存。 -->
-    <dialog class="player" id="player" aria-labelledby="player-title">
-      <div class="player-bar">
-        <span class="player-title" id="player-title"></span>
-        <button
-          class="btn btn-ghost btn-icon"
-          id="player-fs"
-          type="button"
-          aria-label="全屏"
-        ></button>
-        <button
-          class="btn btn-ghost btn-icon"
-          id="player-close"
-          type="button"
-          aria-label="关闭播放"
-        ></button>
-      </div>
-      <div class="player-stage">
-        <video
-          id="video"
-          class="player-video"
-          controls
-          playsinline
-          preload="metadata"
-        ></video>
-      </div>
-      <p class="player-error" id="player-error" role="alert" hidden></p>
-    </dialog>
   </body>
 </html>
