@@ -1,14 +1,12 @@
 // 启动页：开场动画 → 读取设置 → 并行测速 → 进入首选或最快的线路。全部不可用时进入离线页。
+//
+// 进入站点时不做淡出：站点页面一开始，src/inject/remote.js 就在同一位置画出和启动页最后一帧
+// 一样的画面（标志、字标、进度条），等站点加载好再淡出。从用户看，是同一个画面里站点慢慢出现。
 
 import { inTauri, invoke } from './bridge.js';
 import { applyPlatform, errorText, logError, saveProbes } from './common.js';
 import { fill, h, icon, toast } from './dom.js';
-import {
-  hostOf,
-  latencyLabel,
-  latencyTone,
-  pickBestServer,
-} from './lib/servers.js';
+import { hostOf, latencyLabel, pickBestServer } from './lib/servers.js';
 
 const $ = (id) => document.getElementById(id);
 const ui = {
@@ -16,17 +14,14 @@ const ui = {
   status: $('status'),
   statusIcon: $('status-icon'),
   statusText: $('status-text'),
-  routes: $('routes'),
   version: $('version'),
   updates: $('open-updates'),
 };
 
-// 开场动画至少播这么久。时间和 pages.css 里各元素的动画对应，最后一个元素（说明文字）约 1.9 秒完成。
-const INTRO_MS = 1900;
-// 测速结束后停留一小会儿，让用户看清选中了哪条线路
-const SHOW_RESULT_MS = 480;
-// 启动页淡出的时间，和 pages.css 里 .boot.leaving 的 transition 一致
-const LEAVE_MS = 300;
+// 开场动画至少播这么久，和 pages.css 里的开场顺序对应（约 1 秒播完）
+const INTRO_MS = 1000;
+// 选好线路后停留一小会儿，让用户看清进入的是哪条线路
+const SHOW_RESULT_MS = 320;
 // 用户点了「线路与更新」之后，就不再自动进入线路
 let autoEnter = true;
 // 系统要求减少动态效果时，跳过开场动画
@@ -36,35 +31,13 @@ const reduceMotion = window.matchMedia(
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** 状态行：一个小图标加一行字。tone 为 ok / err 时换颜色，err 时进度条变成静止的红色。 */
 function setStatus(text, { tone = '', name = 'loader', spin = false } = {}) {
   ui.status.dataset.tone = tone;
+  ui.app.dataset.state = tone === 'err' ? 'error' : '';
   ui.statusText.textContent = text;
-  fill(ui.statusIcon, icon(name, { size: 18, className: spin ? 'spin' : '' }));
-}
-
-/** 线路列表：测速前显示「测速中」，测完显示延迟，选中的那条高亮 */
-function renderRoutes(urls, probes = new Map(), best = null) {
-  fill(
-    ui.routes,
-    ...urls.map((url, index) => {
-      const probe = probes.get(url);
-      return h(
-        'li',
-        {
-          class: `route${url === best ? ' best' : ''}`,
-          title: url,
-          style: { animationDelay: `${index * 70}ms` },
-        },
-        h('span', { class: `dot dot-${probe ? latencyTone(probe) : 'busy'}` }),
-        h('span', { class: 'route-host' }, hostOf(url)),
-        h(
-          'span',
-          { class: 'route-meta' },
-          probe ? latencyLabel(probe) : '测速中…'
-        )
-      );
-    })
-  );
+  ui.status.title = text;
+  fill(ui.statusIcon, icon(name, { size: 16, className: spin ? 'spin' : '' }));
 }
 
 /** 测速失败不影响启动，只是没有延迟数据 */
@@ -102,47 +75,41 @@ async function start() {
     );
   }
 
-  const urls = info.candidates;
   const measuring = measure();
   await intro;
-  renderRoutes(urls);
-  if (autoEnter) setStatus('正在测速线路…', { spin: true });
+  if (autoEnter) setStatus('正在选择最快的线路…', { spin: true });
 
   const probes = await measuring;
   saveProbes(probes);
-
-  const best = pickBestServer(probes, info.settings.preferredServer);
-  renderRoutes(urls, new Map(probes.map((probe) => [probe.url, probe])), best);
   if (!autoEnter) return;
 
+  const best = pickBestServer(probes, info.settings.preferredServer);
   if (!best) {
     setStatus('所有线路都暂时连不上', { tone: 'err', name: 'wifiOff' });
-    await wait(SHOW_RESULT_MS);
+    await wait(SHOW_RESULT_MS * 2);
     if (autoEnter) location.replace('offline.html');
     return;
   }
 
-  setStatus(`已选择 ${hostOf(best)}，正在进入…`, {
+  const probe = probes.find((item) => item.url === best);
+  const latency = probe ? ` · ${latencyLabel(probe)}` : '';
+  setStatus(`正在进入 ${hostOf(best)}${latency}`, {
     tone: 'ok',
     name: 'checkCircle',
   });
   await wait(SHOW_RESULT_MS);
   if (!autoEnter) return;
   if (!inTauri) {
-    // 浏览器预览里没有原生层，不会真正跳转，只把结果写在状态栏里
-    setStatus(`预览模式：已选好 ${hostOf(best)}，桌面应用中将进入`, {
+    // 浏览器预览里没有原生层，不会真正跳转，只把结果写在状态行里
+    setStatus(`预览：已选好 ${hostOf(best)}${latency}`, {
       tone: 'ok',
       name: 'info',
     });
     return;
   }
-  // 启动页先淡出，再进入站点。窗口底色和启动页一致，切换时不会闪白。
-  ui.app.classList.add('leaving');
-  await wait(LEAVE_MS);
   try {
     await invoke('open_server', { url: best });
   } catch (error) {
-    ui.app.classList.remove('leaving');
     logError('进入线路失败', error);
     setStatus(`进入线路失败：${errorText(error)}`, {
       tone: 'err',

@@ -2,7 +2,7 @@
  * CKTV 客户端的站点注入脚本。站点页面开始加载前执行一次；本地页面（启动页、离线页、更新中心）不做界面的事。
  *
  * 1. 给 <html> 加上平台标记（data-cktv-platform / data-cktv-mobile），站点可以据此微调样式。
- * 2. 开场：应用启动后第一次进入站点时，盖一层品牌画面，页面加载完再淡出。
+ * 2. 进站画面：应用启动后第一次进入站点时，先显示和启动页最后一帧一样的画面，页面加载好再淡出。
  * 3. 断网或线路响应异常时在顶部提示，可以一键切换线路；网络恢复后提示刷新。
  * 4. 收到「发现新版本」事件时，在右下角（手机上是底部）显示提示卡片。
  * 5. 切回前台时通知原生层，由它决定要不要检查更新。
@@ -37,17 +37,16 @@
 
   // 动画和提示只在顶层页面出现；站点里嵌入的 iframe（比如播放器）不管
   const isTopFrame = window.top === window;
-  const reduceMotion = window.matchMedia(
-    '(prefers-reduced-motion: reduce)'
-  ).matches;
 
   const FONT =
     '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif';
   const CURTAIN_KEY = 'cktv-curtain-shown';
   const DISMISS_KEY = 'cktv-update-dismissed';
-  // 开场画面至少停留这么久；页面超过最长时间还没加载完，也会先退场
-  const CURTAIN_MIN_MS = 1600;
-  const CURTAIN_MAX_MS = 3500;
+  // 进站画面：站点加载完（或 DOMContentLoaded 之后 CURTAIN_AFTER_READY_MS）就淡出，
+  // 但至少停留 CURTAIN_MIN_MS，最多 CURTAIN_MAX_MS
+  const CURTAIN_MIN_MS = 350;
+  const CURTAIN_AFTER_READY_MS = 800;
+  const CURTAIN_MAX_MS = 4000;
   // 30 秒内连续失败 3 次才提示，偶尔一次失败不打扰
   const FAILURE_WINDOW_MS = 30_000;
   const FAILURE_LIMIT = 3;
@@ -97,84 +96,78 @@
 
   /* ---------- 样式和图形 ---------- */
 
-  // 和 src/assets/logo.svg 是同一个标志，只是拆成了几个部件，方便做动画
-  const MARK_SVG = `
-    <svg viewBox="0 0 512 512" focusable="false" aria-hidden="true">
-      <defs>
-        <linearGradient id="cktv-bg" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stop-color="#18231F"/>
-          <stop offset="1" stop-color="#060908"/>
-        </linearGradient>
-        <radialGradient id="cktv-glow" cx="0.42" cy="0.4" r="0.62">
-          <stop offset="0" stop-color="#22C55E" stop-opacity="0.3"/>
-          <stop offset="1" stop-color="#22C55E" stop-opacity="0"/>
-        </radialGradient>
-        <linearGradient id="cktv-ring" x1="0.1" y1="0" x2="0.9" y2="1">
-          <stop offset="0" stop-color="#A7F3D0"/>
-          <stop offset="0.45" stop-color="#34D399"/>
-          <stop offset="1" stop-color="#059669"/>
-        </linearGradient>
-        <linearGradient id="cktv-play" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stop-color="#FFFFFF"/>
-          <stop offset="1" stop-color="#D1FAE5"/>
-        </linearGradient>
-      </defs>
-      <rect width="512" height="512" rx="116" fill="url(#cktv-bg)"/>
-      <rect width="512" height="512" rx="116" fill="url(#cktv-glow)"/>
+  /*
+   * 进站画面和启动页（src/index.html）的最后一帧完全一样：同一张 240×180 的图（标志、CKTV、
+   * 传康播放器），同样的位置（品牌组 240×207，中心在高度 46% 处），下面同样的进度条。
+   * 所以从启动页进入站点时画面不动，站点加载好后在原地淡入。改动时两边要一起改，
+   * test/brand-lockup.test.mjs 会检查两边的图形和位置一致。
+   */
+  const LOCKUP_FONT =
+    "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI Variable', 'Segoe UI', 'PingFang SC', 'HarmonyOS Sans SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans CJK SC', 'WenQuanYi Micro Hei', system-ui, sans-serif";
+  const LOCKUP_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 180" width="240" height="180" font-family="${LOCKUP_FONT}">
+    <defs>
+      <linearGradient id="bk-bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#18231F"/><stop offset="1" stop-color="#060908"/></linearGradient>
+      <radialGradient id="bk-glow" cx="0.42" cy="0.4" r="0.62"><stop offset="0" stop-color="#22C55E" stop-opacity="0.3"/><stop offset="1" stop-color="#22C55E" stop-opacity="0"/></radialGradient>
+      <linearGradient id="bk-ring" x1="0.1" y1="0" x2="0.9" y2="1"><stop offset="0" stop-color="#A7F3D0"/><stop offset="0.45" stop-color="#34D399"/><stop offset="1" stop-color="#059669"/></linearGradient>
+      <linearGradient id="bk-play" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#D1FAE5"/></linearGradient>
+    </defs>
+    <g transform="translate(68 0) scale(0.203125)">
+      <rect width="512" height="512" rx="116" fill="url(#bk-bg)"/>
+      <rect width="512" height="512" rx="116" fill="url(#bk-glow)"/>
       <rect x="3" y="3" width="506" height="506" rx="113" fill="none" stroke="#FFFFFF" stroke-opacity="0.1" stroke-width="3"/>
-      <path class="mk-ring" pathLength="100" d="M 372.6 347.1 A 148 148 0 1 1 372.6 164.9" fill="none" stroke="url(#cktv-ring)" stroke-width="46" stroke-linecap="round"/>
-      <path class="mk-play" d="M 222 196 L 222 316 L 322 256 Z" fill="url(#cktv-play)" stroke="url(#cktv-play)" stroke-width="26" stroke-linejoin="round"/>
-      <circle class="mk-dot" cx="404" cy="256" r="17" fill="#6EE7B7"/>
-    </svg>`;
+      <path d="M 372.6 347.1 A 148 148 0 1 1 372.6 164.9" fill="none" stroke="url(#bk-ring)" stroke-width="46" stroke-linecap="round"/>
+      <path d="M 222 196 L 222 316 L 322 256 Z" fill="url(#bk-play)" stroke="url(#bk-play)" stroke-width="26" stroke-linejoin="round"/>
+      <circle cx="404" cy="256" r="17" fill="#6EE7B7"/>
+    </g>
+    <text x="123" y="148" text-anchor="middle" font-size="30" font-weight="800" letter-spacing="6" fill="#F0FDF4">CKTV</text>
+    <text x="122.4" y="172" text-anchor="middle" font-size="12" letter-spacing="4.8" fill="#7D8BA8">传康播放器</text>
+  </svg>`;
 
-  const MARK_CSS = `
-    .mk-ring { stroke-dasharray: 100 100; stroke-dashoffset: 100; animation: draw 1s cubic-bezier(.2,.8,.2,1) .12s forwards; }
-    .mk-play { transform-box: fill-box; transform-origin: center; transform: scale(.4); opacity: 0; animation: pop .6s cubic-bezier(.34,1.56,.64,1) .5s forwards; }
-    .mk-dot { opacity: 0; animation: fade-in .4s ease .85s forwards; }
-    @keyframes draw { to { stroke-dashoffset: 0; } }
-    @keyframes pop { to { opacity: 1; transform: scale(1); } }
-  `;
-
-  const CURTAIN_CSS = `
-    :host { all: initial; }
-    .curtain {
-      position: fixed; inset: 0; z-index: 2147483646;
-      display: flex; flex-direction: column; align-items: center; justify-content: center;
-      box-sizing: border-box; padding: env(safe-area-inset-top, 0px) 24px env(safe-area-inset-bottom, 0px);
-      color: #ecfdf5; font: 14px/1.5 ${FONT};
-      background: radial-gradient(90% 60% at 50% 38%, #0f2e25 0%, #060a13 60%, #04060d 100%);
-      transition: opacity .5s cubic-bezier(.4,0,.2,1), transform .5s cubic-bezier(.4,0,.2,1);
-    }
-    .curtain.out { opacity: 0; transform: scale(1.03); pointer-events: none; }
-    .mark { width: 96px; height: 96px; animation: mark-in .8s cubic-bezier(.2,.8,.2,1) both; }
-    .mark svg { display: block; width: 100%; height: 100%; overflow: visible; }
-    .name {
-      margin-top: 18px; font-size: 26px; font-weight: 800; letter-spacing: .3em; padding-left: .3em;
-      animation: rise .6s cubic-bezier(.2,.8,.2,1) .3s both;
-    }
-    .sub {
-      margin-top: 4px; color: #8ea3a0; font-size: 12px; letter-spacing: .3em; padding-left: .3em;
-      animation: rise .6s cubic-bezier(.2,.8,.2,1) .45s both;
-    }
-    .pledge {
-      margin-top: 14px; color: #6ee7b7; font-size: 12px; letter-spacing: .12em;
-      animation: fade-in .6s ease .55s both;
-    }
-    .loader {
-      position: relative; overflow: hidden; width: 120px; height: 3px; margin-top: 26px; border-radius: 3px;
-      background: rgba(255,255,255,.08); animation: fade-in .4s ease .5s both;
-    }
-    .loader i {
-      position: absolute; top: 0; bottom: 0; width: 40%; border-radius: inherit;
-      background: linear-gradient(90deg, rgba(74,222,128,0), #4ade80, rgba(74,222,128,0));
-      animation: sweep 1.3s cubic-bezier(.45,0,.55,1) infinite;
-    }
-    @keyframes mark-in { from { opacity: 0; transform: scale(.84) rotate(-6deg); } to { opacity: 1; transform: none; } }
-    @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
-    @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
-    @keyframes sweep { from { left: -40%; } to { left: 100%; } }
-    @media (prefers-reduced-motion: reduce) { .curtain { transition: none; } }
-  `;
+  /*
+   * 进站画面只用样式表画（html::before 是底色和品牌图，html::after 是进度条），不往页面里加任何元素：
+   * 站点是 React 应用，注水（hydration）之前多出来的元素会让 React 判定页面不一致而整页重绘，造成闪烁。
+   * 品牌图的纵向位置：要让图片顶边落在 46% 高度减去品牌组一半（103.5px）处；
+   * background-position 的百分比按（容器高 - 图片高 180px）计算，所以写成 calc(46% - 20.7px)。
+   */
+  function curtainCss(leaving) {
+    const image = `url("data:image/svg+xml,${encodeURIComponent(LOCKUP_SVG)}")`;
+    return `
+      html::before {
+        content: ''; position: fixed; inset: 0; z-index: 2147483646;
+        background:
+          ${image} no-repeat 50% calc(46% - 20.7px) / 240px 180px,
+          radial-gradient(56% 36% at 50% 40%, rgb(34 197 94 / 0.14), rgb(34 197 94 / 0.04) 50%, transparent 78%),
+          #060a13;
+      }
+      html::after {
+        content: ''; position: fixed; z-index: 2147483647; pointer-events: none;
+        left: 50%; top: calc(46% + 100.5px); width: 132px; height: 3px; margin-left: -66px; border-radius: 3px;
+        background:
+          linear-gradient(90deg, rgb(74 222 128 / 0), #4ade80, rgb(74 222 128 / 0)) no-repeat,
+          rgb(255 255 255 / 0.08);
+        background-size: 40% 100%, 100% 100%;
+        animation: cktv-curtain-sweep 1.2s cubic-bezier(.45, 0, .55, 1) infinite;
+      }
+      @keyframes cktv-curtain-sweep {
+        from { background-position: -66.67% 0, 0 0; }
+        to { background-position: 166.67% 0, 0 0; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        html::after { animation: none; background-position: 50% 0, 0 0; }
+      }
+      ${
+        leaving
+          ? `html::before, html::after {
+              opacity: 0; pointer-events: none;
+              transition: opacity .45s cubic-bezier(.4, 0, .2, 1);
+            }
+            @media (prefers-reduced-motion: reduce) {
+              html::before, html::after { transition: none; }
+            }`
+          : ''
+      }
+    `;
+  }
 
   const UPDATE_CSS = `
     :host { all: initial; }
@@ -283,39 +276,49 @@
   }
 
   function entryCurtain() {
-    // 系统要求减少动态效果，或者这次打开应用已经播过了，就不再盖画面
-    if (reduceMotion || curtainShown()) return;
+    // 这次打开应用已经播过了，就不再盖画面
+    if (curtainShown()) return;
+    // 不支持可构造样式表的旧系统（iOS 16.4 以前）不盖画面，直接显示站点
+    if (
+      typeof CSSStyleSheet !== 'function' ||
+      !('adoptedStyleSheets' in Document.prototype)
+    ) {
+      return;
+    }
+    let sheet;
+    try {
+      sheet = new CSSStyleSheet();
+      sheet.replaceSync(curtainCss(false));
+      document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet];
+    } catch {
+      return;
+    }
     markCurtainShown();
 
     const started = performance.now();
-    const curtain = el('div', 'curtain');
-    curtain.setAttribute('aria-hidden', 'true');
-    const mark = el('div', 'mark');
-    mark.innerHTML = MARK_SVG;
-    const loader = el('div', 'loader');
-    loader.append(el('i'));
-    curtain.append(
-      mark,
-      el('div', 'name', 'CKTV'),
-      el('div', 'sub', '传康播放器'),
-      el('div', 'pledge', '非盈利 · 免费 · 无偿提供'),
-      loader
-    );
-    const layer = mountLayer('curtain', CURTAIN_CSS + MARK_CSS, curtain);
-
-    // 页面加载完成后退场，但至少停留 CURTAIN_MIN_MS；超过 CURTAIN_MAX_MS 不管加载没加载完都退场
     let closing = false;
     const close = () => {
       if (closing) return;
       closing = true;
       const wait = Math.max(0, CURTAIN_MIN_MS - (performance.now() - started));
       setTimeout(() => {
-        curtain.classList.add('out');
-        setTimeout(() => layer.host.remove(), 520);
+        sheet.replaceSync(curtainCss(true));
+        setTimeout(() => {
+          document.adoptedStyleSheets = document.adoptedStyleSheets.filter(
+            (item) => item !== sheet
+          );
+        }, 500);
       }, wait);
     };
+    // 页面加载完成就退场；图片多的页面 load 来得晚，DOM 就绪后最多再等 CURTAIN_AFTER_READY_MS
     if (document.readyState === 'complete') close();
     else window.addEventListener('load', close, { once: true });
+    const afterReady = () => setTimeout(close, CURTAIN_AFTER_READY_MS);
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', afterReady, { once: true });
+    } else {
+      afterReady();
+    }
     setTimeout(close, CURTAIN_MAX_MS);
   }
 
@@ -707,9 +710,8 @@
     watchSiteHealth();
     watchResume();
     watchStreams();
-    whenBody(() => {
-      entryCurtain();
-      watchNetwork();
-    });
+    // 进站画面只用样式表，不需要等 <body>：越早盖上，越不会露出站点加载中的样子
+    entryCurtain();
+    whenBody(watchNetwork);
   }
 })();
