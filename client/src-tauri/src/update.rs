@@ -359,9 +359,7 @@ fn pick_download(manifest: &Manifest, platform: &str) -> Result<Option<Download>
         .mirror
         .as_deref()
         .and_then(|raw| validate_link(raw).ok())
-        .or_else(|| {
-            proxy_mirror_url(&url).and_then(|raw| validate_link(&raw).ok())
-        });
+        .or_else(|| proxy_mirror_url(&url).and_then(|raw| validate_link(&raw).ok()));
     let source_url = entry
         .source
         .as_deref()
