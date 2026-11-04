@@ -55,7 +55,7 @@ const px = (block, property) => {
   return Number(match[1]);
 };
 
-test('两边是同一张品牌图：画布、标志位置、字标和副标题', () => {
+test('两边是同一张品牌图：画布、网站标志、站名', () => {
   const lockup = /viewBox="0 0 240 180"/;
   assert.match(htmlLockup, lockup);
   assert.match(remoteLockup, lockup);
@@ -65,7 +65,7 @@ test('两边是同一张品牌图：画布、标志位置、字标和副标题',
   assert.deepEqual(texts(remoteLockup), texts(htmlLockup));
   assert.deepEqual(
     texts(htmlLockup).map((t) => t.content),
-    ['CKTV', '传康播放器']
+    ['CKTV-传康播放器']
   );
   assert.deepEqual(shapes(remoteLockup), shapes(htmlLockup));
 });

@@ -51,7 +51,7 @@ function fakeAndroidProject() {
   return gen;
 }
 
-test('安卓：图标换成 CKTV 的，并带上自适应图标和深色底', () => {
+test('安卓：图标换成网站标志，三层自适应图标（背景、标志、单色）', () => {
   const gen = fakeAndroidProject();
   patchAndroid({ genDir: gen, iconsDir: ANDROID_ICONS });
   const res = join(gen, 'app/src/main/res');
@@ -59,12 +59,37 @@ test('安卓：图标换成 CKTV 的，并带上自适应图标和深色底', ()
     readFileSync(join(res, 'mipmap-xxxhdpi/ic_launcher.png')),
     readFileSync(join(ANDROID_ICONS, 'mipmap-xxxhdpi/ic_launcher.png'))
   );
-  assert.ok(existsSync(join(res, 'mipmap-anydpi-v26/ic_launcher.xml')));
-  assert.match(
-    readFileSync(join(res, 'values/ic_launcher_background.xml'), 'utf8'),
-    /#0C1811/i
-  );
+  for (const name of ['ic_launcher.xml', 'ic_launcher_round.xml']) {
+    const xml = readFileSync(join(res, 'mipmap-anydpi-v26', name), 'utf8');
+    assert.match(xml, /@mipmap\/ic_launcher_background/);
+    assert.match(xml, /@mipmap\/ic_launcher_foreground/);
+    assert.match(xml, /@mipmap\/ic_launcher_monochrome/);
+  }
+  for (const density of ['mdpi', 'hdpi', 'xhdpi', 'xxhdpi', 'xxxhdpi']) {
+    for (const layer of ['background', 'foreground', 'monochrome']) {
+      assert.ok(
+        existsSync(join(res, `mipmap-${density}/ic_launcher_${layer}.png`)),
+        `${density} ${layer}`
+      );
+    }
+  }
   rmSync(dirname(gen), { recursive: true, force: true });
+});
+
+test('安卓：自适应图标每层是 108dp，旧式图标是 48dp', () => {
+  const scales = { mdpi: 1, hdpi: 1.5, xhdpi: 2, xxhdpi: 3, xxxhdpi: 4 };
+  for (const [density, scale] of Object.entries(scales)) {
+    const dir = join(ANDROID_ICONS, `mipmap-${density}`);
+    assert.equal(
+      pngSize(join(dir, 'ic_launcher_foreground.png')).width,
+      108 * scale
+    );
+    assert.equal(
+      pngSize(join(dir, 'ic_launcher_background.png')).width,
+      108 * scale
+    );
+    assert.equal(pngSize(join(dir, 'ic_launcher.png')).width, 48 * scale);
+  }
 });
 
 test('安卓：MainActivity 保留包名，处理状态栏、导航栏和输入法', () => {

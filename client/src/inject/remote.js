@@ -98,8 +98,8 @@
   /* ---------- 样式和图形 ---------- */
 
   /*
-   * 进站画面和启动页（src/index.html）的最后一帧完全一样：同一张 240×180 的图（标志、CKTV、
-   * 传康播放器），同样的位置（品牌组 240×207，中心在高度 46% 处），下面同样的进度条。
+   * 进站画面和启动页（src/index.html）的最后一帧完全一样：同一张 240×180 的图（网站标志和站名
+   * 「CKTV-传康播放器」），同样的位置（品牌组 240×207，中心在高度 46% 处），下面同样的进度条。
    * 所以从启动页进入站点时画面不动，站点加载好后在原地淡入。改动时两边要一起改，
    * test/brand-lockup.test.mjs 会检查两边的图形和位置一致。
    */
@@ -120,8 +120,7 @@
       <path d="M 222 196 L 222 316 L 322 256 Z" fill="url(#bk-play)" stroke="url(#bk-play)" stroke-width="26" stroke-linejoin="round"/>
       <circle cx="404" cy="256" r="17" fill="#6EE7B7"/>
     </g>
-    <text x="123" y="148" text-anchor="middle" font-size="30" font-weight="800" letter-spacing="6" fill="#F0FDF4">CKTV</text>
-    <text x="122.4" y="172" text-anchor="middle" font-size="12" letter-spacing="4.8" fill="#7D8BA8">传康播放器</text>
+    <text x="120" y="150" text-anchor="middle" font-size="22" font-weight="700" letter-spacing="-0.5" fill="#F0FDF4">CKTV-传康播放器</text>
   </svg>`;
 
   /*
