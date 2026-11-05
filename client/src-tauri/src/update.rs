@@ -11,15 +11,22 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager};
+use tokio::task::JoinSet;
 
 /// 更新清单地址（和 Release 一起发布，见 .github/workflows/app-release.yml）
 pub const MANIFEST_URL: &str =
     "https://github.com/1837620622/ck_tv/releases/latest/download/update.json";
 
+/// 公开 GitHub 加速代理前缀（2026-11-05 探测：能返回合法 update.json 的才收录）。
+/// 与 scripts/make-update-manifest.mjs 的 ALLOWED_HOSTS 保持一致。
+pub const PROXY_PREFIXES: &[&str] = &[
+    "https://ghfast.top/",
+    "https://gh-proxy.com/",
+    "https://edgeone.gh-proxy.com/",
+];
+
 /// 下载地址只允许这些域名，防止清单被篡改后跳到钓鱼网站。
 /// 和 scripts/make-update-manifest.mjs 里的列表保持一致。
-/// ghfast.top 是公开的 GitHub 加速代理（国内用户直连 GitHub 很慢或打不开时用），
-/// 只用来代理 github.com 的下载地址，不接受其它来源。
 const ALLOWED_LINK_HOSTS: &[&str] = &[
     "github.com",
     "objects.githubusercontent.com",
@@ -27,11 +34,14 @@ const ALLOWED_LINK_HOSTS: &[&str] = &[
     "tv.chuankangkk.top",
     "ck-tv.pages.dev",
     "ghfast.top",
+    "gh-proxy.com",
+    "edgeone.gh-proxy.com",
 ];
 
 const FIRST_CHECK_DELAY: Duration = Duration::from_secs(12);
 const SCHEDULER_TICK: Duration = Duration::from_secs(15 * 60);
-const MANIFEST_TIMEOUT: Duration = Duration::from_secs(12);
+/// 清单竞速：单路超时（直连与各代理并行，谁先成功用谁）
+const MANIFEST_RACE_TIMEOUT: Duration = Duration::from_secs(3);
 /// 切回前台时，距离上次检查不到这么久就不再检查
 const RESUME_GAP_MS: u64 = 30 * 60 * 1000;
 
@@ -85,15 +95,18 @@ impl UpdateState {
     }
 }
 
-/// 一个可以下载的安装包。默认线路是 GitHub；清单里配了国内线路时，也会一起给出。
+/// 一个可以下载的安装包。默认线路是 GitHub；清单里配了国内线路或公开代理时，也会一起给出。
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Download {
     pub label: String,
     /// 默认线路（GitHub）
     pub url: String,
-    /// 国内线路；没有配置时为空
+    /// 首选国内线路（官方 CN_MIRROR 或第一条代理），兼容旧界面
     pub mirror_url: Option<String>,
+    /// 全部国内/代理线路，按推荐顺序（含 mirror_url）
+    #[serde(default)]
+    pub mirrors: Vec<String>,
     pub sha256: Option<String>,
     pub size: Option<u64>,
     /// iOS：AltStore 源地址，在 AltStore 里添加后即可安装和更新
@@ -184,6 +197,17 @@ fn record_checked(app: &AppHandle, checked_at: u64) {
     });
 }
 
+fn record_good_mirror(app: &AppHandle, host: &str) {
+    let host = host.trim();
+    if host.is_empty() {
+        return;
+    }
+    let _ = settings::modify(app, |s| {
+        s.last_good_mirror = Some(host.to_string());
+        Ok(())
+    });
+}
+
 /// 手动或自动检查。结果会广播给界面，并刷新托盘提示。
 pub async fn check(app: AppHandle, manual: bool) -> UpdateState {
     log::info!("检查更新（手动：{manual}）");
@@ -211,7 +235,10 @@ async fn run_check(app: &AppHandle) -> UpdateState {
             None => region::detect().await,
         }
     };
-    let (manifest, region) = tokio::join!(fetch_manifest(), region_lookup);
+    let (manifest, region) = tokio::join!(
+        fetch_manifest(app, settings.last_good_mirror.as_deref()),
+        region_lookup
+    );
     if region != Region::Unknown {
         *crate::lock(&manager.region) = Some(region);
     }
@@ -288,8 +315,12 @@ pub struct Manifest {
 pub struct PlatformEntry {
     pub label: String,
     pub url: String,
+    /// 旧字段：单条国内线路（兼容）
     #[serde(default)]
     pub mirror: Option<String>,
+    /// 新字段：多条国内线路
+    #[serde(default)]
+    pub mirrors: Vec<String>,
     #[serde(default)]
     pub sha256: Option<String>,
     #[serde(default)]
@@ -298,11 +329,47 @@ pub struct PlatformEntry {
     pub source: Option<String>,
 }
 
-/// 国内用户直连 GitHub 拿不到清单时，走公开代理再试一次。
-/// 清单本身很小（1KB 多），直连只是慢、还没到超时时不会触发这一级；
-/// 真正的大文件下载走下面的国内线路，不走这里。
-fn proxy_manifest_url() -> String {
-    format!("https://ghfast.top/{MANIFEST_URL}")
+/// 从代理清单 URL 里取出公开代理主机名；直连 GitHub 返回 None
+fn proxy_host_of(url: &str) -> Option<String> {
+    let parsed = tauri::Url::parse(url).ok()?;
+    let host = parsed.host_str()?.to_string();
+    if host == "github.com" || host.ends_with(".githubusercontent.com") {
+        return None;
+    }
+    if ALLOWED_LINK_HOSTS
+        .iter()
+        .any(|item| host == *item || host.ends_with(&format!(".{item}")))
+    {
+        Some(host)
+    } else {
+        None
+    }
+}
+
+/// 清单候选：上次成功的代理优先，再直连，再其它代理
+fn manifest_candidates(last_good: Option<&str>) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut push = |url: String| {
+        if !out.iter().any(|item| item == &url) {
+            out.push(url);
+        }
+    };
+    if let Some(host) = last_good {
+        let host = host.trim();
+        if let Some(prefix) = PROXY_PREFIXES
+            .iter()
+            .find(|p| p.contains(host) || (*p).contains(&format!("//{host}/")))
+        {
+            push(format!("{prefix}{MANIFEST_URL}"));
+        } else if !host.is_empty() && !host.contains('/') {
+            push(format!("https://{host}/{MANIFEST_URL}"));
+        }
+    }
+    push(MANIFEST_URL.to_string());
+    for prefix in PROXY_PREFIXES {
+        push(format!("{prefix}{MANIFEST_URL}"));
+    }
+    out
 }
 
 async fn fetch_manifest_once(client: &reqwest::Client, url: &str) -> Result<Manifest, String> {
@@ -323,30 +390,76 @@ async fn fetch_manifest_once(client: &reqwest::Client, url: &str) -> Result<Mani
         .map_err(|_| "更新信息格式不对".to_string())
 }
 
-async fn fetch_manifest() -> Result<Manifest, String> {
+/// 并行竞速拉取清单：2–3 秒超时，谁先成功用谁；成功的公开代理写入 last_good_mirror
+async fn fetch_manifest(app: &AppHandle, last_good: Option<&str>) -> Result<Manifest, String> {
     let client = crate::http::client_builder()
-        .timeout(MANIFEST_TIMEOUT)
+        .timeout(MANIFEST_RACE_TIMEOUT)
         .user_agent(crate::servers::user_agent())
         .build()
         .map_err(|err| err.to_string())?;
-    // 先走直连（可信源）；直连失败再走代理，代理也失败就报直连的错。
-    match fetch_manifest_once(&client, MANIFEST_URL).await {
-        Ok(manifest) => Ok(manifest),
-        Err(direct_err) => match fetch_manifest_once(&client, &proxy_manifest_url()).await {
-            Ok(manifest) => Ok(manifest),
-            Err(_) => Err(direct_err),
-        },
+    let candidates = manifest_candidates(last_good);
+    let mut set = JoinSet::new();
+    for url in candidates {
+        let client = client.clone();
+        set.spawn(async move {
+            let result = fetch_manifest_once(&client, &url).await;
+            (url, result)
+        });
     }
+
+    let mut first_err: Option<String> = None;
+    while let Some(joined) = set.join_next().await {
+        let Ok((url, result)) = joined else {
+            continue;
+        };
+        match result {
+            Ok(manifest) => {
+                if let Some(host) = proxy_host_of(&url) {
+                    record_good_mirror(app, &host);
+                    log::info!("更新清单命中代理：{host}");
+                } else {
+                    log::info!("更新清单命中直连 GitHub");
+                }
+                set.abort_all();
+                return Ok(manifest);
+            }
+            Err(err) => {
+                if first_err.is_none() {
+                    first_err = Some(err);
+                }
+            }
+        }
+    }
+    Err(first_err.unwrap_or_else(|| "无法获取更新信息，请检查网络".into()))
 }
 
-/// 清单里没有配国内线路时，给 github.com 的下载地址自动配一条公开代理线路。
-/// 这样国内用户不用等仓库配 CN_MIRROR_BASE 也能看到“国内线路”；其它域名的地址不动。
-fn proxy_mirror_url(url: &str) -> Option<String> {
-    let host = url.split("://").nth(1)?.split('/').next()?;
-    if host != "github.com" {
-        return None;
+/// 收集清单里的 mirror / mirrors，并在主线路是 github.com 时自动补公开代理
+fn collect_mirrors(entry: &PlatformEntry, url: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut push = |raw: &str| {
+        if let Ok(v) = validate_link(raw) {
+            if !out.iter().any(|item| item == &v) {
+                out.push(v);
+            }
+        }
+    };
+    for m in &entry.mirrors {
+        push(m);
     }
-    Some(format!("https://ghfast.top/{url}"))
+    if let Some(m) = entry.mirror.as_deref() {
+        push(m);
+    }
+    let host = url
+        .split("://")
+        .nth(1)
+        .and_then(|rest| rest.split('/').next())
+        .unwrap_or("");
+    if host == "github.com" {
+        for prefix in PROXY_PREFIXES {
+            push(&format!("{prefix}{url}"));
+        }
+    }
+    out
 }
 
 /// 找出本机平台的安装包。主线路必须可信；国内线路不可信或没有，就忽略它。
@@ -355,11 +468,8 @@ fn pick_download(manifest: &Manifest, platform: &str) -> Result<Option<Download>
         return Ok(None);
     };
     let url = validate_link(&entry.url)?;
-    let mirror_url = entry
-        .mirror
-        .as_deref()
-        .and_then(|raw| validate_link(raw).ok())
-        .or_else(|| proxy_mirror_url(&url).and_then(|raw| validate_link(&raw).ok()));
+    let mirrors = collect_mirrors(entry, &url);
+    let mirror_url = mirrors.first().cloned();
     let source_url = entry
         .source
         .as_deref()
@@ -368,6 +478,7 @@ fn pick_download(manifest: &Manifest, platform: &str) -> Result<Option<Download>
         label: entry.label.clone(),
         url,
         mirror_url,
+        mirrors,
         sha256: entry.sha256.clone(),
         size: entry.size,
         source_url,
@@ -436,6 +547,8 @@ mod tests {
     fn links_must_be_https_and_on_the_allowlist() {
         assert!(validate_link("https://github.com/1837620622/ck_tv/releases").is_ok());
         assert!(validate_link("https://objects.githubusercontent.com/asset").is_ok());
+        assert!(validate_link("https://gh-proxy.com/https://github.com/x").is_ok());
+        assert!(validate_link("https://edgeone.gh-proxy.com/https://github.com/x").is_ok());
         assert!(validate_link("http://github.com/asset").is_err());
         assert!(validate_link("https://evil.example.com/app.apk").is_err());
         assert!(validate_link("https://github.com.evil.example/app.apk").is_err());
@@ -520,14 +633,16 @@ mod tests {
             .expect("有安装包");
         assert_eq!(android.sha256.as_deref(), Some("abc"));
         assert_eq!(android.size, Some(10));
-        // 清单里的国内线路不在白名单里，不直接用它；但主线路是 github.com，
-        // 会自动配一条公开代理线路，不影响主线路
-        assert_eq!(
-            android.mirror_url.as_deref(),
-            Some(
-                "https://ghfast.top/https://github.com/1837620622/ck_tv/releases/download/app-v1.1.0/CKTV_1.1.0_android.apk"
-            )
-        );
+        // 清单里的国内线路不在白名单里，忽略；主线路是 github.com，自动配公开代理
+        assert!(android
+            .mirror_url
+            .as_deref()
+            .is_some_and(|u| u.contains("gh")));
+        assert!(android.mirrors.len() >= 2);
+        assert!(android
+            .mirrors
+            .iter()
+            .all(|u| u.starts_with("https://") && u.contains("github.com")));
         let ios = pick_download(&manifest, "ios")
             .expect("iOS 的地址可信")
             .expect("有安装包");
@@ -539,6 +654,28 @@ mod tests {
     }
 
     #[test]
+    fn mirrors_array_in_manifest_is_preferred() {
+        let mut manifest = sample_manifest();
+        let android = manifest.platforms.get_mut("android").expect("示例里有安卓");
+        android.mirror = None;
+        android.mirrors = vec![
+            "https://tv.chuankangkk.top/cktv/app-v1.1.0/CKTV_1.1.0_android.apk".into(),
+            "https://evil.example.com/bad.apk".into(),
+        ];
+        let download = pick_download(&manifest, "android")
+            .unwrap()
+            .expect("有安装包");
+        assert_eq!(
+            download.mirror_url.as_deref(),
+            Some("https://tv.chuankangkk.top/cktv/app-v1.1.0/CKTV_1.1.0_android.apk")
+        );
+        assert!(!download
+            .mirrors
+            .iter()
+            .any(|u| u.contains("evil.example.com")));
+    }
+
+    #[test]
     fn an_untrusted_main_link_is_an_error() {
         let mut manifest = sample_manifest();
         manifest
@@ -547,5 +684,12 @@ mod tests {
             .expect("示例里有安卓")
             .url = "https://evil.example.com/a.apk".into();
         assert!(pick_download(&manifest, "android").is_err());
+    }
+
+    #[test]
+    fn last_good_mirror_is_tried_first() {
+        let urls = manifest_candidates(Some("gh-proxy.com"));
+        assert!(urls[0].starts_with("https://gh-proxy.com/"));
+        assert!(urls.iter().any(|u| u == MANIFEST_URL));
     }
 }

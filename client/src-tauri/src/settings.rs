@@ -18,6 +18,9 @@ pub struct Settings {
     pub custom_servers: Vec<String>,
     pub preferred_server: Option<String>,
     pub last_good_server: Option<String>,
+    /// 上次成功拉取更新清单时用的公开代理主机名（如 gh-proxy.com）
+    #[serde(default)]
+    pub last_good_mirror: Option<String>,
     pub last_checked_at: Option<u64>,
 }
 
@@ -30,6 +33,7 @@ impl Default for Settings {
             custom_servers: Vec::new(),
             preferred_server: None,
             last_good_server: None,
+            last_good_mirror: None,
             last_checked_at: None,
         }
     }
@@ -74,6 +78,19 @@ impl Settings {
         self.last_good_server = self
             .last_good_server
             .and_then(|url| crate::servers::normalize(&url).ok());
+        self.last_good_mirror = self.last_good_mirror.as_ref().and_then(|host| {
+            let cleaned = host
+                .trim()
+                .trim_start_matches("https://")
+                .trim_start_matches("http://")
+                .trim_end_matches('/')
+                .to_string();
+            if cleaned.is_empty() || cleaned.contains('/') || !cleaned.contains('.') {
+                None
+            } else {
+                Some(cleaned)
+            }
+        });
         self.prune_servers();
         self
     }

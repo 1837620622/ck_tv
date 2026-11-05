@@ -1,11 +1,16 @@
 //! 所在地区判断。只用来决定弹窗里推荐哪条下载线路，不做其它用途，也不保存。
-//! 请求 Cloudflare 的 cdn-cgi/trace：它返回一段文字，其中 loc= 是国家或地区代码。
-//! 超时或失败时返回 Unknown，界面会同时给出两条线路，让用户自己选。
+//! 1) 请求 Cloudflare 的 cdn-cgi/trace（主备两个地址）
+//! 2) 都失败时，用系统时区启发式：Asia/Shanghai 等 → 中国大陆
+//! 超时或失败时返回 Unknown，界面会同时给出多条线路，让用户自己选。
 
 use serde::Serialize;
 use std::time::Duration;
 
-const TRACE_URL: &str = "https://www.cloudflare.com/cdn-cgi/trace";
+const TRACE_URLS: &[&str] = &[
+    "https://www.cloudflare.com/cdn-cgi/trace",
+    // 1.1.1.1 在部分网络下比 cloudflare.com 更容易连通
+    "https://1.1.1.1/cdn-cgi/trace",
+];
 const TRACE_TIMEOUT: Duration = Duration::from_secs(4);
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
@@ -36,6 +41,40 @@ pub fn parse_trace(body: &str) -> Region {
         .unwrap_or(Region::Unknown)
 }
 
+/// 中国大陆常用时区名（不含香港 / 澳门 / 台北）
+pub fn is_mainland_cn_tz(tz: &str) -> bool {
+    matches!(
+        tz.trim(),
+        "Asia/Shanghai" | "Asia/Chongqing" | "Asia/Harbin" | "Asia/Urumqi" | "Asia/Kashgar" | "PRC"
+    )
+}
+
+fn timezone_suggests_cn() -> bool {
+    if let Ok(tz) = std::env::var("TZ") {
+        if is_mainland_cn_tz(&tz) {
+            return true;
+        }
+        // TZ 明确是其它地区时，不要再猜成 CN
+        if !tz.trim().is_empty() {
+            return false;
+        }
+    }
+    match iana_time_zone::get_timezone() {
+        Ok(tz) => is_mainland_cn_tz(&tz),
+        Err(_) => false,
+    }
+}
+
+async fn try_trace(client: &reqwest::Client, url: &str) -> Region {
+    match client.get(url).send().await {
+        Ok(response) if response.status().is_success() => match response.text().await {
+            Ok(body) => parse_trace(&body),
+            Err(_) => Region::Unknown,
+        },
+        _ => Region::Unknown,
+    }
+}
+
 pub async fn detect() -> Region {
     let client = match crate::http::client_builder()
         .timeout(TRACE_TIMEOUT)
@@ -43,15 +82,31 @@ pub async fn detect() -> Region {
         .build()
     {
         Ok(client) => client,
-        Err(_) => return Region::Unknown,
+        Err(_) => {
+            let region = if timezone_suggests_cn() {
+                Region::Cn
+            } else {
+                Region::Unknown
+            };
+            log::info!("所在地区判断结果（无客户端）：{region:?}");
+            return region;
+        }
     };
-    let region = match client.get(TRACE_URL).send().await {
-        Ok(response) if response.status().is_success() => match response.text().await {
-            Ok(body) => parse_trace(&body),
-            Err(_) => Region::Unknown,
-        },
-        _ => Region::Unknown,
-    };
+
+    let mut region = Region::Unknown;
+    for url in TRACE_URLS {
+        region = try_trace(&client, url).await;
+        if region != Region::Unknown {
+            log::info!("所在地区判断结果（{url}）：{region:?}");
+            return region;
+        }
+    }
+
+    if timezone_suggests_cn() {
+        log::info!("所在地区判断结果（时区启发式）：Cn");
+        return Region::Cn;
+    }
+
     log::info!("所在地区判断结果：{region:?}");
     region
 }
@@ -77,5 +132,14 @@ mod tests {
         assert_eq!(from_loc("MO"), Region::Other);
         assert_eq!(from_loc("cn"), Region::Cn);
         assert_eq!(from_loc("T1"), Region::Unknown);
+    }
+
+    #[test]
+    fn mainland_timezone_names_map_to_cn() {
+        assert!(is_mainland_cn_tz("Asia/Shanghai"));
+        assert!(is_mainland_cn_tz("PRC"));
+        assert!(!is_mainland_cn_tz("Asia/Hong_Kong"));
+        assert!(!is_mainland_cn_tz("Asia/Taipei"));
+        assert!(!is_mainland_cn_tz("America/New_York"));
     }
 }

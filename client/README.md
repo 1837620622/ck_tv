@@ -247,7 +247,11 @@ node scripts/sync-version.mjs <新版本号> --after app-v1.2.5
 - **安卓**：使用仓库里公开的签名密钥 `signing/cktv-android-public.jks`，口令也是公开的。它保证每个版本都用同一个密钥签名，所以覆盖安装可以成功。**任何人都能用这个密钥签名，它不能证明安装包来自我们**，只保证版本之间能覆盖安装。
 - **iOS**：构建未签名的 IPA，用户在 AltStore 里用自己的 Apple ID 重新签名后安装。
 
-仓库变量 `CN_MIRROR_BASE`（可选）是国内下载线路的根地址，例如 `https://tv.chuankangkk.top/cktv`。设置后，发布时会自动加上版本标签，每个安装包的国内线路是 `<根地址>/app-v<版本号>/<文件名>`，变量只需要设置一次。**发布流程不会上传国内线路的文件**，需要自己把同名文件同步到 `<根地址>/app-v<版本号>/`。地址的域名必须在白名单里，否则发布失败。没有设置时，应用只提供 GitHub 线路。
+仓库变量 `CN_MIRROR_BASE`（可选）是国内下载线路的根地址，例如 `https://tv.chuankangkk.top/cktv`。设置后，发布时会自动加上版本标签，每个安装包的国内线路是 `<根地址>/app-v<版本号>/<文件名>`，变量只需要设置一次；清单会同时写 `mirror`（兼容旧客户端）和 `mirrors[]`。地址的域名必须在白名单里，否则发布失败。
+
+**自动上传（可选）**：配置 secrets `CN_MIRROR_UPLOAD_ENDPOINT` + `CN_MIRROR_UPLOAD_TOKEN` 后，publish 任务会把安装包和清单 `PUT` 到 `<endpoint>/<tag>/<filename>`（Bearer）。未配置时干净跳过，需自行把同名文件同步到 `<CN_MIRROR_BASE>/app-v<版本号>/`（国内 OSS/COS/对象存储）。没有 `CN_MIRROR_BASE` 时，客户端仍会用公开代理（`ghfast.top` / `gh-proxy.com` / `edgeone.gh-proxy.com`）竞速拉取清单并提供多条国内下载线路。
+
+安卓默认只构建 **arm64**。需要旧 32 位包时，把仓库变量 `ANDROID_BUILD_ARMV7` 设为 `true`（产物单独命名，不进入 `update.json`）。
 
 ## 发布流程
 
@@ -279,11 +283,12 @@ git push origin app-v<新版本号>
 - 清单地址是 `https://github.com/1837620622/ck_tv/releases/latest/download/update.json`，和 Release 一起发布。
 - 启动约 12 秒后做第一次检查，之后按设置的间隔（6、12、24 小时或每周）后台检查，设置里可以关闭自动检查。切回前台时，距离上次检查超过 30 分钟才会再检查一次。
 - 发现新版本时，主窗口右下角弹出提示（站点页面里也会显示），托盘图标显示「有新版本」。点「跳过这个版本」之后，只有更高的版本才会再提醒。
-- **下载线路**：应用会判断所在地区（访问 `https://www.cloudflare.com/cdn-cgi/trace`，4 秒超时）。
+- **下载线路**：应用会判断所在地区（优先 `cdn-cgi/trace`，失败再用 `1.1.1.1`，再失败则看系统时区是否为 `Asia/Shanghai` 等）。
   - 海外用户（非 iOS）：直接在浏览器里打开 GitHub 下载。
-  - 中国大陆用户：弹出线路选择，配置了 `CN_MIRROR_BASE` 时推荐国内线路；没有配置时只有 GitHub，并提示国内线路暂未提供。
+  - 中国大陆用户：弹出线路选择，推荐国内线路（官方 `CN_MIRROR_BASE` 和/或公开代理，可多条）。
   - 无法判断地区，以及所有 iOS 用户：弹出线路选择，不推荐任何线路。
   - 香港、澳门、台湾按海外处理。
+  - 更新清单并行竞速（直连 + 多个公开代理，约 3 秒超时），上次成功的代理会记入本地设置。
 - **安装**：桌面端下载后手动安装；安卓下载 APK 后覆盖安装；iOS 在 AltStore 里添加源后安装。
 
 ## 验证状态
@@ -301,7 +306,7 @@ git push origin app-v<新版本号>
 - 发布流水线（`app-release.yml`）已在 GitHub 上跑通过：app-v1.2.1 的 App Release 全绿（verify、桌面三端、安卓、iOS、publish），11 个安装包正式发布。
 - 五个平台的安装包没有在真实设备上安装和运行。覆盖安装、更新下载、SHA-256 核对、AltStore 添加源和安装，都还没有在真机上完整走过。
 - 真实 WebView 里的 `cktv://` 拦截、刘海和底部手势条的安全区布局、全屏视频、离线下载的长时间运行，没有完整验证。
-- 国内线路还没有配置（没有 `CN_MIRROR_BASE`），中国大陆用户目前只能使用 GitHub 线路。
+- 官方国内对象存储（`CN_MIRROR_BASE`）仍需自行准备；未配置时依赖公开 GitHub 代理。
 - `src-tauri/gen/`（Android 和 Apple 工程）不提交，由 CI 里的 `tauri android init --ci` 和 `tauri ios init --ci` 生成。
 
 ## 决定和待办

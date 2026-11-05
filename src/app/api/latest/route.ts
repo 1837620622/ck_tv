@@ -1,7 +1,12 @@
 import { getOptionalRequestContext } from '@cloudflare/next-on-pages';
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 
-import { jsonCacheHeaders, readJsonCache, writeJsonCache } from '@/lib/edge-cache';
+import {
+  jsonCacheHeaders,
+  readJsonCache,
+  writeJsonCache,
+} from '@/lib/edge-cache';
+import { countryOf } from '@/lib/edge-country';
 
 export const runtime = 'edge';
 
@@ -10,6 +15,12 @@ const REPO = '1837620622/ck_tv';
 const GITHUB_LATEST_URL = `https://api.github.com/repos/${REPO}/releases/latest`;
 const RELEASES_PAGE = `https://github.com/${REPO}/releases/latest`;
 const ALTSTORE_SOURCE = `https://github.com/${REPO}/releases/latest/download/altstore.json`;
+// 与客户端 update.rs / make-update-manifest.mjs 保持一致（2026-11-05 探测可用）
+const GITHUB_PROXY_PREFIXES = [
+  'https://ghfast.top/',
+  'https://gh-proxy.com/',
+  'https://edgeone.gh-proxy.com/',
+] as const;
 // 边缘缓存 5 分钟：上游无鉴权限速 60 次/小时，这个间隔最多 12 次/小时，不会撞限。
 // 浏览器缓存 60 秒：同一个人短时间内反复打开首页不重复请求。
 const CACHE_SECONDS = 300;
@@ -30,10 +41,57 @@ interface GithubRelease {
   assets: ReleaseAsset[];
 }
 
+interface LatestCore {
+  ok: true;
+  tag: string;
+  androidUrl: string | null;
+  /** @deprecated 兼容旧前端：等于 mirrors[0] */
+  androidMirrorUrl: string | null;
+  mirrors: string[];
+  releaseUrl: string;
+  altstoreUrl: string;
+  stale?: boolean;
+}
+
+function buildMirrors(androidUrl: string | null): string[] {
+  if (!androidUrl) return [];
+  // 官方国内源（若环境变量配置了 CN_MIRROR_BASE，发布清单会写进 update.json；
+  // 这里只为 github.com 直链拼公开代理，不臆造 OSS 地址）
+  if (!androidUrl.startsWith('https://github.com/')) return [];
+  return GITHUB_PROXY_PREFIXES.map((prefix) => `${prefix}${androidUrl}`);
+}
+
+function withCountry(core: LatestCore, request: NextRequest) {
+  const country = countryOf(request);
+  const preferMirror = country === 'CN';
+  return {
+    ...core,
+    country: country || null,
+    preferMirror,
+  };
+}
+
+function jsonResponse(
+  body: string,
+  cache: 'HIT' | 'MISS' | 'STALE',
+  extraHeaders: Record<string, string> = {}
+) {
+  return new NextResponse(body, {
+    headers: {
+      ...jsonCacheHeaders(CACHE_SECONDS, BROWSER_SECONDS),
+      'content-type': 'application/json; charset=utf-8',
+      'x-ck-cache': cache,
+      // 国家相关字段按请求计算，CDN 不要按无国家缓存串台
+      Vary: 'CF-IPCountry',
+      ...extraHeaders,
+    },
+  });
+}
+
 // 首页下载卡片的同源接口：服务端去查最新发布，浏览器不用直连 api.github.com。
 // 这样访客网络屏蔽 GitHub API 时卡片仍能显示最新版本号和直链；
 // 失败时卡片回落到直连 api.github.com，再失败就指向 Release 页面（那里永远是最新版）。
-export async function GET() {
+export async function GET(request: NextRequest) {
   const ctx = (() => {
     try {
       return getOptionalRequestContext()?.ctx;
@@ -42,29 +100,29 @@ export async function GET() {
     }
   })();
 
-  const cacheUrl = 'https://cktv-cache.local/latest-release?v=1';
+  const cacheUrl = 'https://cktv-cache.local/latest-release?v=2';
   const staleUrl = `${cacheUrl}&stale=1`;
   // 上游失败时用上次成功的结果兜底；没有兜底才返回 502。
   const serveStale = async () => {
     const stale = await readJsonCache(staleUrl);
     if (!stale) return null;
-    return new NextResponse(await stale.text(), {
-      headers: {
+    try {
+      const core = (await stale.json()) as LatestCore;
+      return jsonResponse(JSON.stringify(withCountry(core, request)), 'STALE', {
         'Cache-Control': 'public, max-age=60, s-maxage=0',
-        'content-type': 'application/json; charset=utf-8',
-        'x-ck-cache': 'STALE',
-      },
-    });
+      });
+    } catch {
+      return null;
+    }
   };
   const hit = await readJsonCache(cacheUrl);
   if (hit) {
-    return new NextResponse(await hit.text(), {
-      headers: {
-        ...jsonCacheHeaders(CACHE_SECONDS, BROWSER_SECONDS),
-        'content-type': 'application/json; charset=utf-8',
-        'x-ck-cache': 'HIT',
-      },
-    });
+    try {
+      const core = (await hit.json()) as LatestCore;
+      return jsonResponse(JSON.stringify(withCountry(core, request)), 'HIT');
+    } catch {
+      // 缓存损坏：掉到重新拉取
+    }
   }
 
   try {
@@ -98,36 +156,26 @@ export async function GET() {
       asset.name.endsWith('_android.apk')
     );
     const androidUrl = android ? android.browser_download_url : null;
-    // 国内用户直连 GitHub 下载 APK 很慢或打不开时用的公开代理线路；
-    // 只有 github.com 的地址才拼代理，其它地址不动。
-    const androidMirrorUrl =
-      androidUrl && androidUrl.startsWith('https://github.com/')
-        ? `https://ghfast.top/${androidUrl}`
-        : null;
-    const payload = {
+    const mirrors = buildMirrors(androidUrl);
+    const core: LatestCore = {
       ok: true,
       tag: data.tag_name,
       androidUrl,
-      androidMirrorUrl,
+      androidMirrorUrl: mirrors[0] ?? null,
+      mirrors,
       releaseUrl: data.html_url || RELEASES_PAGE,
       altstoreUrl: ALTSTORE_SOURCE,
     };
-    const body = JSON.stringify(payload);
+    const body = JSON.stringify(core);
     await writeJsonCache(ctx, cacheUrl, body, CACHE_SECONDS, BROWSER_SECONDS);
     await writeJsonCache(
       ctx,
       staleUrl,
-      JSON.stringify({ ...payload, stale: true }),
+      JSON.stringify({ ...core, stale: true }),
       STALE_SECONDS,
       BROWSER_SECONDS
     );
-    return new NextResponse(body, {
-      headers: {
-        ...jsonCacheHeaders(CACHE_SECONDS, BROWSER_SECONDS),
-        'content-type': 'application/json; charset=utf-8',
-        'x-ck-cache': 'MISS',
-      },
-    });
+    return jsonResponse(JSON.stringify(withCountry(core, request)), 'MISS');
   } catch (error) {
     const timedOut = error instanceof Error && error.name === 'TimeoutError';
     return (

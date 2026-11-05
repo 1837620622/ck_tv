@@ -1,7 +1,7 @@
 'use client';
 
 import { Download, Smartphone } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 // 手机客户端的安装包都放在 GitHub Release 里。这里总是指向「最新的正式版本」：
 // 每次打开页面都重新查最新发布：先走本站的 /api/latest（服务端查、边缘缓存 5 分钟，
@@ -10,6 +10,11 @@ import { useEffect, useState } from 'react';
 const REPO = '1837620622/ck_tv';
 const RELEASES_PAGE = `https://github.com/${REPO}/releases/latest`;
 const ALTSTORE_SOURCE = `https://github.com/${REPO}/releases/latest/download/altstore.json`;
+const FALLBACK_PROXIES = [
+  'https://ghfast.top/',
+  'https://gh-proxy.com/',
+  'https://edgeone.gh-proxy.com/',
+] as const;
 
 interface ReleaseAsset {
   name: string;
@@ -26,9 +31,15 @@ function findAsset(assets: ReleaseAsset[], suffix: string): string | null {
   return hit ? hit.browser_download_url : null;
 }
 
+function proxiesFor(githubUrl: string | null): string[] {
+  if (!githubUrl || !githubUrl.startsWith('https://github.com/')) return [];
+  return FALLBACK_PROXIES.map((prefix) => `${prefix}${githubUrl}`);
+}
+
 export default function MobileAppDownload() {
   const [release, setRelease] = useState<LatestRelease | null>(null);
-  const [mirrorUrl, setMirrorUrl] = useState<string | null>(null);
+  const [mirrors, setMirrors] = useState<string[]>([]);
+  const [preferMirror, setPreferMirror] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -51,7 +62,13 @@ export default function MobileAppDownload() {
                   ]
                 : [],
             });
-            if (data.androidMirrorUrl) setMirrorUrl(data.androidMirrorUrl);
+            const list: string[] = Array.isArray(data.mirrors)
+              ? data.mirrors.filter((u: unknown) => typeof u === 'string')
+              : data.androidMirrorUrl
+              ? [data.androidMirrorUrl]
+              : [];
+            setMirrors(list);
+            setPreferMirror(Boolean(data.preferMirror));
             // 带 stale 标记的是上游失败时的陈旧兜底：先显示它，再往下直连 GitHub API 刷新，
             // 不直接返回，否则旧版本号会一直挂在卡片上。
             if (!data.stale) return;
@@ -74,9 +91,9 @@ export default function MobileAppDownload() {
           if (data && Array.isArray(data.assets)) {
             setRelease(data);
             const apk = findAsset(data.assets, '_android.apk');
-            if (apk && apk.startsWith('https://github.com/')) {
-              setMirrorUrl(`https://ghfast.top/${apk}`);
-            }
+            setMirrors(proxiesFor(apk));
+            // 客户端无法可靠判断 CF 国家；保持 GitHub 为主按钮
+            setPreferMirror(false);
           }
         }
       } catch {
@@ -88,6 +105,16 @@ export default function MobileAppDownload() {
 
   const androidHref =
     (release && findAsset(release.assets, '_android.apk')) || RELEASES_PAGE;
+  const primaryHref = useMemo(() => {
+    if (preferMirror && mirrors[0]) return mirrors[0];
+    return androidHref;
+  }, [preferMirror, mirrors, androidHref]);
+  const secondaryMirrors = useMemo(() => {
+    if (!mirrors.length) return [];
+    // 主按钮已经用了 mirrors[0] 时，其余作为备用链接；否则全部列出
+    if (preferMirror) return mirrors.slice(1);
+    return mirrors;
+  }, [mirrors, preferMirror]);
 
   return (
     <section
@@ -120,23 +147,37 @@ export default function MobileAppDownload() {
             </p>
             <p className='mt-1 text-sm text-gray-500 dark:text-gray-400'>
               下载 APK 后直接安装。首次安装时需要允许「安装未知来源应用」。
+              {preferMirror ? ' 已根据你的网络优先提供国内加速线路。' : ''}
             </p>
           </div>
           <a
-            href={androidHref}
+            href={primaryHref}
             className='inline-flex w-full items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-green-700 sm:w-auto sm:self-start'
           >
             <Download className='h-4 w-4' aria-hidden />
-            下载安卓版 APK
+            {preferMirror ? '下载安卓版（国内线路）' : '下载安卓版 APK'}
           </a>
-          {mirrorUrl ? (
+          {preferMirror && androidHref !== primaryHref ? (
             <a
-              href={mirrorUrl}
+              href={androidHref}
               className='text-xs text-gray-500 underline hover:text-gray-700 sm:self-start dark:text-gray-400 dark:hover:text-gray-200'
             >
-              下载慢？试试国内线路
+              使用 GitHub 原站下载
             </a>
           ) : null}
+          {secondaryMirrors.map((url, index) => (
+            <a
+              key={url}
+              href={url}
+              className='text-xs text-gray-500 underline hover:text-gray-700 sm:self-start dark:text-gray-400 dark:hover:text-gray-200'
+            >
+              {preferMirror
+                ? `备用国内线路 ${index + 2}`
+                : index === 0
+                ? '下载慢？试试国内线路'
+                : `国内线路 ${index + 1}`}
+            </a>
+          ))}
         </div>
 
         <div className='flex flex-col gap-3 rounded-lg border border-gray-100 p-4 dark:border-gray-800'>

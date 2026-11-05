@@ -580,6 +580,7 @@ dependencies = [
  "futures-util",
  "getrandom 0.3.4",
  "hmac",
+ "iana-time-zone",
  "log",
  "mp4",
  "reqwest",
