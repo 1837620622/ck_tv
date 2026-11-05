@@ -70,10 +70,20 @@ const mockDownload = (platform) => {
     'CKTV.zip',
     null,
   ];
+  const mirrorUrl = withMirror
+    ? `https://mirror.example.org/cktv/${file}`
+    : null;
   return {
     label,
     url: `${ASSET_BASE}/${file}`,
-    mirrorUrl: withMirror ? `https://mirror.example.org/cktv/${file}` : null,
+    mirrorUrl,
+    mirrors: mirrorUrl
+      ? [
+          mirrorUrl,
+          `https://gh-proxy.com/${ASSET_BASE}/${file}`,
+          `https://edgeone.gh-proxy.com/${ASSET_BASE}/${file}`,
+        ]
+      : [],
     sha256: 'a3f1c9…7b2e',
     size,
     sourceUrl:

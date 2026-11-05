@@ -137,33 +137,42 @@ fn failed(url: String, error: String) -> Probe {
     }
 }
 
+fn probe_from_response(url: String, started: Instant, response: reqwest::Response) -> Probe {
+    let code = response.status().as_u16();
+    let ok = code < 500;
+    Probe {
+        url,
+        ok,
+        status: Some(code),
+        latency_ms: Some(started.elapsed().as_millis() as u64),
+        error: if ok {
+            None
+        } else {
+            Some(format!("服务器错误 {code}"))
+        },
+    }
+}
+
+fn probe_err_reason(err: &reqwest::Error) -> &'static str {
+    if err.is_timeout() {
+        "连接超时"
+    } else if err.is_connect() {
+        "无法连接"
+    } else {
+        "请求失败"
+    }
+}
+
 async fn probe_one(client: &reqwest::Client, url: String) -> Probe {
     let started = Instant::now();
     match client.head(&url).send().await {
-        Ok(response) => {
-            let code = response.status().as_u16();
-            let ok = code < 500;
-            Probe {
-                url,
-                ok,
-                status: Some(code),
-                latency_ms: Some(started.elapsed().as_millis() as u64),
-                error: if ok {
-                    None
-                } else {
-                    Some(format!("服务器错误 {code}"))
-                },
+        Ok(response) => probe_from_response(url, started, response),
+        Err(head_err) => {
+            // 部分线路拒绝 HEAD 或中间设备丢弃 HEAD：改用 GET 再试一次
+            match client.get(&url).send().await {
+                Ok(response) => probe_from_response(url, started, response),
+                Err(_) => failed(url, probe_err_reason(&head_err).into()),
             }
-        }
-        Err(err) => {
-            let reason = if err.is_timeout() {
-                "连接超时"
-            } else if err.is_connect() {
-                "无法连接"
-            } else {
-                "请求失败"
-            };
-            failed(url, reason.into())
         }
     }
 }

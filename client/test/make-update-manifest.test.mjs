@@ -154,10 +154,17 @@ test('a mirror base adds one mirror link per platform', () => {
     update.platforms.android.mirror,
     'https://tv.chuankangkk.top/cktv/app-v1.1.0/CKTV_1.1.0_android.apk'
   );
+  assert.deepEqual(update.platforms.android.mirrors, [
+    'https://tv.chuankangkk.top/cktv/app-v1.1.0/CKTV_1.1.0_android.apk',
+  ]);
   for (const platform of PLATFORMS) {
     assert.ok(
       update.platforms[platform.key].mirror,
       `${platform.key} 缺少国内线路`
+    );
+    assert.deepEqual(
+      update.platforms[platform.key].mirrors,
+      [update.platforms[platform.key].mirror]
     );
   }
 });

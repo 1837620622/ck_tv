@@ -14,7 +14,11 @@ import {
   platformLabel,
 } from './common.js';
 import { busy, clear, fill, h, icon, toast } from './dom.js';
-import { downloadAction, downloadLines } from './lib/download.js';
+import {
+  downloadAction,
+  downloadLines,
+  mirrorUrlList,
+} from './lib/download.js';
 import { interval, relativeTime } from './lib/format.js';
 import { parseNotes } from './lib/markdown.js';
 import {
@@ -778,13 +782,16 @@ function closeChooser() {
 }
 
 function leadText(update) {
+  const mirrors = mirrorUrlList(update.download);
   if (update.region === 'cn') {
-    return update.download.mirrorUrl
-      ? '检测到你在中国大陆，已推荐国内线路。'
+    return mirrors.length
+      ? `检测到你在中国大陆，已推荐国内线路（共 ${mirrors.length} 条可选）。`
       : '检测到你在中国大陆。';
   }
   if (update.region === 'other') return '推荐使用海外线路（GitHub）。';
-  return '没有判断出你所在的位置，请选择一条线路。';
+  return mirrors.length
+    ? `没有判断出你所在的位置，请选择一条线路（含 ${mirrors.length} 条国内加速）。`
+    : '没有判断出你所在的位置，请选择一条线路。';
 }
 
 function chooserBody(update) {
@@ -794,7 +801,8 @@ function chooserBody(update) {
   const size = download.size
     ? `${(download.size / 1024 / 1024).toFixed(1)} MB`
     : null;
-  const noMirror = update.region === 'cn' && !download.mirrorUrl;
+  const noMirror =
+    update.region === 'cn' && mirrorUrlList(download).length === 0;
   return [
     h('p', { class: 'chooser-lead' }, leadText(update)),
     h(

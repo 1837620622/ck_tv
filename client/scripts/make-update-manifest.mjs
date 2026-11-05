@@ -60,8 +60,10 @@ export const ALLOWED_HOSTS = [
   'release-assets.githubusercontent.com',
   'tv.chuankangkk.top',
   'ck-tv.pages.dev',
-  // 公开的 GitHub 加速代理，客户端没有配 CN_MIRROR_BASE 时自动用它拼国内线路
+  // 公开的 GitHub 加速代理（2026-11-05 探测可用；与 src-tauri/src/update.rs 保持一致）
   'ghfast.top',
+  'gh-proxy.com',
+  'edgeone.gh-proxy.com',
 ];
 
 // 五个平台。key 与应用里的 platform_name() 一致；test 根据文件名判断是哪个平台的安装包。
@@ -147,10 +149,13 @@ export function buildManifests({
       url: checkLink(`${platform.label}下载`, `${releaseBase}/${file}`),
     };
     if (mirrorPrefix) {
-      entry.mirror = checkLink(
+      const mirror = checkLink(
         `${platform.label}国内线路`,
         `${mirrorPrefix}/${file}`
       );
+      // mirror 保留兼容；mirrors[] 是多线路字段，旧客户端只读 mirror
+      entry.mirror = mirror;
+      entry.mirrors = [mirror];
     }
     entry.sha256 = item.sha256;
     entry.size = item.size;

@@ -116,7 +116,7 @@ const withPWA = require('next-pwa')({
   cacheStartUrl: false,
   dynamicStartUrl: false,
   buildExcludes: [/.*/],
-  publicExcludes: ['!noprecache/**/*', '!screenshot*.png', '!ck.jpg'],
+  publicExcludes: ['!noprecache/**/*', '!screenshot*.webp', '!ck.jpg'],
   runtimeCaching: [],
 });
 
