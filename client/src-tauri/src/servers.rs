@@ -92,12 +92,21 @@ pub fn user_agent() -> String {
 }
 
 /// 并行测速，结果顺序和输入一致。站点只要有响应（非 5xx）就算线路可用。
-pub async fn probe_all(urls: Vec<String>) -> Vec<Probe> {
-    let client = match crate::http::client_builder()
-        .connect_timeout(Duration::from_secs(4))
-        .timeout(Duration::from_secs(8))
-        .user_agent(user_agent())
-        .build()
+/// 国内 / 未知地区时先竞速 Cloudflare 优选 IP，再测线路（TLS SNI 仍是原域名）。
+pub async fn probe_all_with_prefer(
+    urls: Vec<String>,
+    region: crate::region::Region,
+    saved_cf_ip: Option<&str>,
+) -> Vec<Probe> {
+    let prefer_ip = crate::cf_prefer::prepare(region, saved_cf_ip).await;
+    let client = match crate::cf_prefer::apply_resolves(
+        crate::http::client_builder()
+            .connect_timeout(Duration::from_secs(4))
+            .timeout(Duration::from_secs(8))
+            .user_agent(user_agent()),
+        prefer_ip,
+    )
+    .build()
     {
         Ok(client) => client,
         Err(err) => {

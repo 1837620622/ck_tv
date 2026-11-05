@@ -138,7 +138,7 @@ Cloudflare 用 Anycast：同一个域名在全球几百个城市的节点上都�
 
 - 同一节点的访客共享边缘缓存：一个人打开过的目录、榜单、搜索结果和海报代理，同一节点的其他人再打开就直接从缓存拿，不再回源。这部分是自动的，访客越多越快。
 - 页面脚本、样式、图标都由 Cloudflare 节点直接发，带长期缓存；只有接口才启动函数。
-- 「优选 IP」（给国内访客换一个更快的 Cloudflare 入口 IP）只能在 DNS 层做，代码里做不到。常见做法是：域名放在支持分线路解析的 DNS 服务商，在 Cloudflare 用「Cloudflare for SaaS」把这个域名加成自定义主机名，再把国内线路解析到实测更快的 Cloudflare IP 或优选域名。这需要另外一个域名和一套 DNS 设置，优选 IP 也会随时间变化，要定期复测；用第三方提供的优选域名，等于把入口交给对方。没有做这套设置时，访客走 Cloudflare 默认分配的节点。
+- 「优选 IP」：给国内访客换一个更快的 Cloudflare 入口 IP。原生客户端（1.2.6+）会在测速 / 拉取更新清单时，对 `tv.chuankangkk.top` 与 `ck-tv.pages.dev` 用内置 + 远程列表（`/cf-prefer-ips.json`）竞速，并用 `reqwest` 的 resolve 把 TLS SNI 仍绑在原域名上；测通后记住 `last_good_cf_ip`。浏览器里打开网页仍走系统 DNS（免费版 Pages 没有大陆节点，这一点改不了）。若要在 DNS 层给网页访客也分流，需要域名放在支持分线路解析的 DNS（如 DNSPod），再用 Cloudflare for SaaS / 自定义主机名把国内线路指到实测更快的入口；那需要额外域名和凭证，且优选 IP 会漂移，要定期复测。
 - 免费就能开、对访客有好处的 Cloudflare 设置：在域名的 Speed → Optimization 里打开 HTTP/3（QUIC）、0-RTT。
 
 ## 自动部署
@@ -165,7 +165,7 @@ src/components     界面
 src/lib            片源、搜索、缓存、直播、黄果
 config.json        普通源和成人源
 scripts            生成 runtime、manifest、版本号
-public             图标和赞赏码
+public             图标、赞赏码、cf-prefer-ips.json（客户端优选 IP 列表）
 ```
 
 `pnpm gen:runtime` 把 `config.json` 写成 `src/lib/runtime.ts`。这个文件不提交。提交前的钩子会重写版本号，不要手改 `src/lib/version.ts` 和 `VERSION.txt`。

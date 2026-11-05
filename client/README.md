@@ -225,12 +225,12 @@ cargo clippy --all-targets -- -D warnings
 
 <!-- 由 scripts/sync-version.mjs 生成，不要手改 -->
 
-当前版本：**1.2.5**，标签 `app-v1.2.5`。
+当前版本：**1.2.6**，标签 `app-v1.2.6`。
 
 下一次升版本，在 `client` 目录运行（新版本号必须比它大）：
 
 ```bash
-node scripts/sync-version.mjs <新版本号> --after app-v1.2.5
+node scripts/sync-version.mjs <新版本号> --after app-v1.2.6
 ```
 
 <!-- version:end -->
@@ -248,6 +248,8 @@ node scripts/sync-version.mjs <新版本号> --after app-v1.2.5
 - **iOS**：构建未签名的 IPA，用户在 AltStore 里用自己的 Apple ID 重新签名后安装。
 
 仓库变量 `CN_MIRROR_BASE`（可选）是国内下载线路的根地址，例如 `https://tv.chuankangkk.top/cktv`。设置后，发布时会自动加上版本标签，每个安装包的国内线路是 `<根地址>/app-v<版本号>/<文件名>`，变量只需要设置一次；清单会同时写 `mirror`（兼容旧客户端）和 `mirrors[]`。地址的域名必须在白名单里，否则发布失败。
+
+**Cloudflare 优选 IP（1.2.6+）**：中国大陆 / 地区未知时，客户端对官方线路主机竞速优选入口 IP（内置列表 + 站点 `/cf-prefer-ips.json`），测速与更新清单请求走 `reqwest::resolve`（SNI 仍是原域名），并把最快 IP 写入本地 `last_good_cf_ip`。这只影响客户端的 HTTP 探测/清单；内嵌 WebView 打开站点仍用系统 DNS。
 
 **自动上传（可选）**：配置 secrets `CN_MIRROR_UPLOAD_ENDPOINT` + `CN_MIRROR_UPLOAD_TOKEN` 后，publish 任务会把安装包和清单 `PUT` 到 `<endpoint>/<tag>/<filename>`（Bearer）。未配置时干净跳过，需自行把同名文件同步到 `<CN_MIRROR_BASE>/app-v<版本号>/`（国内 OSS/COS/对象存储）。没有 `CN_MIRROR_BASE` 时，客户端仍会用公开代理（`ghfast.top` / `gh-proxy.com` / `edgeone.gh-proxy.com`）竞速拉取清单并提供多条国内下载线路。
 
@@ -272,7 +274,7 @@ git push origin app-v<新版本号>
 
 1. **verify**：检查版本号与标签一致、README 的版本信息同步、比上一个正式发布大，并运行脚本测试；创建草稿 Release。标签是注释标签时用它的注释作更新说明，是轻量标签时用默认文案。
 2. **desktop**：macOS（通用版）、Windows、Linux 并行构建，安装包上传到草稿。
-3. **android**：构建 APK，用公开密钥签名，上传到草稿。
+3. **android**：构建 APK，用公开密钥签名，上传到草稿。国内用户下载优先走公开 GitHub 代理竞速（见上）；官方 `CN_MIRROR_BASE` 可再挂对象存储。当前 CI 仍打 universal APK；若只要缩短构建、覆盖几乎全部真机，可改为仅 `aarch64`（见仓库外 pending 说明，不默认改 workflow）。
 4. **ios**：构建未签名的 IPA，上传到草稿。
 5. **publish**：生成 `update.json`、`altstore.json`、图标和 `release-notes.md`（标签注释、下载表格和 SHA-256），上传后把草稿改为正式发布。`releases/latest` 指向这个正式版本，应用和 AltStore 都从这里读取。
 

@@ -21,6 +21,9 @@ pub struct Settings {
     /// 上次成功拉取更新清单时用的公开代理主机名（如 gh-proxy.com）
     #[serde(default)]
     pub last_good_mirror: Option<String>,
+    /// 上次国内竞速成功的 Cloudflare 优选 IP（仅 IPv4/IPv6 字面量）
+    #[serde(default)]
+    pub last_good_cf_ip: Option<String>,
     pub last_checked_at: Option<u64>,
 }
 
@@ -34,6 +37,7 @@ impl Default for Settings {
             preferred_server: None,
             last_good_server: None,
             last_good_mirror: None,
+            last_good_cf_ip: None,
             last_checked_at: None,
         }
     }
@@ -89,6 +93,14 @@ impl Settings {
                 None
             } else {
                 Some(cleaned)
+            }
+        });
+        self.last_good_cf_ip = self.last_good_cf_ip.as_ref().and_then(|raw| {
+            let cleaned = raw.trim().to_string();
+            if cleaned.parse::<std::net::IpAddr>().is_ok() {
+                Some(cleaned)
+            } else {
+                None
             }
         });
         self.prune_servers();

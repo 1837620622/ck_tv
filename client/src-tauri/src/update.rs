@@ -392,11 +392,25 @@ async fn fetch_manifest_once(client: &reqwest::Client, url: &str) -> Result<Mani
 
 /// 并行竞速拉取清单：2–3 秒超时，谁先成功用谁；成功的公开代理写入 last_good_mirror
 async fn fetch_manifest(app: &AppHandle, last_good: Option<&str>) -> Result<Manifest, String> {
-    let client = crate::http::client_builder()
-        .timeout(MANIFEST_RACE_TIMEOUT)
-        .user_agent(crate::servers::user_agent())
-        .build()
-        .map_err(|err| err.to_string())?;
+    let settings = settings::current(app);
+    let region = {
+        let manager = app.state::<UpdateManager>();
+        let cached = *crate::lock(&manager.region);
+        match cached {
+            Some(region) => region,
+            None => Region::Unknown,
+        }
+    };
+    let prefer_ip =
+        crate::cf_prefer::prepare(region, settings.last_good_cf_ip.as_deref()).await;
+    let client = crate::cf_prefer::apply_resolves(
+        crate::http::client_builder()
+            .timeout(MANIFEST_RACE_TIMEOUT)
+            .user_agent(crate::servers::user_agent()),
+        prefer_ip,
+    )
+    .build()
+    .map_err(|err| err.to_string())?;
     let candidates = manifest_candidates(last_good);
     let mut set = JoinSet::new();
     for url in candidates {

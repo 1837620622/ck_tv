@@ -2,7 +2,7 @@
 
 use crate::settings::{self, Settings, SettingsPatch};
 use crate::update::{self, UpdateManager, UpdateState};
-use crate::{platform_name, servers, window};
+use crate::{platform_name, region, servers, window};
 use serde::Serialize;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_opener::OpenerExt;
@@ -86,6 +86,7 @@ pub async fn probe_servers(
     app: AppHandle,
     urls: Option<Vec<String>>,
 ) -> Result<Vec<servers::Probe>, String> {
+    let settings = settings::current(&app);
     let list = match urls {
         Some(list) => {
             let mut normalized = Vec::new();
@@ -94,9 +95,27 @@ pub async fn probe_servers(
             }
             normalized
         }
-        None => servers::candidates(&settings::current(&app)),
+        None => servers::candidates(&settings),
     };
-    Ok(servers::probe_all(list).await)
+    let region = region::detect().await;
+    let results =
+        servers::probe_all_with_prefer(list, region, settings.last_good_cf_ip.as_deref()).await;
+    // 官方线路测通时记住本次优选 IP，下次优先用
+    if let Some(ip) = crate::cf_prefer::current_ip().await {
+        let hit = results.iter().any(|probe| {
+            probe.ok
+                && servers::DEFAULT_SERVERS
+                    .iter()
+                    .any(|server| probe.url.starts_with(server))
+        });
+        if hit {
+            let _ = settings::modify(&app, |s| {
+                s.last_good_cf_ip = Some(ip.to_string());
+                Ok(())
+            });
+        }
+    }
+    Ok(results)
 }
 
 /// 进入某条线路。只能进入候选列表里的线路。

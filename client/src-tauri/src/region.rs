@@ -1,6 +1,8 @@
 //! 所在地区判断。只用来决定弹窗里推荐哪条下载线路，不做其它用途，也不保存。
-//! 1) 请求 Cloudflare 的 cdn-cgi/trace（主备两个地址）
-//! 2) 都失败时，用系统时区启发式：Asia/Shanghai 等 → 中国大陆
+//!
+//! - 请求 Cloudflare 的 cdn-cgi/trace（主备两个地址）
+//! - 都失败时，用系统时区启发式：Asia/Shanghai 等 → 中国大陆
+//!
 //! 超时或失败时返回 Unknown，界面会同时给出多条线路，让用户自己选。
 
 use serde::Serialize;

@@ -31,10 +31,25 @@ const nextConfig = {
         value: 'public, max-age=86400, s-maxage=604800',
       },
     ];
+    const longCache = [
+      {
+        key: 'Cache-Control',
+        value: 'public, max-age=2592000, immutable',
+      },
+    ];
+    const preferCache = [
+      {
+        key: 'Cache-Control',
+        value: 'public, max-age=300, s-maxage=600',
+      },
+    ];
     return [
       { source: '/logo.png', headers: cache },
       { source: '/favicon.ico', headers: cache },
       { source: '/icons/:file', headers: cache },
+      { source: '/:file.webp', headers: longCache },
+      { source: '/fonts/:file', headers: longCache },
+      { source: '/cf-prefer-ips.json', headers: preferCache },
     ];
   },
 

@@ -12,6 +12,7 @@
 //! - `menu` / `tray`：桌面端原生菜单和托盘。
 
 mod action_key;
+mod cf_prefer;
 mod commands;
 mod downloads;
 mod hls;
@@ -123,6 +124,22 @@ pub fn run() {
             {
                 app.set_menu(menu::build(&handle)?)?;
                 tray::install(&handle)?;
+            }
+
+            // 国内 / 未知地区：后台先竞速 Cloudflare 优选 IP，供测速与更新清单复用
+            {
+                let warm = handle.clone();
+                tauri::async_runtime::spawn(async move {
+                    let settings = settings::current(&warm);
+                    let region = region::detect().await;
+                    let _ = cf_prefer::prepare(region, settings.last_good_cf_ip.as_deref()).await;
+                    if let Some(ip) = cf_prefer::current_ip().await {
+                        let _ = settings::modify(&warm, |s| {
+                            s.last_good_cf_ip = Some(ip.to_string());
+                            Ok(())
+                        });
+                    }
+                });
             }
 
             update::spawn_scheduler(handle);

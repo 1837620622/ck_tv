@@ -20,8 +20,16 @@ const STATIC_HEADERS = [
   ['/logo.png', 'public, max-age=86400'],
   ['/favicon.ico', 'public, max-age=86400'],
   ['/icons/*', 'public, max-age=86400'],
+  // WebP 截图 / 宣传图：文件名固定，发版才换
+  ['/*.webp', 'public, max-age=2592000, immutable'],
+  ['/fonts/*', 'public, max-age=31536000, immutable'],
+  // 优选 IP 列表：允许短缓存，客户端会再竞速
+  ['/cf-prefer-ips.json', 'public, max-age=300, s-maxage=600'],
+  // Next 哈希静态资源（若出现在 static 输出根上）
+  ['/_next/static/*', 'public, max-age=31536000, immutable'],
   // Service Worker 每次都要重新确认，新版本才能及时生效
   ['/sw.js', 'no-cache'],
+  ['/workbox-*.js', 'no-cache'],
 ];
 
 // public 里每个文件一条精确规则，每个目录一条通配规则
