@@ -401,8 +401,7 @@ async fn fetch_manifest(app: &AppHandle, last_good: Option<&str>) -> Result<Mani
             None => Region::Unknown,
         }
     };
-    let prefer_ip =
-        crate::cf_prefer::prepare(region, settings.last_good_cf_ip.as_deref()).await;
+    let prefer_ip = crate::cf_prefer::prepare(region, settings.last_good_cf_ip.as_deref()).await;
     let client = crate::cf_prefer::apply_resolves(
         crate::http::client_builder()
             .timeout(MANIFEST_RACE_TIMEOUT)
