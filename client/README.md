@@ -225,12 +225,12 @@ cargo clippy --all-targets -- -D warnings
 
 <!-- 由 scripts/sync-version.mjs 生成，不要手改 -->
 
-当前版本：**1.2.7**，标签 `app-v1.2.7`。
+当前版本：**1.2.8**，标签 `app-v1.2.8`。
 
 下一次升版本，在 `client` 目录运行（新版本号必须比它大）：
 
 ```bash
-node scripts/sync-version.mjs <新版本号> --after app-v1.2.7
+node scripts/sync-version.mjs <新版本号> --after app-v1.2.8
 ```
 
 <!-- version:end -->

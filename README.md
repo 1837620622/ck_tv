@@ -11,6 +11,43 @@
 
 在线：[tv.chuankangkk.top](https://tv.chuankangkk.top) · 预览：[ck-tv.pages.dev](https://ck-tv.pages.dev) · 仓库：[1837620622/ck_tv](https://github.com/1837620622/ck_tv)
 
+## 界面预览
+
+线上站点 [tv.chuankangkk.top](https://tv.chuankangkk.top) 截图（桌面 1440×900 / 手机 390×844）。
+
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <img src="public/screenshot1.webp" alt="首页" width="100%"><br>
+      <sub>首页 · 热门榜单</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="public/screenshot2.webp" alt="搜索" width="100%"><br>
+      <sub>搜索 · 聚合结果</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="public/screenshot3.webp" alt="播放器" width="100%"><br>
+      <sub>播放 · 右侧画中画 / 网页全屏 / 真全屏</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="public/screenshot4.webp" alt="本地设置" width="100%"><br>
+      <sub>本地设置</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="public/screenshot5.webp" alt="手机首页" width="70%"><br>
+      <sub>手机首页</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="public/screenshot6.webp" alt="客户端下载" width="70%"><br>
+      <sub>手机客户端下载</sub>
+    </td>
+  </tr>
+</table>
+
 ## 赞助
 
 CKTV 由个人维护。域名、Pages 和接口巡检没有团队。用得顺手，希望能赞助这个项目，金额随意。不赞助也可以正常观看。
@@ -117,7 +154,7 @@ Pages Function 的响应默认是动态的，`Cache-Control` 不会自动进边�
 - 点进度条任何位置（包括圆点上）都直接跳到那里。
 - 拖动进度时画面跟着预览：拖动时先暂停，画面跟着拖到的位置走，同一时间只有一次跳转在进行，上一帧出来后再跳下一次，最快每 0.2 秒一次；松手跳到准确位置，原来在播就接着播。预览期间不触发跳片头片尾、自动连播，也不记进度。拖动过程中进度条和时间提示跟着走。ArtPlayer 原来每移动一下就跳一次，一次拖动几十次跳转，hls.js 反复中断下载，拖完常卡住要再点一下播放；现在预览跳转有间隔、一次一个，不会堆起来。手机上点进度条直接跳到点的位置，沿进度条拖到哪跳到哪；在画面上横滑按比例前后调。按住方向键也是松开后跳一次。
 - 进度条的可点区域比看到的粗：上下各多出一圈透明区域，点歪一点不会点到画面上变成暂停。
-- 全屏 / 画中画：控制栏右侧用 ArtPlayer 自带「画中画」「全屏」「网页全屏」按钮，手机窗口模式也强制显示。「全屏」走系统全屏（`requestFullscreen`；iPhone 为 `video.webkitEnterFullscreen`）；「网页全屏」才是铺满页面。安卓客户端（1.2.7+）全屏时同步 `CKTVNative` 横屏藏系统栏，画中画可走 Activity。电脑端双击画面 / 按 F 也是真全屏。进度条拖拽预览逻辑不变。
+- 全屏 / 画中画：控制栏右侧用 ArtPlayer 自带「画中画」「全屏」「网页全屏」按钮，手机窗口模式也强制显示。「全屏」走系统全屏（`requestFullscreen`；iPhone 为 `video.webkitEnterFullscreen`）；「网页全屏」才是铺满页面。安卓客户端（1.2.7+，本版 1.2.8）全屏时同步 `CKTVNative` 横屏藏系统栏，画中画可走 Activity。电脑端双击画面 / 按 F 也是真全屏。进度条拖拽预览逻辑不变。
   全屏时可以拖动进度：手机在网页全屏里转了方向，播放器会重新判断要不要转正；触屏设备上进度条的点按范围放大到约 44 像素。横屏手机上播放器比较窄，音量、缓冲文字和「连播」开关会让位，保证全屏 / 画中画按钮留在可视区。
 - 跳过片头每集最多自动跳一次；自己拖回片头重看时不会再被跳走。自己拖进片尾（看片尾彩蛋）时不会自动跳到下一集，播完照常连播。起播前就拖了进度的，以拖到的位置为准，不再跳回上次看到的地方。
 - 播放器进度条上的白条是已经缓冲好的部分，按全部已缓冲区间画，拖动进度后也准；控制栏右侧显示「已缓冲 N 秒」（窄屏隐藏文字，只留白条）。
@@ -274,6 +311,12 @@ Docker 默认是 `localstorage`。`NEXT_PUBLIC_` 开头的变量在 `docker buil
 - 直播不写入会过期的签名地址，也不接入需要逆向客户端的房间流。
 - 去广告只处理清单里标出来的插播（CUE 标记，或不连续标记框住的 15 秒内短段）。画面里直接压着的广告、没有任何标记的插播，清单层看不到，过滤不了。
 - 直播健康检查在部署环境里跑，结果只决定排序和变暗，不隐藏频道。
+
+## 更新说明（app-v1.2.8）
+
+- **Web 播放器**：控制栏右侧恢复并强制显示「画中画 / 网页全屏 / 真全屏」；「全屏」走系统全屏（`requestFullscreen`，iPhone 为 `webkitEnterFullscreen`），不再默认网页内全屏。
+- **缓存**：Cloudflare 区域 Browser Cache TTL 改为遵循源站，`sw.js` 恢复 `no-cache`；发版后建议硬刷新一次。
+- **安卓客户端**：沿用 1.2.7 的原生画中画（`CKTVNative` / Activity）；本版同步版本号与商店截图。
 
 ## 原生客户端
 
