@@ -134,10 +134,11 @@ function watchWebFullscreenOrientation(art: any): () => void {
   };
 }
 
-// 能不能画中画，和 ArtPlayer 的判断一致：有标准接口用标准的，否则看 iPhone Safari 的 webkit 接口
-function hasPictureInPicture(video: HTMLVideoElement): boolean {
+// 能不能画中画：标准接口或 iPhone Safari 的 webkit 演示模式
+function hasPictureInPicture(video?: HTMLVideoElement | null): boolean {
   if (typeof document === 'undefined') return false;
   if (document.pictureInPictureEnabled) return true;
+  if (!video) return false;
   return Boolean(
     (video as HTMLVideoElement & { webkitSupportsPresentationMode?: unknown })
       .webkitSupportsPresentationMode
@@ -151,6 +152,14 @@ type CktvNativeBridge = {
   isInPip?: () => boolean;
 };
 
+type ArtFs = {
+  fullscreen?: boolean;
+  fullscreenWeb?: boolean;
+  pip?: boolean;
+  video?: HTMLVideoElement;
+  template?: { $player?: HTMLElement; $video?: HTMLVideoElement };
+};
+
 function getCktvNative(): CktvNativeBridge | null {
   if (typeof window === 'undefined') return null;
   return (
@@ -158,58 +167,143 @@ function getCktvNative(): CktvNativeBridge | null {
   );
 }
 
-// 切换全屏：安卓客户端里优先走 CKTVNative（横屏 + 藏系统栏），并配合网页全屏铺满；
-// 浏览器里能系统全屏就用系统的，否则用网页全屏（iPhone Safari）。
-function togglePlayerFullscreen(
-  art: {
-    fullscreen?: boolean;
-    fullscreenWeb?: boolean;
-  } | null
-) {
+function isDocFullscreen(): boolean {
+  const doc = document as Document & {
+    webkitFullscreenElement?: Element | null;
+  };
+  return Boolean(document.fullscreenElement || doc.webkitFullscreenElement);
+}
+
+async function exitDocFullscreen(): Promise<void> {
+  const doc = document as Document & {
+    webkitExitFullscreen?: () => Promise<void> | void;
+  };
+  try {
+    if (document.exitFullscreen && document.fullscreenElement) {
+      await document.exitFullscreen();
+    } else if (doc.webkitExitFullscreen) {
+      await doc.webkitExitFullscreen();
+    }
+  } catch {
+    // 浏览器拒绝时忽略
+  }
+}
+
+// 真全屏：播放器容器 requestFullscreen；iPhone 用 video.webkitEnterFullscreen。
+// 只有两者都不可用时才退回 ArtPlayer 的网页全屏（铺满页面，不是系统全屏）。
+async function togglePlayerFullscreen(art: ArtFs | null) {
   if (!art) return;
   const native = getCktvNative();
-  if (native?.setFullscreen) {
-    const next = !art.fullscreenWeb;
-    art.fullscreenWeb = next;
-    native.setFullscreen(next);
+  const player = art.template?.$player;
+  const video =
+    art.video ||
+    art.template?.$video ||
+    (player?.querySelector('video') as HTMLVideoElement | null);
+
+  if (isDocFullscreen()) {
+    await exitDocFullscreen();
+    if (art.fullscreenWeb) art.fullscreenWeb = false;
+    native?.setFullscreen?.(false);
     return;
   }
-  if (hasSystemFullscreen()) {
-    art.fullscreen = !art.fullscreen;
-  } else {
-    art.fullscreenWeb = !art.fullscreenWeb;
+  if (art.fullscreen) {
+    art.fullscreen = false;
+    native?.setFullscreen?.(false);
+    return;
   }
-}
 
-function nativePipSupported(): boolean {
-  const native = getCktvNative();
+  // 1) 标准 / 前缀：整页系统全屏（电脑、安卓 Chrome）
+  if (player) {
+    const req =
+      player.requestFullscreen?.bind(player) ||
+      (
+        player as HTMLElement & {
+          webkitRequestFullscreen?: () => Promise<void> | void;
+        }
+      ).webkitRequestFullscreen?.bind(player);
+    if (req) {
+      try {
+        if (art.fullscreenWeb) art.fullscreenWeb = false;
+        await req();
+        native?.setFullscreen?.(true);
+        return;
+      } catch {
+        // 继续试下一种
+      }
+    }
+  }
+
+  // 2) iPhone：系统视频全屏（控制栏会换成系统的，这是 Safari 唯一真全屏）
+  const iosVideo = video as HTMLVideoElement & {
+    webkitSupportsFullscreen?: boolean;
+    webkitEnterFullscreen?: () => void;
+  };
+  if (iosVideo?.webkitSupportsFullscreen && iosVideo.webkitEnterFullscreen) {
+    try {
+      if (art.fullscreenWeb) art.fullscreenWeb = false;
+      iosVideo.webkitEnterFullscreen();
+      return;
+    } catch {
+      // 继续
+    }
+  }
+
+  // 3) ArtPlayer 混入（metadata 之后可用）
   try {
-    return Boolean(native?.supportsPip?.());
+    if (hasSystemFullscreen() || iosVideo?.webkitSupportsFullscreen) {
+      if (art.fullscreenWeb) art.fullscreenWeb = false;
+      art.fullscreen = true;
+      native?.setFullscreen?.(true);
+      return;
+    }
   } catch {
-    return false;
+    // 继续
   }
+
+  // 4) 最后才网页全屏（用户仍可用控制栏里 ArtPlayer 自带的「网页全屏」按钮主动选）
+  art.fullscreenWeb = !art.fullscreenWeb;
+  native?.setFullscreen?.(Boolean(art.fullscreenWeb));
 }
 
-function togglePlayerPip(art: { pip?: boolean } | null) {
+async function togglePlayerPip(art: ArtFs | null) {
   const native = getCktvNative();
   if (native?.enterPip) {
     try {
       if (native.isInPip?.()) return;
       native.enterPip();
+      return;
     } catch {
-      if (art) art.pip = !art.pip;
+      // 再试网页 PiP
     }
-    return;
   }
-  if (!art) return;
-  art.pip = !art.pip;
+  const video = art?.video || art?.template?.$video;
+  if (!video) return;
+  try {
+    if (document.pictureInPictureElement) {
+      await document.exitPictureInPicture();
+      return;
+    }
+    if (document.pictureInPictureEnabled) {
+      await video.requestPictureInPicture();
+      return;
+    }
+    const v = video as HTMLVideoElement & {
+      webkitSetPresentationMode?: (mode: string) => void;
+      webkitPresentationMode?: string;
+    };
+    if (v.webkitSetPresentationMode) {
+      const next =
+        v.webkitPresentationMode === 'picture-in-picture'
+          ? 'inline'
+          : 'picture-in-picture';
+      v.webkitSetPresentationMode(next);
+      return;
+    }
+    if (art) art.pip = !art.pip;
+  } catch {
+    // 浏览器拒绝画中画
+  }
 }
-
-const CK_PIP_ICON =
-  '<i class="art-icon flex"><svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="2.5" y="4.5" width="17" height="13" rx="1.5" stroke="currentColor" stroke-width="1.6"/><rect x="10.5" y="10.5" width="7" height="5.5" rx="1" fill="currentColor"/></svg></i>';
-
-const CK_FULLSCREEN_ICON =
-  '<i class="art-icon flex"><svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 8.5V4.5h4M18 8.5V4.5h-4M4 13.5v4h4M18 13.5v4h-4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></i>';
 
 function PlayPageClient() {
   const router = useRouter();
@@ -1414,7 +1508,7 @@ function PlayPageClient() {
 
     // f 键 = 切换全屏
     if (e.key === 'f' || e.key === 'F') {
-      togglePlayerFullscreen(artPlayerRef.current);
+      void togglePlayerFullscreen(artPlayerRef.current);
       e.preventDefault();
     }
   };
@@ -1698,9 +1792,9 @@ function PlayPageClient() {
         isLive: false,
         muted: false,
         autoplay: true,
-        // 自带的画中画/全屏图标在手机上会被 CSS 藏掉，窄屏时还容易被「连播」挤出可视区。
-        // 改成下面 controls 里固定的「画中画」「全屏」按钮；API（art.pip / art.fullscreen*）仍可用。
-        pip: false,
+        // 恢复 ArtPlayer 自带图标：全屏=系统全屏，网页全屏=另按钮，画中画=标准 PiP。
+        // 手机端用 CSS 强制显示，避免再被旧规则藏掉。
+        pip: true,
         autoSize: false,
         autoMini: false,
         screenshot: false,
@@ -1709,8 +1803,8 @@ function PlayPageClient() {
         flip: false,
         playbackRate: true,
         aspectRatio: false,
-        fullscreen: false,
-        fullscreenWeb: false,
+        fullscreen: true,
+        fullscreenWeb: true,
         subtitleOffset: false,
         miniProgressBar: false,
         mutex: true,
@@ -2137,39 +2231,6 @@ function PlayPageClient() {
               applyAutoNext(!autoNextRef.current);
             },
           },
-          {
-            // 固定放在控制栏最右侧：不依赖 ArtPlayer 自带图标，也不被手机端旧 CSS 藏掉
-            name: 'ck-pip',
-            position: 'right',
-            index: 90,
-            html: CK_PIP_ICON,
-            tooltip: '画中画',
-            style: { display: 'none' },
-            mounted(element: HTMLElement) {
-              const video = artPlayerRef.current?.video as
-                | HTMLVideoElement
-                | undefined;
-              if (
-                (video && hasPictureInPicture(video)) ||
-                nativePipSupported()
-              ) {
-                element.style.display = '';
-              }
-            },
-            click() {
-              togglePlayerPip(artPlayerRef.current);
-            },
-          },
-          {
-            name: 'ck-fullscreen',
-            position: 'right',
-            index: 100,
-            html: CK_FULLSCREEN_ICON,
-            tooltip: '全屏',
-            click() {
-              togglePlayerFullscreen(artPlayerRef.current);
-            },
-          },
         ],
       });
 
@@ -2193,7 +2254,7 @@ function PlayPageClient() {
           .$video as HTMLVideoElement;
         const onDblClick = (event: Event) => {
           event.preventDefault();
-          togglePlayerFullscreen(artPlayerRef.current);
+          void togglePlayerFullscreen(artPlayerRef.current);
         };
         detachPipFsDblclick?.();
         videoEl.addEventListener('dblclick', onDblClick);
@@ -2210,10 +2271,52 @@ function PlayPageClient() {
         });
         detachOrientation?.();
         detachOrientation = watchWebFullscreenOrientation(artPlayerRef.current);
-        // 安卓客户端：网页全屏状态变化时同步原生横屏/系统栏（双击、按钮、转屏重进都会走到这里）
+        // 安卓客户端：系统全屏 / 网页全屏都同步原生横屏与系统栏
+        artPlayerRef.current.on('fullscreen', (on: boolean) => {
+          getCktvNative()?.setFullscreen?.(Boolean(on));
+        });
         artPlayerRef.current.on('fullscreenWeb', (on: boolean) => {
           getCktvNative()?.setFullscreen?.(Boolean(on));
         });
+        // 覆盖 ArtPlayer 自带全屏按钮：强制走真全屏（避免个别环境只触发网页全屏）
+        const fsBtn = artPlayerRef.current.controls?.fullscreen as
+          | HTMLElement
+          | undefined;
+        if (fsBtn) {
+          fsBtn.addEventListener(
+            'click',
+            (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              void togglePlayerFullscreen(artPlayerRef.current);
+            },
+            true
+          );
+        }
+        // 能画中画就强制显示按钮；点击统一走 requestPictureInPicture / 安卓原生 PiP
+        const pipOk =
+          hasPictureInPicture(artPlayerRef.current.template?.$video) ||
+          Boolean(getCktvNative()?.supportsPip?.());
+        if (pipOk) {
+          artPlayerRef.current.template.$player.classList.add(
+            'ck-pip-supported'
+          );
+        }
+        const pipBtn = artPlayerRef.current.controls?.pip as
+          | HTMLElement
+          | undefined;
+        if (pipBtn) {
+          if (pipOk) pipBtn.style.display = '';
+          pipBtn.addEventListener(
+            'click',
+            (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              void togglePlayerPip(artPlayerRef.current);
+            },
+            true
+          );
+        }
         playingNodeRef.current =
           (artPlayerRef.current?.video as HTMLVideoElement) ||
           playingNodeRef.current;

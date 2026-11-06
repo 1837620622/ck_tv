@@ -170,12 +170,18 @@ div[data-media-provider] video {
   background-color: #000 !important; /* 其余区域填充为黑色 */
 }
 
-/* 手机端隐藏音量滑杆；画中画/全屏改由播放页自定义按钮（art-control-ck-*）提供，
-   不再依赖 ArtPlayer 自带图标（旧规则会把自带 pip / fullscreenWeb 整段藏掉）。 */
+/* 手机端隐藏音量滑杆。画中画 / 系统全屏 / 网页全屏按钮一律显示（窗口模式也要有）。 */
 @media (max-width: 768px) {
   .art-control-volume {
     display: none !important;
   }
+}
+
+.art-video-player .art-control-pip,
+.art-video-player .art-control-fullscreen,
+.art-video-player .art-control-fullscreenWeb,
+.art-video-player.ck-pip-supported .art-control-pip {
+  display: inline-flex !important;
 }
 
 /* 播放器本身很窄时（横屏手机两边都有面板，只有约 400 像素宽），次要控件让位，
