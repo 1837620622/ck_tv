@@ -170,41 +170,24 @@ div[data-media-provider] video {
   background-color: #000 !important; /* 其余区域填充为黑色 */
 }
 
-/* 隐藏移动端竖屏时的 pip 按钮 */
+/* 手机端隐藏音量滑杆；画中画/全屏改由播放页自定义按钮（art-control-ck-*）提供，
+   不再依赖 ArtPlayer 自带图标（旧规则会把自带 pip / fullscreenWeb 整段藏掉）。 */
 @media (max-width: 768px) {
-  .art-control-pip {
-    display: none !important;
-  }
-
-  .art-control-fullscreenWeb {
-    display: none !important;
-  }
-
   .art-control-volume {
     display: none !important;
   }
 }
 
-/* 没有系统全屏的浏览器（iPhone）：全屏按钮是网页全屏，手机上也要显示出来 */
-.art-video-player.ck-web-fullscreen-only .art-control-fullscreenWeb {
-  display: inline-flex !important;
-}
-
-/* 全屏时手机上也要有画中画。只在能画中画的设备上显示（标记由播放页按 ArtPlayer 的判断加上） */
-.art-video-player.ck-pip-supported.art-fullscreen-web .art-control-pip,
-.art-video-player.ck-pip-supported.art-fullscreen .art-control-pip {
-  display: inline-flex !important;
-}
-
-/* 播放器本身很窄时（横屏手机两边都有面板，只有约 400 像素宽），音量和缓冲文字让位，
-   免得全屏按钮被挤到播放器外面、点不到 */
+/* 播放器本身很窄时（横屏手机两边都有面板，只有约 400 像素宽），次要控件让位，
+   保证右侧「画中画」「全屏」按钮留在可视区里 */
 .art-video-player {
   container-type: inline-size;
 }
 
 @container (max-width: 520px) {
   .art-video-player .art-control-volume,
-  .art-video-player .art-control-buffered {
+  .art-video-player .art-control-buffered,
+  .art-video-player .art-control-auto-next {
     display: none !important;
   }
 }

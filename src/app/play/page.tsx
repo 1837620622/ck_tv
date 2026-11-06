@@ -144,6 +144,33 @@ function hasPictureInPicture(video: HTMLVideoElement): boolean {
   );
 }
 
+// 切换全屏：能系统全屏就用系统的，否则用网页全屏（iPhone Safari）。
+// 控制栏按钮和双击画面共用这一套，避免再依赖 ArtPlayer 自带图标被 CSS 藏掉。
+function togglePlayerFullscreen(
+  art: {
+    fullscreen?: boolean;
+    fullscreenWeb?: boolean;
+  } | null
+) {
+  if (!art) return;
+  if (hasSystemFullscreen()) {
+    art.fullscreen = !art.fullscreen;
+  } else {
+    art.fullscreenWeb = !art.fullscreenWeb;
+  }
+}
+
+function togglePlayerPip(art: { pip?: boolean } | null) {
+  if (!art) return;
+  art.pip = !art.pip;
+}
+
+const CK_PIP_ICON =
+  '<i class="art-icon flex"><svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="2.5" y="4.5" width="17" height="13" rx="1.5" stroke="currentColor" stroke-width="1.6"/><rect x="10.5" y="10.5" width="7" height="5.5" rx="1" fill="currentColor"/></svg></i>';
+
+const CK_FULLSCREEN_ICON =
+  '<i class="art-icon flex"><svg width="22" height="22" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 8.5V4.5h4M18 8.5V4.5h-4M4 13.5v4h4M18 13.5v4h-4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></i>';
+
 function PlayPageClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -1347,12 +1374,8 @@ function PlayPageClient() {
 
     // f 键 = 切换全屏
     if (e.key === 'f' || e.key === 'F') {
-      const art = artPlayerRef.current;
-      if (art) {
-        if (hasSystemFullscreen()) art.fullscreen = !art.fullscreen;
-        else art.fullscreenWeb = !art.fullscreenWeb;
-        e.preventDefault();
-      }
+      togglePlayerFullscreen(artPlayerRef.current);
+      e.preventDefault();
     }
   };
 
@@ -1598,6 +1621,7 @@ function PlayPageClient() {
       let detachBufferBar: (() => void) | null = null;
       let detachSmoothSeek: (() => void) | null = null;
       let detachOrientation: (() => void) | null = null;
+      let detachPipFsDblclick: (() => void) | null = null;
       const autoNextSetting: any = {
         switch: autoNextRef.current,
         onSwitch(item: any) {
@@ -1634,7 +1658,9 @@ function PlayPageClient() {
         isLive: false,
         muted: false,
         autoplay: true,
-        pip: true,
+        // 自带的画中画/全屏图标在手机上会被 CSS 藏掉，窄屏时还容易被「连播」挤出可视区。
+        // 改成下面 controls 里固定的「画中画」「全屏」按钮；API（art.pip / art.fullscreen*）仍可用。
+        pip: false,
         autoSize: false,
         autoMini: false,
         screenshot: false,
@@ -1643,8 +1669,8 @@ function PlayPageClient() {
         flip: false,
         playbackRate: true,
         aspectRatio: false,
-        fullscreen: hasSystemFullscreen(),
-        fullscreenWeb: true,
+        fullscreen: false,
+        fullscreenWeb: false,
         subtitleOffset: false,
         miniProgressBar: false,
         mutex: true,
@@ -2071,6 +2097,36 @@ function PlayPageClient() {
               applyAutoNext(!autoNextRef.current);
             },
           },
+          {
+            // 固定放在控制栏最右侧：不依赖 ArtPlayer 自带图标，也不被手机端旧 CSS 藏掉
+            name: 'ck-pip',
+            position: 'right',
+            index: 90,
+            html: CK_PIP_ICON,
+            tooltip: '画中画',
+            style: { display: 'none' },
+            mounted(element: HTMLElement) {
+              const video = artPlayerRef.current?.video as
+                | HTMLVideoElement
+                | undefined;
+              if (video && hasPictureInPicture(video)) {
+                element.style.display = '';
+              }
+            },
+            click() {
+              togglePlayerPip(artPlayerRef.current);
+            },
+          },
+          {
+            name: 'ck-fullscreen',
+            position: 'right',
+            index: 100,
+            html: CK_FULLSCREEN_ICON,
+            tooltip: '全屏',
+            click() {
+              togglePlayerFullscreen(artPlayerRef.current);
+            },
+          },
         ],
       });
 
@@ -2081,22 +2137,26 @@ function PlayPageClient() {
         detachSmoothSeek = null;
         detachOrientation?.();
         detachOrientation = null;
+        detachPipFsDblclick?.();
+        detachPipFsDblclick = null;
       });
 
       // 监听播放器事件
       playingNodeRef.current =
         (artPlayerRef.current?.video as HTMLVideoElement) || null;
       artPlayerRef.current.on('ready', () => {
-        if (!hasSystemFullscreen()) {
-          artPlayerRef.current.template.$player.classList.add(
-            'ck-web-fullscreen-only'
-          );
-        }
-        if (hasPictureInPicture(artPlayerRef.current.template.$video)) {
-          artPlayerRef.current.template.$player.classList.add(
-            'ck-pip-supported'
-          );
-        }
+        // 双击画面切全屏（电脑端）。进度条拖拽仍由 smooth-seek 单独处理，互不抢事件。
+        const videoEl = artPlayerRef.current.template
+          .$video as HTMLVideoElement;
+        const onDblClick = (event: Event) => {
+          event.preventDefault();
+          togglePlayerFullscreen(artPlayerRef.current);
+        };
+        detachPipFsDblclick?.();
+        videoEl.addEventListener('dblclick', onDblClick);
+        detachPipFsDblclick = () => {
+          videoEl.removeEventListener('dblclick', onDblClick);
+        };
         detachBufferBar?.();
         detachBufferBar = attachBufferBar(artPlayerRef.current);
         detachSmoothSeek?.();
