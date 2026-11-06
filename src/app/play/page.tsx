@@ -144,8 +144,22 @@ function hasPictureInPicture(video: HTMLVideoElement): boolean {
   );
 }
 
-// 切换全屏：能系统全屏就用系统的，否则用网页全屏（iPhone Safari）。
-// 控制栏按钮和双击画面共用这一套，避免再依赖 ArtPlayer 自带图标被 CSS 藏掉。
+type CktvNativeBridge = {
+  setFullscreen?: (on: boolean) => void;
+  supportsPip?: () => boolean;
+  enterPip?: () => boolean;
+  isInPip?: () => boolean;
+};
+
+function getCktvNative(): CktvNativeBridge | null {
+  if (typeof window === 'undefined') return null;
+  return (
+    (window as Window & { CKTVNative?: CktvNativeBridge }).CKTVNative || null
+  );
+}
+
+// 切换全屏：安卓客户端里优先走 CKTVNative（横屏 + 藏系统栏），并配合网页全屏铺满；
+// 浏览器里能系统全屏就用系统的，否则用网页全屏（iPhone Safari）。
 function togglePlayerFullscreen(
   art: {
     fullscreen?: boolean;
@@ -153,6 +167,13 @@ function togglePlayerFullscreen(
   } | null
 ) {
   if (!art) return;
+  const native = getCktvNative();
+  if (native?.setFullscreen) {
+    const next = !art.fullscreenWeb;
+    art.fullscreenWeb = next;
+    native.setFullscreen(next);
+    return;
+  }
   if (hasSystemFullscreen()) {
     art.fullscreen = !art.fullscreen;
   } else {
@@ -160,7 +181,26 @@ function togglePlayerFullscreen(
   }
 }
 
+function nativePipSupported(): boolean {
+  const native = getCktvNative();
+  try {
+    return Boolean(native?.supportsPip?.());
+  } catch {
+    return false;
+  }
+}
+
 function togglePlayerPip(art: { pip?: boolean } | null) {
+  const native = getCktvNative();
+  if (native?.enterPip) {
+    try {
+      if (native.isInPip?.()) return;
+      native.enterPip();
+    } catch {
+      if (art) art.pip = !art.pip;
+    }
+    return;
+  }
   if (!art) return;
   art.pip = !art.pip;
 }
@@ -2109,7 +2149,10 @@ function PlayPageClient() {
               const video = artPlayerRef.current?.video as
                 | HTMLVideoElement
                 | undefined;
-              if (video && hasPictureInPicture(video)) {
+              if (
+                (video && hasPictureInPicture(video)) ||
+                nativePipSupported()
+              ) {
                 element.style.display = '';
               }
             },
@@ -2167,6 +2210,10 @@ function PlayPageClient() {
         });
         detachOrientation?.();
         detachOrientation = watchWebFullscreenOrientation(artPlayerRef.current);
+        // 安卓客户端：网页全屏状态变化时同步原生横屏/系统栏（双击、按钮、转屏重进都会走到这里）
+        artPlayerRef.current.on('fullscreenWeb', (on: boolean) => {
+          getCktvNative()?.setFullscreen?.(Boolean(on));
+        });
         playingNodeRef.current =
           (artPlayerRef.current?.video as HTMLVideoElement) ||
           playingNodeRef.current;

@@ -1,6 +1,6 @@
 {
   "name": "cktv-client",
-  "version": "1.2.6",
+  "version": "1.2.7",
   "private": true,
   "description": "CKTV 原生客户端：macOS / Windows / Linux / Android / iOS",
   "type": "module",

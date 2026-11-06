@@ -2,7 +2,7 @@
 // 和站点自己的播放器分开，操作参考手机视频应用：
 //   单击显示 / 隐藏控制栏，双击暂停 / 播放；左右滑动调进度；左侧上下滑调亮度，右侧上下滑调音量；
 //   长按 2 倍速，松手恢复；倍速菜单、锁屏、画中画、横屏全屏、记住上次看到的位置。
-// 全屏：安卓用原生接口（window.CKTVNative，见 scripts/patch-mobile.mjs）横屏并隐藏系统栏；
+// 全屏：安卓用原生接口（window.CKTVNative，见 scripts/patch-mobile.mjs）横屏并隐藏系统栏；画中画优先走 Activity.enterPictureInPictureMode；
 // iPhone 用系统自带的全屏播放器；电脑用网页全屏。
 
 import { fileSrc, inTauri, invoke } from './bridge.js';
@@ -664,6 +664,10 @@ async function keepScreenOn(on) {
 /* ================= 竖屏下面的信息和按钮 ================= */
 
 function pipSupported() {
+  // 安卓系统 WebView 通常没有 HTML 画中画，改走 CKTVNative（MainActivity）
+  if (typeof native?.supportsPip === 'function' && native.supportsPip()) {
+    return true;
+  }
   return (
     (document.pictureInPictureEnabled && !video.disablePictureInPicture) ||
     Boolean(video.webkitSupportsPresentationMode?.('picture-in-picture'))
@@ -672,6 +676,11 @@ function pipSupported() {
 
 async function enterPip() {
   try {
+    if (typeof native?.enterPip === 'function') {
+      const ok = native.enterPip();
+      if (!ok) toast('无法进入画中画', 'err');
+      return;
+    }
     if (document.pictureInPictureEnabled) await video.requestPictureInPicture();
     else video.webkitSetPresentationMode('picture-in-picture');
   } catch (error) {

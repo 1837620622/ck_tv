@@ -9,7 +9,7 @@
 // 默认图标（蓝黄两个圆环），也不处理状态栏，所以：
 //   安卓  1. 把 src-tauri/icons/android/ 里的 CKTV 图标覆盖进去（含自适应图标和深色底）
 //         2. 换掉 MainActivity：网页内容避开状态栏、导航栏、刘海和输入法，状态栏图标用浅色；
-//            提供 window.CKTVNative.setFullscreen，CKTV 播放器全屏时横屏并隐藏系统栏
+//            提供 window.CKTVNative（setFullscreen / supportsPip / enterPip），全屏横屏藏系统栏；画中画走 Activity
 //         3. 主题改成深色、窗口底色 #060A13：启动时不再闪白，和启动页颜色一致
 //   iOS   把 src-tauri/icons/ios/ 里的图标放进 AppIcon.appiconset，并写好 Contents.json
 //
@@ -68,9 +68,13 @@ function findFile(dir, name) {
 export function mainActivitySource(packageName) {
   return `package ${packageName}
 
+import android.app.PictureInPictureParams
 import android.content.pm.ActivityInfo
+import android.content.pm.PackageManager
 import android.graphics.Color
+import android.os.Build
 import android.os.Bundle
+import android.util.Rational
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
@@ -82,6 +86,9 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 // 由 client/scripts/patch-mobile.mjs 生成。gen/ 目录每次构建都会重新生成，改这里没有用，要改那个脚本。
 //
@@ -89,8 +96,9 @@ import androidx.core.view.WindowInsetsControllerCompat
 // 2. 网页内容不画到状态栏、导航栏、刘海和输入法下面：把这些区域的大小作为内边距加在内容外层。
 //    安卓 15 起应用一律全面屏显示，系统 WebView 又不一定把这些区域告诉网页，
 //    所以在原生层统一处理，所有安卓版本上的排版都一样。
-// 3. 给网页一个原生接口 window.CKTVNative.setFullscreen(true/false)：CKTV 播放器全屏时横屏、
-//    隐藏状态栏和导航栏（从边缘滑动可以临时调出），内容铺满整个屏幕；退出时恢复。
+// 3. 给网页一个原生接口 window.CKTVNative：
+//    - setFullscreen(true/false)：播放器全屏时横屏、隐藏系统栏
+//    - supportsPip() / enterPip() / isInPip()：系统 WebView 通常没有 HTML 画中画，改走 Activity 画中画
 class MainActivity : TauriActivity() {
   private var immersive = false
   private var content: View? = null
@@ -160,11 +168,58 @@ class MainActivity : TauriActivity() {
     content?.let { ViewCompat.requestApplyInsets(it) }
   }
 
-  // 给网页用的原生接口：只能切换全屏，任何页面调用都没有危害
+  private fun deviceSupportsPip(): Boolean {
+    return Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+      packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
+  }
+
+  private fun requestPip(): Boolean {
+    if (!deviceSupportsPip()) return false
+    return try {
+      val params = PictureInPictureParams.Builder()
+        .setAspectRatio(Rational(16, 9))
+        .build()
+      enterPictureInPictureMode(params)
+    } catch (_: Exception) {
+      false
+    }
+  }
+
+  // 给网页用的原生接口：全屏和画中画。任何页面调用都没有危害。
   inner class NativeBridge {
     @JavascriptInterface
     fun setFullscreen(on: Boolean) {
       runOnUiThread { applyFullscreen(on) }
+    }
+
+    @JavascriptInterface
+    fun supportsPip(): Boolean {
+      return deviceSupportsPip()
+    }
+
+    @JavascriptInterface
+    fun isInPip(): Boolean {
+      return Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && isInPictureInPictureMode
+    }
+
+    // JavascriptInterface 在后台线程调用：要等 UI 线程跑完再把结果返回给网页
+    @JavascriptInterface
+    fun enterPip(): Boolean {
+      if (!deviceSupportsPip()) return false
+      val done = CountDownLatch(1)
+      val ok = AtomicBoolean(false)
+      runOnUiThread {
+        try {
+          ok.set(requestPip())
+        } finally {
+          done.countDown()
+        }
+      }
+      return try {
+        done.await(2, TimeUnit.SECONDS) && ok.get()
+      } catch (_: InterruptedException) {
+        false
+      }
     }
   }
 
@@ -216,6 +271,10 @@ export function patchAndroid({
   if (!packageLine) fail(`MainActivity.kt 里没有 package 声明：${activity}`);
   writeFileSync(activity, mainActivitySource(packageLine[1]));
 
+  // 2b. AndroidManifest：打开系统画中画（HTML PiP 在系统 WebView 里通常不可用）
+  const manifest = join(genDir, 'app/src/main/AndroidManifest.xml');
+  const manifestPatched = patchAndroidManifest(manifest);
+
   // 3. 主题和颜色：values 和 values-night 都改成深色
   writeFileSync(
     join(res, 'values/cktv_colors.xml'),
@@ -238,8 +297,63 @@ export function patchAndroid({
   return {
     activity,
     themes,
+    manifest: manifestPatched,
     icons: readdirSync(iconsDir).length,
   };
+}
+
+/** 给主 Activity 打开系统画中画，并保留方向/尺寸变化时不重建 Activity */
+export function patchAndroidManifest(manifestPath) {
+  if (!existsSync(manifestPath)) {
+    fail(`没有找到 AndroidManifest.xml（${manifestPath}）`);
+  }
+  let xml = readFileSync(manifestPath, 'utf8');
+  if (!/<activity\b[^>]*>/i.test(xml)) {
+    fail(`AndroidManifest.xml 里没有 <activity>：${manifestPath}`);
+  }
+
+  const ensureAttr = (tag, name, value) => {
+    const re = new RegExp(`\\s${name}="[^"]*"`);
+    if (re.test(tag)) return tag.replace(re, ` ${name}="${value}"`);
+    return tag.replace(/>$/, ` ${name}="${value}">`);
+  };
+
+  xml = xml.replace(/<activity\b[^>]*>/i, (tag) => {
+    let next = tag;
+    next = ensureAttr(next, 'android:supportsPictureInPicture', 'true');
+    next = ensureAttr(next, 'android:resizeableActivity', 'true');
+    // 已有 configChanges 就补齐需要的项；没有就写一份常用的
+    if (/android:configChanges="/i.test(next)) {
+      next = next.replace(/android:configChanges="([^"]*)"/i, (_m, current) => {
+        const set = new Set(
+          String(current)
+            .split('|')
+            .map((part) => part.trim())
+            .filter(Boolean)
+        );
+        for (const item of [
+          'orientation',
+          'screenSize',
+          'screenLayout',
+          'smallestScreenSize',
+          'keyboardHidden',
+        ]) {
+          set.add(item);
+        }
+        return `android:configChanges="${Array.from(set).join('|')}"`;
+      });
+    } else {
+      next = ensureAttr(
+        next,
+        'android:configChanges',
+        'orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden'
+      );
+    }
+    return next;
+  });
+
+  writeFileSync(manifestPath, xml);
+  return manifestPath;
 }
 
 /* ---------------- iOS ---------------- */

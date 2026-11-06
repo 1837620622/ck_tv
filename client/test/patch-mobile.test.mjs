@@ -43,6 +43,17 @@ function fakeAndroidProject() {
     join(main, 'java/top/chuankangkk/cktv/MainActivity.kt'),
     'package top.chuankangkk.cktv\n\nclass MainActivity : TauriActivity()\n'
   );
+  write(
+    join(main, 'AndroidManifest.xml'),
+    `<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <application>
+    <activity android:name=".MainActivity" android:exported="true" android:configChanges="orientation|keyboardHidden">
+    </activity>
+  </application>
+</manifest>
+`
+  );
   const theme =
     '<resources>\n  <style name="Theme.cktv_app" parent="Theme.Material3.DayNight.NoActionBar" />\n</resources>\n';
   write(join(main, 'res/values/themes.xml'), theme);
@@ -114,7 +125,18 @@ test('安卓：MainActivity 保留包名，处理状态栏、导航栏和输入�
     source,
     /@JavascriptInterface\s+fun setFullscreen\(on: Boolean\)/
   );
+  assert.match(source, /@JavascriptInterface\s+fun supportsPip\(\): Boolean/);
+  assert.match(source, /@JavascriptInterface\s+fun enterPip\(\): Boolean/);
+  assert.match(source, /enterPictureInPictureMode/);
   assert.match(source, /SCREEN_ORIENTATION_SENSOR_LANDSCAPE/);
+  const manifest = readFileSync(
+    join(gen, 'app/src/main/AndroidManifest.xml'),
+    'utf8'
+  );
+  assert.match(manifest, /android:supportsPictureInPicture="true"/);
+  assert.match(manifest, /android:resizeableActivity="true"/);
+  assert.match(manifest, /screenSize/);
+  assert.match(manifest, /smallestScreenSize/);
   rmSync(dirname(gen), { recursive: true, force: true });
 });
 
